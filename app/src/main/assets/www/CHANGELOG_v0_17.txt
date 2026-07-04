@@ -1,0 +1,13 @@
+lqlq Browser v0.17
+
+- Đổi tên ứng dụng từ Shield Browser thành lqlq Browser.
+- Sửa tiêu đề trang và nhãn thương hiệu trong giao diện.
+- Sửa thứ tự giọng: ưu tiên tiếng Việt trước, sau đó mới ưu tiên Google.
+- Thêm giao diện hiển thị engine TTS Android.
+- Thêm nút Làm mới danh sách giọng.
+- Thêm nút mở cài đặt Nhận dạng và tổng hợp giọng nói.
+- Thêm hỗ trợ bridge LqlqTtsBridge.
+- Ưu tiên engine com.google.android.tts trong cấu hình gửi sang Android.
+- Thêm nhận danh sách giọng native bằng JSON.
+- Thêm callback khi danh sách giọng Android thay đổi.
+- Giữ Web Speech làm phương án dự phòng khi thử HTML trên PC.

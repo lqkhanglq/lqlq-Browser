@@ -1,0 +1,7 @@
+lqlq Browser v0.15.1
+
+- Xóa nút TXT+ đặt sai bên cạnh thanh địa chỉ.
+- Thêm Chapter Clipper ngay dưới mục Đọc truyện TXT.
+- Nhấn mục Chapter Clipper trong menu mới mở bảng công cụ.
+- Giữ nguyên toàn bộ bảng và dữ liệu Chapter Clipper.
+- Sửa JavaScript để không phụ thuộc nút toolbar cũ.

@@ -1,0 +1,21 @@
+lqlq Browser HTML Prototype v0.12
+
+ĐÃ THÊM
+- Nút “Đọc truyện TXT” ở cụm công cụ bên trái thanh địa chỉ.
+- Mục “Đọc truyện TXT” trong menu Dữ liệu và nội dung.
+- Panel đọc truyện dạng drawer mở từ bên trái.
+- Mở TXT, dán/chỉnh sửa, sao chép và lưu TXT UTF-8.
+- Lấy/làm sạch chương web theo thuật toán lấy nội dung của Chapter Clipper.
+- Loại menu, quảng cáo, bình luận, nút chuyển chương, tải ebook và truyện đề cử.
+- Chọn giọng Google/hệ thống và ưu tiên tiếng Việt.
+- Tốc độ 0–300, tông 0–300, mặc định 100; bước nhảy số nguyên.
+- Âm lượng 0–100 và nghỉ giữa câu 0–3000 ms.
+- Đọc từ con trỏ, lặp toàn bộ, câu trước/sau, tạm dừng và dừng.
+- Tô chọn câu đang đọc và hiện tiến độ.
+- Thay thế hàng loạt khi đọc; danh sách từ cần bỏ qua.
+- Lưu thiết lập và bản nháp vào localStorage.
+- Cầu nối ShieldAndroid sẵn sàng cho APK WebView/native TTS.
+
+LƯU Ý
+- Trong prototype HTML, tab web ngoài chưa được tải thật vào WebView. Bản APK cần truyền DOM/nội dung của tab hiện tại qua ShieldReader.setPagePayload(...).
+- Đọc nền, notification, khóa màn hình và audio focus cần phần Kotlin native.

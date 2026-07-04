@@ -1,0 +1,15 @@
+lqlq Browser v0.13
+
+- Thêm nút Nhạc và video nền trên thanh công cụ.
+- Thêm mục Nhạc và video nền trong menu.
+- Thêm Media Center toàn cục.
+- Hỗ trợ YouTube embed chính thức.
+- Hỗ trợ URL media trực tiếp.
+- Hỗ trợ file audio/video cục bộ.
+- Phát liên tục khi chuyển thẻ nội bộ.
+- Tự thu nhỏ khi chuyển thẻ.
+- Thêm mini player kéo được.
+- Thêm chế độ chỉ âm thanh cho media trực tiếp.
+- Thêm Picture-in-Picture cho video HTML5.
+- Thêm Media Session cơ bản cho Play/Pause/Stop.
+- Không trích xuất hoặc tải nội dung YouTube.

@@ -1,0 +1,14 @@
+lqlq Browser v0.15
+
+- Thêm nút TXT+ ở phía bên phải thanh địa chỉ.
+- Nút nằm ngay trước menu ba gạch.
+- Thêm bảng Chapter Clipper TXT Plus v1.3 Auto.
+- Chuẩn hóa bảng theo màu và giao diện lqlq Browser.
+- Giữ các điều khiển:
+  Save FULL, Save & Next, Test, Export, Undo, Clear và Auto Run.
+- Thêm thu nhỏ và đóng bảng.
+- Thêm lưu trạng thái bằng localStorage.
+- Thêm cầu nối dự kiến cho Android WebView.
+- Giữ nguyên tiện ích Chrome gốc trong thư mục tools.
+- Thêm nút tải ZIP tiện ích Chrome gốc.
+- Thêm panel Chapter Clipper vào vùng an toàn của bộ lọc quảng cáo.

@@ -1,0 +1,19 @@
+lqlq Browser v0.14
+
+- Tích hợp Editoranhlqlq.html vào lqlq Browser.
+- Viết lại Image Studio theo kiến trúc module.
+- Chuẩn hóa toàn bộ màu sắc, nút, khoảng cách và responsive.
+- Thêm nút Image Studio trên thanh công cụ.
+- Thêm Image Studio trong menu chính.
+- Giữ chức năng xử lý nhiều ảnh:
+  resize, rotate, flip ngang/dọc, clear, ZIP.
+- Giữ chức năng một ảnh:
+  crop, resize, rotate, flip, slice, save.
+- Thêm undo/redo và khôi phục ảnh gốc.
+- Thêm PNG/JPG/WebP và chất lượng xuất.
+- Thêm ZIP cục bộ không phụ thuộc CDN.
+- Thêm cắt ảnh bằng pointer, dùng được với chuột và cảm ứng.
+- Thêm chia ảnh phủ đủ toàn bộ kích thước, kể cả khi không chia hết.
+- Bảo vệ Image Studio khỏi bộ lọc quảng cáo quá mạnh.
+
+- Loại bỏ module v08 cũ không còn phần tử giao diện tương ứng.
