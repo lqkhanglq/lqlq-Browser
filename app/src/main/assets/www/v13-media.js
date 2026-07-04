@@ -657,6 +657,16 @@
     open: openCenter,
     minimize: () => showMiniPlayer(false),
     stop: stopAll,
+    // Tạm dừng phát mà không xóa nguồn — dùng khi mở một trang web thật
+    // (video của trang đó có thể tự phát) để tránh chồng tiếng với media
+    // đang phát trong panel này.
+    pause: () => {
+      try {
+        refs.htmlPlayer.pause();
+        refs.miniVideo.pause();
+        setPlaying(false);
+      } catch {}
+    },
     loadYoutube,
     loadDirectSource,
     state

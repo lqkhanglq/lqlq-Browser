@@ -28,11 +28,25 @@
       safeCall(() => {
         const tab = window.activeTab?.();
         if (tab && /^https?:\/\//i.test(tab.url)) {
+          // Trang web thật sắp mở có thể tự phát video/âm thanh riêng —
+          // tạm dừng media đang phát trong panel của shell trước, tránh
+          // chồng tiếng giữa 2 nguồn phát cùng lúc.
+          safeCall(() => window.ShieldMedia?.pause?.());
           native.openPage(String(tab.id), tab.url);
         }
       });
     };
   }
+
+  // Khôi phục thẻ gần nhất: khi shell vừa nạp xong, nếu phiên trước có
+  // thẻ đang mở với URL http(s) thật, tự mở lại thẻ đó trong pageContainer
+  // (giống Chrome mở lại tab cuối cùng khi khởi động ứng dụng).
+  safeCall(() => {
+    const tab = window.activeTab?.();
+    if (tab && /^https?:\/\//i.test(tab.url)) {
+      native.openPage(String(tab.id), tab.url);
+    }
+  });
 
   const origNewTab = window.newTab;
   if (typeof origNewTab === "function") {
@@ -190,6 +204,12 @@
 
     onNativePageVisibility(visible) {
       document.body.classList.toggle("lqlq-native-page-open", Boolean(visible));
+      if (visible) {
+        // Trang web thật vừa hiện ra (mở tab mới, chuyển tab, hoặc quay lại
+        // trang đang mở) — dừng media panel để không chồng tiếng với video/
+        // âm thanh của chính trang web đó.
+        safeCall(() => window.ShieldMedia?.pause?.());
+      }
     },
 
     // Lệnh từ thanh thông báo → Đọc truyện TXT
@@ -333,7 +353,7 @@
     });
   }
 
-  ["play", "playing", "pause", "ended", "emptied", "volumechange"].forEach(type => {
+  ["play", "playing", "pause", "ended", "emptied", "volumechange", "loadedmetadata"].forEach(type => {
     document.addEventListener(
       type,
       event => {
@@ -342,11 +362,18 @@
         // Chốt chặn kép cho lỗi âm thanh phát 2 lần:
         // trình phát mini luôn phải câm tiếng.
         if (el.id === "globalMiniVideo") el.muted = true;
+        sendMediaState();
         setTimeout(sendMediaState, 60);
       },
       true
     );
   });
+
+  // Lưới an toàn: một số thiết bị không phát đủ sự kiện play/pause khi
+  // nguồn media được gán lại nhanh (chuyển bài liên tục) — đối chiếu định
+  // kỳ để thanh thông báo không bị treo sai trạng thái, giống cơ chế
+  // MutationObserver dùng cho Đọc TXT ở trên.
+  setInterval(sendMediaState, 2000);
 
   // ==================================================================
   // 7. Trang ngoại tuyến: nút MỞ tệp HTML + LƯU trang web thật
@@ -380,6 +407,10 @@
       event.stopPropagation();
       closeAllMenus();
       safeCall(() => native.savePageOffline());
+      // Đồng thời thêm trang vào danh sách "Trang đã lưu" (bookmark) để
+      // người dùng thấy ngay, tránh cảm giác "lưu xong nhưng danh sách
+      // trống" (2 tính năng khác nhau: tệp .mht ngoại tuyến vs bookmark).
+      safeCall(() => window.LqlqSavedPages?.saveCurrent());
     },
     true
   );

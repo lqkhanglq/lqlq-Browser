@@ -386,7 +386,15 @@ class MainActivity : AppCompatActivity() {
                 url: String,
                 isReload: Boolean
             ) {
-                notifyShellPage(tabId, url, view.title ?: "", loading = false)
+                // QUAN TRỌNG: doUpdateVisitedHistory() có thể được gọi nhiều lần
+                // trong một chuỗi chuyển hướng (redirect), TRƯỚC KHI trang đích
+                // cuối cùng thực sự tải xong (ví dụ gõ từ khóa → tạm qua
+                // www.google.com/search?q=... rồi mới điều hướng tiếp).
+                // Nếu báo loading=false ở đây, Nhật ký sẽ ghi nhầm URL trung
+                // gian thay vì trang đích thật. Chỉ cập nhật thanh địa chỉ/tiêu
+                // đề tạm thời (loading=true) — mục Nhật ký chỉ được ghi thật sự
+                // tại onPageFinished(), khi URL cuối cùng đã tải xong.
+                notifyShellPage(tabId, url, view.title ?: "", loading = true)
             }
 
             override fun onRenderProcessGone(
