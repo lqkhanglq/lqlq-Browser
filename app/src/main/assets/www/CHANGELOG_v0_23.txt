@@ -1,0 +1,12 @@
+lqlq Browser v0.23
+
+- Thêm icon chính thức lqlq Browser do người dùng cung cấp.
+- Giữ nguyên ảnh nguồn 1254 x 1254.
+- Tạo bản icon có góc ngoài trong suốt.
+- Thêm favicon ICO.
+- Thêm web icon 16–512 px.
+- Thêm Apple touch icon.
+- Thêm PWA manifest và maskable icons.
+- Thêm bộ launcher Android mdpi đến xxxhdpi.
+- Thêm adaptive icon XML và foreground PNG.
+- Thêm tài liệu handoff cho Claude Fable 5.

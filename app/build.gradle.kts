@@ -1,0 +1,57 @@
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+}
+
+android {
+    namespace = "com.lqlq.browser"
+    compileSdk = 35
+
+    defaultConfig {
+        applicationId = "com.lqlq.browser"
+        minSdk = 24
+        targetSdk = 35
+        versionCode = 25
+        versionName = "0.23.2"
+    }
+
+    signingConfigs {
+        create("lqlq") {
+            storeFile = rootProject.file("keystore/lqlq-release.keystore")
+            storePassword = "lqlq123456"
+            keyAlias = "lqlq"
+            keyPassword = "lqlq123456"
+        }
+    }
+
+    buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("lqlq")
+        }
+        release {
+            isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("lqlq")
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+}
+
+dependencies {
+    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("androidx.webkit:webkit:1.11.0")
+    implementation("androidx.media:media:1.7.0")
+    implementation("androidx.activity:activity-ktx:1.9.2")
+}

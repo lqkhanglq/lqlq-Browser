@@ -1,0 +1,16 @@
+lqlq Browser v0.20
+
+- Đổi Shield Image Studio thành lqlq Image Studio.
+- Thiết kế lại Chỉnh một ảnh trên điện thoại.
+- Thêm thanh công cụ cố định: Ảnh, Lịch sử, Biến đổi, Cắt, Chia, Lưu.
+- Chuyển các nhóm nút thành bảng trượt từ dưới lên.
+- Mỗi lần chỉ hiện một nhóm công cụ.
+- Giữ ảnh luôn hiển thị trong vùng chính.
+- Tự ẩn phần giới thiệu sau khi mở ảnh.
+- Thêm nút Đổi ảnh.
+- Thêm thanh Áp dụng/Hủy riêng khi cắt.
+- Mở Image Studio trên điện thoại vào thẳng Chỉnh một ảnh.
+- Không thay đổi giao diện PC.
+
+- Giữ cuộn bình thường cho chế độ Xử lý nhiều ảnh trên điện thoại.
+- Chỉ khóa vùng cuộn khi đang ở Chỉnh một ảnh.

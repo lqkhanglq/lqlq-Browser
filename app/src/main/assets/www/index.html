@@ -1,0 +1,1805 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>lqlq Browser Prototype</title>
+  <meta name="theme-color" content="#11A85B" />
+  <meta name="application-name" content="lqlq Browser" />
+  <meta name="apple-mobile-web-app-title" content="lqlq Browser" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <link rel="icon" href="favicon.ico" sizes="any" />
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/icons/icon-32.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/icon-180.png" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app" class="app">
+    <header class="top-shell">
+      <div class="tab-strip" id="tabStrip"></div>
+
+      <div class="toolbar">
+        <div class="nav-controls" aria-label="Điều hướng">
+          <button class="icon-btn" id="backBtn" title="Quay lại" aria-label="Quay lại">
+            <span aria-hidden="true">‹</span>
+          </button>
+          <button class="icon-btn" id="forwardBtn" title="Tiến tới" aria-label="Tiến tới">
+            <span aria-hidden="true">›</span>
+          </button>
+          <button class="icon-btn" id="reloadBtn" title="Tải lại" aria-label="Tải lại">
+            <span aria-hidden="true">↻</span>
+          </button>
+        </div>
+
+        <button
+          class="icon-btn mobile-only-control mobile-home-button"
+          id="mobileHomeBtn"
+          title="Trang chủ"
+          aria-label="Mở trang chủ"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m3.5 10.5 8.5-7 8.5 7"/>
+            <path d="M5.5 9.5V21h13V9.5"/>
+            <path d="M9.2 21v-6.7h5.6V21"/>
+          </svg>
+        </button>
+
+        <button class="icon-btn reader-toolbar-btn" id="readerToolbarBtn" title="Đọc truyện TXT" aria-label="Mở công cụ đọc truyện TXT">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 5.5c2.7-.7 5.2-.2 8 1.5v12c-2.8-1.7-5.3-2.2-8-1.5v-12Z"/>
+            <path d="M20 5.5c-2.7-.7-5.2-.2-8 1.5v12c2.8-1.7 5.3-2.2 8-1.5v-12Z"/>
+            <path d="M8 10h1.5M8 13h1.5M16 9.5c1.2.8 1.2 3.2 0 4"/>
+          </svg>
+        </button>
+
+        <button
+          class="icon-btn media-toolbar-btn"
+          id="mediaToolbarBtn"
+          title="Nhạc và video nền"
+          aria-label="Mở trình phát nhạc và video nền"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M9 18V6l10-2v12"/>
+            <circle cx="6.5" cy="18" r="2.5"/>
+            <circle cx="16.5" cy="16" r="2.5"/>
+          </svg>
+          <span class="media-live-indicator hidden" id="mediaLiveIndicator"></span>
+        </button>
+
+        <button
+          class="icon-btn image-editor-toolbar-btn"
+          id="imageEditorToolbarBtn"
+          title="Shield Image Studio"
+          aria-label="Mở công cụ chỉnh ảnh"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3.5" y="4" width="17" height="16" rx="3"/>
+            <circle cx="9" cy="9.2" r="1.7"/>
+            <path d="m5.5 17 4.3-4.4 3.1 3 2.2-2.1 3.4 3.5"/>
+            <path d="M17.8 2.7v4.2M15.7 4.8h4.2"/>
+          </svg>
+        </button>
+
+        <div class="address-wrap">
+          <button
+            class="address-shield security-center-trigger"
+            id="securityCenterBtn"
+            title="Mở Trung tâm Shield"
+            aria-label="Mở Trung tâm Shield"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 2.8 19 5.6v5.5c0 4.6-2.9 8.6-7 10.1-4.1-1.5-7-5.5-7-10.1V5.6L12 2.8Z"/>
+              <path d="m8.6 12 2.1 2.1 4.8-5"/>
+            </svg>
+          </button>
+          <input id="addressInput" class="address-input" value="https://google.com" aria-label="Thanh địa chỉ" />
+          <span class="address-status" title="Kết nối được bảo vệ">Được bảo vệ</span>
+          <button class="go-btn" id="goBtn">Đi</button>
+        </div>
+
+        <button
+          class="icon-btn desktop-save-page-button"
+          id="desktopSavePageBtn"
+          title="Lưu trang hiện tại"
+          aria-label="Lưu trang hiện tại"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6.5 4.5h11v15l-5.5-3.2-5.5 3.2z"/>
+          </svg>
+        </button>
+
+        <button
+          class="icon-btn mobile-only-control mobile-new-tab-button"
+          id="mobileNewTabBtn"
+          title="Thẻ mới"
+          aria-label="Mở thẻ mới"
+        >
+          <span aria-hidden="true">＋</span>
+        </button>
+
+        <button
+          class="icon-btn mobile-only-control mobile-tab-count-button"
+          id="mobileTabsBtn"
+          title="Các thẻ đang mở"
+          aria-label="Xem các thẻ đang mở"
+        >
+          <span id="mobileTabCount">1</span>
+        </button>
+
+        <button class="icon-btn menu-trigger" id="menuBtn" title="Menu" aria-label="Mở menu">
+          <span class="menu-lines" aria-hidden="true"></span>
+        </button>
+      </div>
+    </header>
+
+    <button
+      class="mobile-toolbar-reveal"
+      id="mobileToolbarReveal"
+      type="button"
+      aria-label="Hiện thanh công cụ trình duyệt"
+      aria-hidden="true"
+      title="Hiện thanh công cụ"
+    >
+      <span aria-hidden="true"></span>
+    </button>
+
+    <main class="browser-stage">
+      <section class="page-card" id="pageView">
+        <div class="hero-header">
+          <div class="brand-lockup">
+            <div class="brand-mark" aria-hidden="true">
+              <svg viewBox="0 0 64 64">
+                <path class="brand-shield" d="M32 5 53 13v16c0 13.6-8.7 25.3-21 30C19.7 54.3 11 42.6 11 29V13L32 5Z"/>
+                <path class="brand-check" d="m22 31 7 7 14-16"/>
+              </svg>
+            </div>
+            <div>
+              <span class="eyebrow">DUYỆT WEB AN TOÀN HƠN</span>
+              <h1 id="pageTitle">lqlq Browser</h1>
+              <p id="pageUrl" class="page-url">https://google.com</p>
+            </div>
+          </div>
+
+          <div class="protection-pill">
+            <span class="protection-pulse"></span>
+            <div>
+              <b>Shield đang hoạt động</b>
+              <small>Quảng cáo và popup được kiểm soát</small>
+            </div>
+          </div>
+        </div>
+
+        <div class="home-search-shell">
+          <span class="home-search-icon" aria-hidden="true">⌕</span>
+          <input
+            id="fakeSearch"
+            autocomplete="off"
+            inputmode="url"
+            placeholder="Tìm kiếm hoặc nhập địa chỉ web"
+            aria-label="Tìm kiếm hoặc nhập địa chỉ web"
+          />
+          <button
+            id="fakeSearchBtn"
+            type="button"
+            title="Tìm kiếm"
+            aria-label="Tìm kiếm"
+          >→</button>
+        </div>
+
+        <section class="saved-shortcuts-section">
+          <div class="saved-shortcuts-heading">
+            <div>
+              <span class="section-kicker">TRUY CẬP NHANH</span>
+              <h2>Trang đã lưu</h2>
+            </div>
+
+            <div class="saved-shortcuts-actions">
+              <button id="homeSaveCurrentPage" type="button">
+                <span>☆</span>
+                Lưu trang này
+              </button>
+              <button id="homeOpenSavedPages" type="button">
+                Xem tất cả
+              </button>
+            </div>
+          </div>
+
+          <div
+            class="saved-shortcut-grid"
+            id="savedShortcutGrid"
+            aria-live="polite"
+          ></div>
+        </section>
+
+        <div class="dashboard-grid">
+          <article class="status-card protection-card">
+            <div class="card-heading">
+              <span class="card-icon shield-card-icon">◆</span>
+              <div>
+                <span class="section-kicker">BẢO VỆ</span>
+                <h3>Trạng thái thời gian thực</h3>
+              </div>
+            </div>
+
+            <div class="status-list">
+              <div class="status-row">
+                <span class="status-check">✓</span>
+                <div><b>Bộ lọc quảng cáo</b><small>Luôn bật</small></div>
+                <span class="status-tag good">Đang chạy</span>
+              </div>
+              <div class="status-row">
+                <span class="status-check">✓</span>
+                <div><b>Chặn popup và chuyển hướng</b><small>Giữ trang trong thẻ hiện tại</small></div>
+                <span class="status-tag good">Đang chạy</span>
+              </div>
+              <div class="status-row">
+                <span class="status-check">✓</span>
+                <div><b>Tương thích cảm ứng</b><small id="androidAdblockBadge">Android đã sẵn sàng</small></div>
+                <span class="status-tag neutral">Sẵn sàng</span>
+              </div>
+            </div>
+          </article>
+
+          <article class="status-card workflow-card">
+            <div class="card-heading">
+              <span class="card-icon workflow-card-icon">↗</span>
+              <div>
+                <span class="section-kicker">CÔNG CỤ</span>
+                <h3>Thao tác nhanh</h3>
+              </div>
+            </div>
+
+            <div class="workflow-actions">
+              <button data-ui-action="history">
+                <span>◷</span>
+                <div><b>Mở nhật ký</b><small>Xem các trang gần đây</small></div>
+              </button>
+              <button data-ui-action="bookmarks">
+                <span>★</span>
+                <div><b>Mở trang đã lưu</b><small>Xem và quản lý các lối tắt đã lưu</small></div>
+              </button>
+              <button data-ui-action="save-page-html">
+                <span>⇩</span>
+                <div><b>Lưu trang ngoại tuyến</b><small>Tải trang HTML đang mở</small></div>
+              </button>
+              <button data-ui-action="security-center">
+                <span>◈</span>
+                <div><b>Trung tâm Shield</b><small>Quyền, HTTPS, IP và tải xuống</small></div>
+              </button>
+            </div>
+          </article>
+        </div>
+
+        <p class="prototype-note">
+          Bản HTML dùng để kiểm tra giao diện và luồng thao tác. Bản APK WebView sẽ mở trang thật,
+          chặn request ở cấp Android và lưu trang ngoại tuyến đầy đủ hơn.
+        </p>
+      </section>
+
+      <aside class="side-drawer" id="sideDrawer">
+        <div class="drawer-head">
+          <h2 id="drawerTitle">Nhật ký</h2>
+          <button class="icon-btn" id="closeDrawer">×</button>
+        </div>
+        <div id="drawerContent" class="drawer-content"></div>
+      </aside>
+    </main>
+
+    <div class="mobile-menu-backdrop hidden" id="mobileMenuBackdrop"></div>
+
+    <div class="chrome-menu hidden" id="chromeMenu">
+      <div class="menu-header">
+        <div class="menu-brand">
+          <span class="menu-brand-mark">
+            <svg viewBox="0 0 24 24">
+              <path d="M12 2.8 19 5.6v5.5c0 4.6-2.9 8.6-7 10.1-4.1-1.5-7-5.5-7-10.1V5.6L12 2.8Z"/>
+              <path d="m8.6 12 2.1 2.1 4.8-5"/>
+            </svg>
+          </span>
+          <div><b>lqlq Browser</b><small>Bảo vệ đang hoạt động</small></div>
+        </div>
+        <span class="menu-live-dot" title="Đang hoạt động"></span>
+      </div>
+
+      <div class="menu-protection-summary">
+        <span>◈</span>
+        <div><b>Chặn quảng cáo</b><small>Popup và chuyển hướng đã được kiểm soát</small></div>
+        <span class="menu-badge">Luôn bật</span>
+      </div>
+
+      <div class="menu-section-label">Phiên duyệt</div>
+      <button data-action="new-tab">
+        <span class="menu-icon">＋</span>
+        <span class="menu-copy"><b>Thẻ mới</b><small>Mở trang mới</small></span>
+        <kbd>Ctrl+T</kbd>
+      </button>
+      <button data-action="new-window">
+        <span class="menu-icon">▣</span>
+        <span class="menu-copy"><b>Cửa sổ mới</b><small>Tạo phiên duyệt khác</small></span>
+        <kbd>Ctrl+N</kbd>
+      </button>
+
+      <div class="menu-section-label">Dữ liệu và nội dung</div>
+      <button data-action="history">
+        <span class="menu-icon">◷</span>
+        <span class="menu-copy"><b>Nhật ký</b><small>Các trang đã truy cập</small></span>
+      </button>
+      <button data-action="downloads">
+        <span class="menu-icon">⇩</span>
+        <span class="menu-copy"><b>Tệp đã tải xuống</b><small>Quản lý nội dung đã lưu</small></span>
+      </button>
+      <button data-action="story-reader" class="reader-menu-entry">
+        <span class="menu-icon">▤</span>
+        <span class="menu-copy"><b>Đọc truyện TXT</b><small>Lấy chương web, mở TXT và nghe bằng TTS</small></span>
+        <span class="menu-new">Mới</span>
+      </button>
+      <button data-action="chapter-clipper" class="chapter-clipper-menu-entry">
+        <span class="menu-icon chapter-clipper">TXT+</span>
+        <span class="menu-copy">
+          <b>Chapter Clipper</b>
+          <small>Lưu chương FULL, ghép lô TXT và chạy tự động</small>
+        </span>
+        <span class="menu-new">Mới</span>
+      </button>
+      <button data-action="background-media" class="media-menu-entry">
+        <span class="menu-icon media">♫</span>
+        <span class="menu-copy">
+          <b>Nhạc và video nền</b>
+          <small>Phát liên tục khi chuyển thẻ, có trình phát thu nhỏ</small>
+        </span>
+        <span class="menu-new">Mới</span>
+      </button>
+
+      <button data-action="image-editor" class="image-editor-menu-entry">
+        <span class="menu-icon image-editor">◇</span>
+        <span class="menu-copy">
+          <b>Shield Image Studio</b>
+          <small>Cắt, xoay, lật, đổi kích thước và xử lý nhiều ảnh</small>
+        </span>
+        <span class="menu-new">Mới</span>
+      </button>
+      <button data-action="save-page-html">
+        <span class="menu-icon accent">⌑</span>
+        <span class="menu-copy"><b>Lưu trang ngoại tuyến</b><small>Tải HTML đang mở</small></span>
+        <span class="menu-new">Mới</span>
+      </button>
+      <button data-action="open-offline-html" id="openOfflineHtmlBtn" class="hidden">
+        <span class="menu-icon accent">▤</span>
+        <span class="menu-copy"><b>Mở trang ngoại tuyến</b><small>Mở tệp HTML đã lưu trong máy</small></span>
+        <span class="menu-new">Mới</span>
+      </button>
+      <button data-action="save-current-page" class="save-current-page-menu-entry">
+        <span class="menu-icon saved-page">☆</span>
+        <span class="menu-copy">
+          <b>Lưu trang hiện tại</b>
+          <small>Thêm website đang mở vào trang chủ</small>
+        </span>
+      </button>
+      <button data-action="bookmarks" class="saved-pages-menu-entry">
+        <span class="menu-icon saved-page">★</span>
+        <span class="menu-copy">
+          <b>Trang đã lưu</b>
+          <small>Mở, quản lý hoặc xóa các website đã lưu</small>
+        </span>
+        <span class="menu-chevron">›</span>
+      </button>
+      <button data-action="tab-groups">
+        <span class="menu-icon">▦</span>
+        <span class="menu-copy"><b>Nhóm thẻ</b><small>Sắp xếp các thẻ đang mở</small></span>
+      </button>
+
+
+      <div class="menu-section-label">Cá nhân hóa</div>
+      <button data-action="settings" class="appearance-menu-entry">
+        <span class="menu-icon appearance">◐</span>
+        <span class="menu-copy">
+          <b>Giao diện và màu sắc</b>
+          <small>Sáng, tối, dịu mắt và màu chủ đạo</small>
+        </span>
+        <span class="menu-chevron">›</span>
+      </button>
+      <button
+        data-action="mobile-toolbar-display"
+        class="mobile-toolbar-settings-entry"
+      >
+        <span class="menu-icon mobile-toolbar-setting">↕</span>
+        <span class="menu-copy">
+          <b>Thanh công cụ điện thoại</b>
+          <small id="mobileToolbarModeText">Tự động ẩn khi cuộn</small>
+        </span>
+        <span class="menu-chevron">›</span>
+      </button>
+
+      <div class="menu-section-label">Bảo mật và quyền riêng tư</div>
+
+      <button data-action="security-center" class="security-menu-entry">
+        <span class="menu-icon success">◈</span>
+        <span class="menu-copy">
+          <b>Trung tâm Shield</b>
+          <small>HTTPS, quyền website, IP và tải xuống</small>
+        </span>
+        <span class="menu-chevron">›</span>
+      </button>
+
+      <button data-action="adblock">
+        <span class="menu-icon success">◈</span>
+        <span class="menu-copy"><b>Bộ lọc quảng cáo</b><small>Quảng cáo và popup</small></span>
+        <span class="menu-badge success">Đang bật</span>
+      </button>
+      <button data-action="clear-data">
+        <span class="menu-icon danger">⌫</span>
+        <span class="menu-copy"><b>Xóa dữ liệu duyệt web</b><small>Lịch sử, cookie và bộ nhớ đệm</small></span>
+      </button>
+
+      <div class="menu-zoom-card">
+        <div>
+          <span class="menu-section-label inline-label">Hiển thị</span>
+          <b>Thu phóng trang</b>
+        </div>
+        <div class="zoom-controls">
+          <button data-action="zoom-out" aria-label="Thu nhỏ">−</button>
+          <strong id="zoomLabel">100%</strong>
+          <button data-action="zoom-in" aria-label="Phóng to">+</button>
+          <button data-action="fullscreen" aria-label="Toàn màn hình">⛶</button>
+        </div>
+      </div>
+
+      <div class="menu-section-label">Công cụ</div>
+      <button data-action="print">
+        <span class="menu-icon">▤</span>
+        <span class="menu-copy"><b>In</b><small>In hoặc lưu dưới dạng PDF</small></span>
+      </button>
+      <button data-action="find">
+        <span class="menu-icon">⌕</span>
+        <span class="menu-copy"><b>Tìm kiếm trên trang</b><small>Tìm nhanh nội dung hiện tại</small></span>
+      </button>
+      <button data-action="translate">
+        <span class="menu-icon">文</span>
+        <span class="menu-copy"><b>Dịch</b><small>Dịch nội dung trang</small></span>
+      </button>
+      <button data-action="share">
+        <span class="menu-icon">↗</span>
+        <span class="menu-copy"><b>Truyền, lưu và chia sẻ</b><small>Gửi hoặc sao chép nội dung</small></span>
+      </button>
+      <button data-action="tools">
+        <span class="menu-icon accent">◆</span>
+        <span class="menu-copy"><b>Công cụ khác</b><small>VPN, phát triển và tiện ích</small></span>
+        <span class="menu-chevron">›</span>
+      </button>
+
+      <div class="menu-footer">
+        <button data-action="help"><span>?</span>Trợ giúp</button>
+        <button data-action="settings"><span>⚙</span>Cài đặt chung</button>
+        <button data-action="exit"><span>↩</span>Thoát</button>
+      </div>
+    </div>
+
+    <div class="chrome-menu tools-menu hidden" id="toolsMenu">
+      <div class="submenu-header">
+        <button data-action="tools-back" class="submenu-back" aria-label="Quay lại">‹</button>
+        <div><span class="menu-section-label inline-label">CÔNG CỤ</span><b>Công cụ khác</b></div>
+      </div>
+
+      <button data-action="extensions">
+        <span class="menu-icon">◇</span>
+        <span class="menu-copy"><b>Tiện ích mở rộng</b><small>Quản lý công cụ bổ sung</small></span>
+      </button>
+      <button data-action="task-manager">
+        <span class="menu-icon">▤</span>
+        <span class="menu-copy"><b>Trình quản lý tác vụ</b><small>Theo dõi hoạt động trình duyệt</small></span>
+      </button>
+      <button data-action="developer-tools">
+        <span class="menu-icon">⌘</span>
+        <span class="menu-copy"><b>Công cụ dành cho nhà phát triển</b><small>Kiểm tra và gỡ lỗi trang</small></span>
+      </button>
+      <button data-action="warp-tools" class="warp-menu-item">
+        <span class="menu-icon warp">1</span>
+        <span class="menu-copy"><b>1.1.1.1 / WARP</b><small>Mở kết nối riêng tư Cloudflare</small></span>
+        <span class="menu-chevron">›</span>
+      </button>
+      <button data-action="advanced-search">
+        <span class="menu-icon">⌕</span>
+        <span class="menu-copy"><b>Tìm kiếm nâng cao</b><small>Công cụ tìm kiếm bổ sung</small></span>
+      </button>
+    </div>
+
+
+
+    <div class="media-center-overlay hidden" id="mediaCenterOverlay">
+      <section class="media-center-shell">
+        <header class="media-center-header">
+          <div class="media-center-title">
+            <span class="media-center-mark">♫</span>
+            <div>
+              <span class="section-kicker">TRÌNH PHÁT TOÀN CỤC</span>
+              <h2>Nhạc và video nền</h2>
+              <p>Trình phát tồn tại độc lập nên chuyển thẻ không làm dừng âm thanh.</p>
+            </div>
+          </div>
+
+          <div class="media-center-header-actions">
+            <button class="media-icon-action" id="mediaMinimizeBtn" title="Thu nhỏ">▱</button>
+            <button class="manager-close" id="mediaClosePanelBtn" aria-label="Đóng">×</button>
+          </div>
+        </header>
+
+        <div class="media-center-body">
+          <section class="media-source-card">
+            <div class="media-section-heading">
+              <div>
+                <span class="section-kicker">NGUỒN PHÁT</span>
+                <h3>Mở nhạc hoặc video</h3>
+              </div>
+              <span class="media-source-badge" id="mediaSourceBadge">Chưa có nguồn</span>
+            </div>
+
+            <div class="media-source-input-row">
+              <input
+                id="mediaUrlInput"
+                type="url"
+                placeholder="Dán liên kết YouTube hoặc tệp .mp3/.mp4/.webm..."
+              />
+              <button class="media-primary-button" id="mediaOpenUrlBtn">Mở</button>
+              <label class="media-file-button">
+                Chọn file
+                <input
+                  id="mediaFileInput"
+                  type="file"
+                  accept="audio/*,video/*"
+                  hidden
+                />
+              </label>
+            </div>
+
+            <div class="media-source-examples">
+              <button data-media-example="youtube">YouTube</button>
+              <button data-media-example="audio">Nhạc trực tiếp</button>
+              <button data-media-example="video">Video trực tiếp</button>
+              <span>Không trích xuất âm thanh hoặc vượt khóa nội dung.</span>
+            </div>
+          </section>
+
+          <div class="media-layout">
+            <section class="media-stage-card">
+              <div class="media-stage" id="mediaStage">
+                <div class="media-empty-state" id="mediaEmptyState">
+                  <span>♫</span>
+                  <b>Chưa có nội dung đang phát</b>
+                  <small>
+                    Mở liên kết YouTube bằng trình nhúng chính thức, liên kết media trực tiếp
+                    hoặc file trong máy.
+                  </small>
+                </div>
+
+                <iframe
+                  class="media-youtube-frame hidden"
+                  id="mediaYoutubeFrame"
+                  title="YouTube player"
+                  allow="autoplay; encrypted-media; picture-in-picture"
+                  referrerpolicy="strict-origin-when-cross-origin"
+                ></iframe>
+
+                <video
+                  class="media-html-player hidden"
+                  id="mediaHtmlPlayer"
+                  controls
+                  playsinline
+                  preload="metadata"
+                ></video>
+              </div>
+
+              <div class="media-now-playing">
+                <span class="media-now-icon" id="mediaNowIcon">♫</span>
+                <div>
+                  <b id="mediaNowTitle">Chưa phát nội dung</b>
+                  <small id="mediaNowSubtitle">Âm thanh sẽ tiếp tục khi chuyển thẻ trong prototype.</small>
+                </div>
+                <span class="media-playing-pill hidden" id="mediaPlayingPill">Đang phát</span>
+              </div>
+            </section>
+
+            <aside class="media-controls-card">
+              <div class="media-section-heading compact">
+                <div>
+                  <span class="section-kicker">CHẾ ĐỘ PHÁT</span>
+                  <h3>Điều khiển</h3>
+                </div>
+              </div>
+
+              <div class="media-mode-grid">
+                <button id="mediaMiniModeBtn">
+                  <span>▱</span>
+                  <div><b>Trình phát thu nhỏ</b><small>Nổi trên góc khi làm việc ở thẻ khác</small></div>
+                </button>
+                <button id="mediaAudioModeBtn">
+                  <span>♫</span>
+                  <div><b>Chỉ âm thanh</b><small>Dành cho file nhạc hoặc video trực tiếp</small></div>
+                </button>
+                <button id="mediaPipBtn">
+                  <span>▣</span>
+                  <div><b>Picture-in-Picture</b><small>Dùng cửa sổ nổi hệ thống khi được hỗ trợ</small></div>
+                </button>
+                <button id="mediaStopBtn">
+                  <span>■</span>
+                  <div><b>Dừng và đóng</b><small>Ngừng phát hoàn toàn</small></div>
+                </button>
+              </div>
+
+              <div class="media-volume-card">
+                <div>
+                  <b>Âm lượng</b>
+                  <span id="mediaVolumeLabel">100%</span>
+                </div>
+                <input id="mediaVolumeRange" type="range" min="0" max="100" value="100" />
+              </div>
+
+              <div class="media-background-status">
+                <span class="media-background-dot"></span>
+                <div>
+                  <b>Phát liên tục giữa các thẻ</b>
+                  <small>
+                    Có hiệu lực với các thẻ mô phỏng bên trong lqlq Browser.
+                  </small>
+                </div>
+              </div>
+
+              <p class="media-limit-note">
+                HTML không đảm bảo phát khi ứng dụng bị đưa hẳn xuống nền hoặc khóa màn hình.
+                Bản APK cần MediaSession và foreground service để làm việc đó.
+              </p>
+            </aside>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <aside class="global-media-mini hidden" id="globalMediaMini">
+      <div class="global-media-drag" id="globalMediaDrag">
+        <span class="global-media-source-icon" id="globalMediaSourceIcon">♫</span>
+        <div class="global-media-mini-copy">
+          <b id="globalMediaMiniTitle">Chưa có nội dung</b>
+          <small id="globalMediaMiniSubtitle">Trình phát nền</small>
+        </div>
+        <button id="globalMediaRestoreBtn" title="Mở rộng">▣</button>
+        <button id="globalMediaHideBtn" title="Ẩn bảng">—</button>
+        <button id="globalMediaStopBtn" title="Dừng">×</button>
+      </div>
+
+      <div class="global-media-preview" id="globalMediaPreview">
+        <iframe
+          class="global-mini-youtube hidden"
+          id="globalMiniYoutubeFrame"
+          title="YouTube mini player"
+          allow="autoplay; encrypted-media; picture-in-picture"
+          referrerpolicy="strict-origin-when-cross-origin"
+        ></iframe>
+
+        <video
+          class="global-mini-video hidden"
+          id="globalMiniVideo"
+          controls
+          playsinline
+          preload="metadata"
+        ></video>
+      </div>
+
+      <div class="global-media-collapsed hidden" id="globalMediaCollapsed">
+        <button id="globalMediaCollapsedRestore">♫</button>
+      </div>
+    </aside>
+
+
+    <div class="image-editor-backdrop hidden" id="imageEditorBackdrop"></div>
+
+    <section
+      class="image-editor-shell hidden"
+      id="imageEditorShell"
+      aria-hidden="true"
+      aria-label="Shield Image Studio"
+    >
+      <header class="image-editor-header">
+        <div class="image-editor-heading">
+          <span class="image-editor-logo" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <rect x="3.5" y="4" width="17" height="16" rx="3"/>
+              <circle cx="9" cy="9.2" r="1.7"/>
+              <path d="m5.5 17 4.3-4.4 3.1 3 2.2-2.1 3.4 3.5"/>
+              <path d="M17.8 2.7v4.2M15.7 4.8h4.2"/>
+            </svg>
+          </span>
+
+          <div>
+            <span class="section-kicker">CÔNG CỤ HÌNH ẢNH</span>
+            <h2>Shield Image Studio</h2>
+            <p>Cắt · xoay · lật · đổi kích thước · chia ảnh · xuất ZIP</p>
+          </div>
+        </div>
+
+        <div class="image-editor-header-actions">
+          <span class="image-editor-status" id="imageEditorStatus" data-state="idle">
+            Sẵn sàng
+          </span>
+          <button class="manager-close" id="closeImageEditor" aria-label="Đóng">×</button>
+        </div>
+      </header>
+
+      <nav class="image-editor-tabs" aria-label="Chế độ chỉnh ảnh">
+        <button class="active" data-image-editor-tab="batch">
+          <span>▦</span>
+          Xử lý nhiều ảnh
+        </button>
+        <button data-image-editor-tab="single">
+          <span>◇</span>
+          Chỉnh một ảnh
+        </button>
+      </nav>
+
+      <div class="image-editor-scroll">
+        <section class="image-editor-pane active" data-image-editor-pane="batch">
+          <div class="image-editor-intro-card">
+            <div>
+              <span class="section-kicker">XỬ LÝ HÀNG LOẠT</span>
+              <h3>Chỉnh nhiều ảnh cùng lúc</h3>
+              <p>
+                Giữ nguyên chức năng từ Editoranhlqlq: đổi kích thước, lật ngang,
+                lật dọc, xoay và lưu tất cả thành một tệp ZIP.
+              </p>
+            </div>
+
+            <label class="image-editor-primary-button image-editor-file-button">
+              ＋ Chọn nhiều ảnh
+              <input
+                id="batchImageInput"
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                multiple
+                hidden
+              />
+            </label>
+          </div>
+
+          <div class="image-editor-drop-zone" id="batchImageDropZone">
+            <span class="image-editor-drop-icon">▦</span>
+            <div>
+              <b>Kéo nhiều ảnh vào đây</b>
+              <small>PNG, JPG, WebP hoặc GIF tĩnh · Có thể tiếp tục thêm ảnh</small>
+            </div>
+            <button type="button" id="batchBrowseButton">Chọn tệp</button>
+          </div>
+
+          <div class="image-editor-workspace batch-workspace">
+            <aside class="image-editor-sidebar">
+              <section class="image-tool-card">
+                <div class="image-tool-heading">
+                  <span>◎</span>
+                  <div>
+                    <b>Phạm vi áp dụng</b>
+                    <small id="batchSelectionSummary">Chưa có ảnh</small>
+                  </div>
+                </div>
+
+                <div class="image-inline-actions">
+                  <button id="batchSelectAll">Chọn tất cả</button>
+                  <button id="batchSelectNone">Bỏ chọn</button>
+                </div>
+              </section>
+
+              <section class="image-tool-card">
+                <div class="image-tool-heading">
+                  <span>↔</span>
+                  <div>
+                    <b>Kích thước</b>
+                    <small>Theo phần trăm ảnh gốc</small>
+                  </div>
+                </div>
+
+                <label class="image-field">
+                  <span>Tỉ lệ</span>
+                  <div class="image-input-suffix">
+                    <input id="batchScaleInput" type="number" min="1" max="500" value="100" />
+                    <i>%</i>
+                  </div>
+                </label>
+
+                <button class="image-editor-action primary" id="batchApplyScale">
+                  Áp dụng kích thước
+                </button>
+              </section>
+
+              <section class="image-tool-card">
+                <div class="image-tool-heading">
+                  <span>↻</span>
+                  <div>
+                    <b>Xoay và lật</b>
+                    <small>Áp dụng cho các ảnh đã chọn</small>
+                  </div>
+                </div>
+
+                <label class="image-field">
+                  <span>Góc xoay thêm</span>
+                  <div class="image-input-suffix">
+                    <input id="batchRotateInput" type="number" min="-360" max="360" step="5" value="90" />
+                    <i>°</i>
+                  </div>
+                </label>
+
+                <div class="image-two-column-actions">
+                  <button id="batchRotateButton">Xoay</button>
+                  <button id="batchFlipHorizontal">Lật ngang</button>
+                  <button id="batchFlipVertical">Lật dọc</button>
+                  <button id="batchResetTransforms">Đặt lại</button>
+                </div>
+              </section>
+
+              <section class="image-tool-card">
+                <div class="image-tool-heading">
+                  <span>⇩</span>
+                  <div>
+                    <b>Xuất ảnh</b>
+                    <small>ZIP được tạo ngay trong máy</small>
+                  </div>
+                </div>
+
+                <label class="image-field">
+                  <span>Định dạng</span>
+                  <select id="batchExportFormat">
+                    <option value="image/png">PNG</option>
+                    <option value="image/jpeg">JPG</option>
+                    <option value="image/webp">WebP</option>
+                  </select>
+                </label>
+
+                <button class="image-editor-action primary" id="batchDownloadZip">
+                  Tải tất cả dạng ZIP
+                </button>
+                <button class="image-editor-action danger" id="batchRemoveSelected">
+                  Xóa ảnh đã chọn
+                </button>
+                <button class="image-editor-action subtle-danger" id="batchClearAll">
+                  Xóa toàn bộ
+                </button>
+              </section>
+            </aside>
+
+            <main class="image-editor-main">
+              <div class="image-editor-section-heading">
+                <div>
+                  <span class="section-kicker">DANH SÁCH ẢNH</span>
+                  <h3 id="batchImageCount">0 ảnh</h3>
+                </div>
+                <span class="image-editor-hint">
+                  Nhấn vào thẻ ảnh để chọn hoặc bỏ chọn
+                </span>
+              </div>
+
+              <div class="batch-image-grid" id="batchImageGrid">
+                <div class="image-editor-empty">
+                  <span>▦</span>
+                  <b>Chưa có ảnh hàng loạt</b>
+                  <small>Thả nhiều ảnh vào vùng phía trên để bắt đầu.</small>
+                </div>
+              </div>
+            </main>
+          </div>
+        </section>
+
+        <section class="image-editor-pane" data-image-editor-pane="single">
+          <div class="image-editor-intro-card">
+            <div>
+              <span class="section-kicker">CHỈNH MỘT ẢNH</span>
+              <h3>Cắt và chỉnh sửa chính xác</h3>
+              <p>
+                Cắt tự do bằng tám điểm kéo, đổi kích thước, lật, xoay,
+                chia thành nhiều phần và xuất ảnh theo định dạng mong muốn.
+              </p>
+            </div>
+
+            <label class="image-editor-primary-button image-editor-file-button">
+              ＋ Chọn một ảnh
+              <input
+                id="singleImageInput"
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                hidden
+              />
+            </label>
+          </div>
+
+          <div class="image-editor-drop-zone compact" id="singleImageDropZone">
+            <span class="image-editor-drop-icon">◇</span>
+            <div>
+              <b>Kéo một ảnh vào đây</b>
+              <small id="singleDropHint">PNG, JPG, WebP hoặc GIF tĩnh</small>
+            </div>
+            <button type="button" id="singleBrowseButton">Chọn ảnh</button>
+          </div>
+
+          <div class="image-editor-workspace single-workspace">
+            <aside class="image-editor-sidebar">
+              <section class="image-tool-card">
+                <div class="image-tool-heading">
+                  <span>↶</span>
+                  <div>
+                    <b>Lịch sử</b>
+                    <small>Hoàn tác các bước chỉnh sửa</small>
+                  </div>
+                </div>
+
+                <div class="image-two-column-actions">
+                  <button id="singleUndoButton">Hoàn tác</button>
+                  <button id="singleRedoButton">Làm lại</button>
+                  <button id="singleResetButton">Ảnh gốc</button>
+                  <button id="singleClearButton">Đóng ảnh</button>
+                </div>
+              </section>
+
+              <section class="image-tool-card">
+                <div class="image-tool-heading">
+                  <span>↔</span>
+                  <div>
+                    <b>Biến đổi</b>
+                    <small>Kích thước, xoay và lật</small>
+                  </div>
+                </div>
+
+                <label class="image-field">
+                  <span>Tỉ lệ</span>
+                  <div class="image-input-suffix">
+                    <input id="singleScaleInput" type="number" min="1" max="500" value="100" />
+                    <i>%</i>
+                  </div>
+                </label>
+
+                <button class="image-editor-action" id="singleResizeButton">
+                  Đổi kích thước
+                </button>
+
+                <label class="image-field">
+                  <span>Góc xoay</span>
+                  <div class="image-input-suffix">
+                    <input id="singleRotateInput" type="number" min="-360" max="360" step="5" value="90" />
+                    <i>°</i>
+                  </div>
+                </label>
+
+                <div class="image-two-column-actions">
+                  <button id="singleRotateButton">Xoay</button>
+                  <button id="singleFlipHorizontal">Lật ngang</button>
+                  <button id="singleFlipVertical">Lật dọc</button>
+                  <button id="singleRotateLeft">−90°</button>
+                </div>
+              </section>
+
+              <section class="image-tool-card">
+                <div class="image-tool-heading">
+                  <span>⌗</span>
+                  <div>
+                    <b>Cắt ảnh</b>
+                    <small>Kéo vùng cắt trực tiếp trên ảnh</small>
+                  </div>
+                </div>
+
+                <button class="image-editor-action primary" id="singleStartCrop">
+                  Bắt đầu cắt
+                </button>
+
+                <div class="image-two-column-actions crop-actions hidden" id="singleCropActions">
+                  <button class="primary" id="singleApplyCrop">Áp dụng</button>
+                  <button id="singleCancelCrop">Hủy</button>
+                </div>
+              </section>
+
+              <section class="image-tool-card">
+                <div class="image-tool-heading">
+                  <span>▦</span>
+                  <div>
+                    <b>Chia ảnh</b>
+                    <small>Cắt thành lưới nhiều phần</small>
+                  </div>
+                </div>
+
+                <div class="image-grid-fields">
+                  <label>
+                    <span>Hàng</span>
+                    <input id="singleRowsInput" type="number" min="1" max="20" value="2" />
+                  </label>
+                  <label>
+                    <span>Cột</span>
+                    <input id="singleColsInput" type="number" min="1" max="20" value="2" />
+                  </label>
+                </div>
+
+                <button class="image-editor-action" id="singleSliceButton">
+                  Tạo các phần ảnh
+                </button>
+              </section>
+
+              <section class="image-tool-card">
+                <div class="image-tool-heading">
+                  <span>⇩</span>
+                  <div>
+                    <b>Lưu ảnh</b>
+                    <small>PNG mặc định giữ nền trong suốt</small>
+                  </div>
+                </div>
+
+                <label class="image-field">
+                  <span>Định dạng</span>
+                  <select id="singleExportFormat">
+                    <option value="image/png">PNG</option>
+                    <option value="image/jpeg">JPG</option>
+                    <option value="image/webp">WebP</option>
+                  </select>
+                </label>
+
+                <label class="image-field image-quality-field hidden" id="singleQualityField">
+                  <span>Chất lượng</span>
+                  <div class="image-input-suffix">
+                    <input id="singleQualityInput" type="number" min="10" max="100" value="92" />
+                    <i>%</i>
+                  </div>
+                </label>
+
+                <button class="image-editor-action primary" id="singleSaveButton">
+                  Tải ảnh đã chỉnh
+                </button>
+              </section>
+            </aside>
+
+            <main class="image-editor-main single-main">
+              <div class="image-editor-section-heading">
+                <div>
+                  <span class="section-kicker">KHUNG CHỈNH SỬA</span>
+                  <h3 id="singleImageTitle">Chưa mở ảnh</h3>
+                </div>
+
+                <div class="single-editor-meta" id="singleImageMeta">
+                  Chưa có dữ liệu
+                </div>
+              </div>
+
+              <div class="single-canvas-stage" id="singleCanvasStage">
+                <div class="single-canvas-placeholder" id="singleCanvasPlaceholder">
+                  <span>◇</span>
+                  <b>Chọn một ảnh để chỉnh sửa</b>
+                  <small>
+                    Ảnh chỉ được xử lý cục bộ trong trình duyệt và không tải lên máy chủ.
+                  </small>
+                </div>
+
+                <div class="single-canvas-wrap hidden" id="singleCanvasWrap">
+                  <canvas id="singleEditorCanvas"></canvas>
+                  <canvas id="singleCropOverlayCanvas"></canvas>
+                </div>
+              </div>
+
+              <div class="single-editor-footer">
+                <span id="singleEditorFooterText">Sẵn sàng</span>
+                <span>Ctrl+Z hoàn tác · Ctrl+Y làm lại</span>
+              </div>
+
+              <section class="slice-results-section hidden" id="sliceResultsSection">
+                <div class="image-editor-section-heading">
+                  <div>
+                    <span class="section-kicker">KẾT QUẢ CHIA ẢNH</span>
+                    <h3 id="sliceResultTitle">0 phần</h3>
+                  </div>
+
+                  <button class="image-editor-primary-button small" id="downloadSlicesZip">
+                    Tải ZIP các phần
+                  </button>
+                </div>
+
+                <div class="slice-results-grid" id="sliceResultsGrid"></div>
+              </section>
+            </main>
+          </div>
+        </section>
+      </div>
+    </section>
+
+
+    <aside
+      class="chapter-clipper-panel hidden"
+      id="chapterClipperPanel"
+      aria-hidden="true"
+      aria-label="Chapter Clipper TXT Plus"
+    >
+      <header class="chapter-clipper-header">
+        <div class="chapter-clipper-brand">
+          <span class="chapter-clipper-mark">TXT+</span>
+          <div>
+            <b>Chapter Clipper</b>
+            <small>TXT Plus v1.3 Auto</small>
+          </div>
+        </div>
+
+        <div class="chapter-clipper-header-actions">
+          <button id="chapterClipperMinimize" title="Thu nhỏ">−</button>
+          <button id="chapterClipperClose" title="Đóng">×</button>
+        </div>
+      </header>
+
+      <div class="chapter-clipper-body" id="chapterClipperBody">
+        <section class="chapter-clipper-auto-card" id="chapterClipperAutoCard">
+          <div class="chapter-clipper-section-heading">
+            <div>
+              <span class="section-kicker">TỰ ĐỘNG</span>
+              <b>Lưu liên tiếp nhiều chương</b>
+            </div>
+            <span class="chapter-clipper-run-badge" id="chapterClipperRunBadge">
+              Sẵn sàng
+            </span>
+          </div>
+
+          <label class="chapter-clipper-number-row">
+            <span>Số chương cần lưu</span>
+            <input id="chapterClipperAutoCount" type="number" min="1" max="5000" value="100" />
+          </label>
+
+          <div class="chapter-clipper-two-buttons">
+            <button class="primary amber" id="chapterClipperAutoStart">
+              ▶ Bắt đầu tự động
+            </button>
+            <button class="danger" id="chapterClipperAutoStop">
+              ■ Dừng
+            </button>
+          </div>
+        </section>
+
+        <section class="chapter-clipper-actions">
+          <button id="chapterClipperSave">
+            <span>▤</span>
+            <div><b>Lưu chương FULL</b><small>Lấy toàn bộ nội dung chương hiện tại</small></div>
+          </button>
+
+          <button class="primary" id="chapterClipperSaveNext">
+            <span>↠</span>
+            <div><b>Lưu FULL & chương tiếp</b><small>Lưu xong rồi chuyển sang chương kế</small></div>
+          </button>
+
+          <button class="test" id="chapterClipperTest">
+            <span>⌕</span>
+            <div><b>Kiểm tra lấy nội dung</b><small>Xem số ký tự, đoạn đầu và đoạn cuối</small></div>
+          </button>
+
+          <button id="chapterClipperExport">
+            <span>⇩</span>
+            <div><b>Xuất TXT ngay</b><small>Đóng gói lô hiện tại thành một file TXT</small></div>
+          </button>
+        </section>
+
+        <div class="chapter-clipper-two-buttons compact">
+          <button id="chapterClipperUndo">↶ Bỏ chương cuối</button>
+          <button class="danger" id="chapterClipperClear">⌫ Xóa lô</button>
+        </div>
+
+        <section class="chapter-clipper-settings">
+          <label class="chapter-clipper-number-row">
+            <span>Tự xuất mỗi</span>
+            <div>
+              <input id="chapterClipperBatchSize" type="number" min="1" max="200" value="10" />
+              <small>chương</small>
+            </div>
+          </label>
+
+          <label class="chapter-clipper-check">
+            <input id="chapterClipperAutoExport" type="checkbox" checked />
+            <i></i>
+            <span>Đủ số thì tự tải TXT</span>
+          </label>
+
+          <label class="chapter-clipper-check">
+            <input id="chapterClipperPopupBlocker" type="checkbox" checked />
+            <i></i>
+            <span>Chặn popup/tab quảng cáo</span>
+          </label>
+        </section>
+
+        <section class="chapter-clipper-status-card">
+          <div class="chapter-clipper-section-heading">
+            <div>
+              <span class="section-kicker">TRẠNG THÁI</span>
+              <b>Lô chương hiện tại</b>
+            </div>
+            <span id="chapterClipperBatchBadge">0/10</span>
+          </div>
+
+          <pre id="chapterClipperStatus">Chưa lưu chương nào.</pre>
+        </section>
+
+        <div class="chapter-clipper-footnote">
+          <span>ⓘ</span>
+          <p id="chapterClipperBridgeNote">
+            Bản HTML đang dùng giao diện mô phỏng. Khi nối WebView/APK,
+            nút này sẽ lấy nội dung từ trang đang mở.
+          </p>
+        </div>
+
+        <a
+          class="chapter-clipper-extension-link"
+          href="tools/chapter_clipper_txt_plus_v1_3_auto.zip"
+          download
+        >
+          Tải tiện ích Chrome gốc v1.3
+        </a>
+
+        <div class="chapter-clipper-hotkeys">
+          Ctrl+Shift+S: lưu · Ctrl+Shift+N: lưu & tiếp · Ctrl+Shift+A: tự động
+        </div>
+      </div>
+    </aside>
+
+
+    <div class="mobile-tabs-overlay hidden" id="mobileTabsOverlay">
+      <section class="mobile-tabs-sheet" aria-label="Các thẻ đang mở">
+        <header class="mobile-tabs-header">
+          <div>
+            <span class="section-kicker">PHIÊN DUYỆT</span>
+            <h2>Các thẻ đang mở</h2>
+          </div>
+
+          <div class="mobile-tabs-header-actions">
+            <button id="mobileTabsAdd" title="Thẻ mới" aria-label="Mở thẻ mới">＋</button>
+            <button id="mobileTabsClose" title="Đóng" aria-label="Đóng danh sách thẻ">×</button>
+          </div>
+        </header>
+
+        <div class="mobile-tabs-grid" id="mobileTabsGrid"></div>
+
+        <footer class="mobile-tabs-footer">
+          <button id="mobileTabsCloseOthers">Đóng các thẻ khác</button>
+          <button class="danger" id="mobileTabsCloseAll">Đóng tất cả</button>
+        </footer>
+      </section>
+    </div>
+
+    <div class="video-panel hidden" id="videoPanel">
+      <div class="video-shell" id="videoShell">
+        <div class="video-head">
+          <div>
+            <b>Công cụ video</b>
+            <small>Chỉ dùng với video bạn có quyền tải/lưu.</small>
+          </div>
+          <button class="icon-btn" id="closeVideoPanel">×</button>
+        </div>
+
+        <div class="video-source-row">
+          <input id="videoUrlInput" type="url" placeholder="Dán liên kết trực tiếp .mp4/.webm..." />
+          <button id="openVideoUrl">Mở video</button>
+          <label class="file-btn">
+            Chọn file
+            <input id="videoFileInput" type="file" accept="video/*" hidden />
+          </label>
+        </div>
+
+        <div class="video-frame portrait" id="videoFrame">
+          <video id="videoPlayer" controls playsinline preload="metadata"></video>
+
+          <div class="screen-lock-overlay hidden" id="screenLockOverlay">
+            <div class="lock-message">
+              <div class="lock-icon">🔒</div>
+              <b>Màn hình đã khóa</b>
+              <small>Giữ nút bên dưới 1,5 giây để mở khóa</small>
+              <button id="holdToUnlock">Giữ để mở khóa</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="video-controls-grid">
+          <button id="downloadVideoBtn">⬇ Tải video</button>
+          <button id="toggleOrientationBtn">↔ Chuyển ngang/dọc</button>
+          <button id="toggleMuteLockBtn">🔇 Khóa tiếng</button>
+          <button id="toggleScreenLockBtn">🔒 Khóa màn hình</button>
+          <button id="toggleFullscreenBtn">⛶ Toàn màn hình</button>
+          <button id="stopVideoBtn">■ Dừng video</button>
+        </div>
+
+        <div class="video-status" id="videoStatus">
+          Chưa mở video. Có thể dùng file trong máy hoặc liên kết trực tiếp tới tệp video.
+        </div>
+      </div>
+    </div>
+
+
+    <div class="context-video-toolbar hidden" id="contextVideoToolbar">
+      <button id="contextDownloadVideo">⬇ Tải video</button>
+      <button id="contextOrientation">↔ Ngang/dọc</button>
+      <button id="contextMuteLock">🔇 Khóa tiếng</button>
+      <button id="contextScreenLock">🔒 Khóa màn hình</button>
+      <button id="contextFullscreen">⛶ Toàn màn hình</button>
+    </div>
+
+    <div class="global-screen-lock hidden" id="globalScreenLock">
+      <div class="global-lock-box">
+        <div class="global-lock-icon">🔒</div>
+        <b>Màn hình đã khóa</b>
+        <small>Giữ nút 1,5 giây để mở khóa</small>
+        <button id="globalHoldUnlock">Giữ để mở khóa</button>
+      </div>
+    </div>
+
+
+    <div class="modal-backdrop hidden" id="warpModal">
+      <div class="modal warp-modal">
+        <div class="modal-title-row">
+          <span class="modal-title-icon warp">1</span>
+          <div><span class="section-kicker">KẾT NỐI RIÊNG TƯ</span><h2>1.1.1.1 / WARP</h2></div>
+        </div>
+
+        <div class="warp-status-card">
+          <span class="warp-status-dot"></span>
+          <div>
+            <b>Điều khiển kết nối riêng tư</b>
+            <small id="warpStatusText">
+              Bản HTML không thể tự bật VPN hệ thống. Nút dưới sẽ mở ứng dụng chính thức.
+            </small>
+          </div>
+        </div>
+
+        <div class="warp-actions">
+          <button class="primary" id="openWarpApp">Mở 1.1.1.1 / WARP</button>
+          <button id="installWarpApp">Cài đặt ứng dụng</button>
+          <button id="checkWarpConnection">Kiểm tra kết nối</button>
+        </div>
+
+        <p class="warp-note">
+          Khi chuyển sang APK, ứng dụng có thể mở thẳng Cloudflare WARP và phát hiện
+          Android đang có VPN hoạt động hay không. Việc bật WARP vẫn cần xác nhận trong
+          ứng dụng VPN.
+        </p>
+
+        <div class="modal-actions">
+          <button id="closeWarpModal">Đóng</button>
+        </div>
+      </div>
+    </div>
+
+
+    <div class="security-overlay hidden" id="securityCenterOverlay">
+      <section class="security-center">
+        <header class="security-header">
+          <div class="security-site-identity">
+            <span class="security-site-icon" id="securitySiteIcon">G</span>
+            <div>
+              <span class="section-kicker">TRUNG TÂM SHIELD</span>
+              <h2 id="securitySiteTitle">google.com</h2>
+              <p id="securitySiteSubtitle">Đang kiểm tra trạng thái trang hiện tại</p>
+            </div>
+          </div>
+
+          <div class="security-header-actions">
+            <span class="security-level-badge" id="securityLevelBadge">Mạnh</span>
+            <button class="manager-close" id="closeSecurityCenter" aria-label="Đóng">×</button>
+          </div>
+        </header>
+
+        <nav class="security-tabs" aria-label="Các mục bảo mật">
+          <button class="active" data-security-tab="overview">Tổng quan</button>
+          <button data-security-tab="permissions">Quyền website</button>
+          <button data-security-tab="downloads">Tải xuống</button>
+          <button data-security-tab="offline">Ngoại tuyến</button>
+        </nav>
+
+        <div class="security-content">
+          <section class="security-panel active" data-security-panel="overview">
+            <div class="security-summary-grid">
+              <article class="security-main-status" id="securityMainStatus">
+                <span class="security-main-icon">✓</span>
+                <div>
+                  <span class="section-kicker">TRẠNG THÁI TRANG</span>
+                  <h3 id="securityMainTitle">Chưa phát hiện dấu hiệu bất thường</h3>
+                  <p id="securityMainDescription">
+                    Kiểm tra cục bộ của prototype đã hoàn tất.
+                  </p>
+                </div>
+              </article>
+
+              <article class="ip-protection-card">
+                <div class="ip-card-heading">
+                  <span class="ip-card-icon">◎</span>
+                  <div>
+                    <span class="section-kicker">ĐỊA CHỈ IP</span>
+                    <h3>Quyền riêng tư mạng</h3>
+                  </div>
+                </div>
+                <p id="warpStatusDescription">
+                  HTML không thể xác minh VPN. Website vẫn có thể nhìn thấy IP đang kết nối.
+                </p>
+                <div class="ip-card-actions">
+                  <button class="security-primary-button" id="securityOpenWarp">Mở 1.1.1.1 / WARP</button>
+                  <button class="security-secondary-button" id="securityCheckWarp">Kiểm tra kết nối</button>
+                </div>
+              </article>
+            </div>
+
+            <div class="security-section-heading">
+              <div>
+                <span class="section-kicker">MỨC BẢO VỆ</span>
+                <h3>Chọn mức phù hợp</h3>
+              </div>
+              <span class="security-hint">Khuyên dùng: Mạnh</span>
+            </div>
+
+            <div class="security-level-grid">
+              <button class="security-level-card" data-security-level="standard">
+                <span class="security-level-icon">◇</span>
+                <span class="security-level-copy">
+                  <b>Tiêu chuẩn</b>
+                  <small>Chặn quảng cáo, popup và tệp nguy hiểm phổ biến.</small>
+                </span>
+                <span class="security-radio"></span>
+              </button>
+
+              <button class="security-level-card" data-security-level="strong">
+                <span class="security-level-icon">◆</span>
+                <span class="security-level-copy">
+                  <b>Mạnh</b>
+                  <small>Chỉ HTTPS, chặn tracker, quyền nhạy cảm và ứng dụng ngoài.</small>
+                </span>
+                <span class="security-recommended">Khuyên dùng</span>
+                <span class="security-radio"></span>
+              </button>
+
+              <button class="security-level-card" data-security-level="maximum">
+                <span class="security-level-icon">⬢</span>
+                <span class="security-level-copy">
+                  <b>Tối đa</b>
+                  <small>Khóa nghiêm ngặt, chỉ dành cho trang không cần nhiều chức năng.</small>
+                </span>
+                <span class="security-radio"></span>
+              </button>
+            </div>
+
+            <div class="security-check-grid">
+              <article>
+                <span class="security-check-icon good">✓</span>
+                <div><b>Safe Browsing</b><small id="safeBrowsingState">Sẵn sàng khi chuyển sang APK</small></div>
+              </article>
+              <article>
+                <span class="security-check-icon" id="httpsStatusIcon">✓</span>
+                <div><b>Kết nối HTTPS</b><small id="httpsStatusText">Đang dùng kết nối mã hóa</small></div>
+              </article>
+              <article>
+                <span class="security-check-icon good">✓</span>
+                <div><b>Tracker và cookie bên thứ ba</b><small id="trackerStatusText">Đang chặn theo mức bảo vệ</small></div>
+              </article>
+              <article>
+                <span class="security-check-icon good">✓</span>
+                <div><b>Mở ứng dụng bên ngoài</b><small id="externalAppStatusText">Đang yêu cầu xác nhận</small></div>
+              </article>
+            </div>
+
+            <div class="security-site-actions">
+              <button class="security-primary-button" id="scanCurrentSite">Quét lại trang</button>
+              <button class="security-secondary-button" id="toggleTrustedSite">Tin cậy website này</button>
+              <button class="security-danger-button" id="clearCurrentSiteData">Xóa dữ liệu website</button>
+            </div>
+
+            <p class="security-disclaimer">
+              Bản HTML chỉ mô phỏng giao diện và áp dụng một số quy tắc JavaScript cục bộ.
+              Safe Browsing, kiểm tra chứng chỉ, quyền Android và chặn request thật sẽ được
+              thực hiện trong APK WebView.
+            </p>
+          </section>
+
+          <section class="security-panel" data-security-panel="permissions">
+            <div class="security-section-heading">
+              <div>
+                <span class="section-kicker">TƯỜNG LỬA QUYỀN</span>
+                <h3>Quyền của website hiện tại</h3>
+              </div>
+              <button class="security-secondary-button small" id="resetSitePermissions">Đặt lại</button>
+            </div>
+
+            <div class="permission-list" id="permissionList"></div>
+
+            <div class="permission-note">
+              <span>ⓘ</span>
+              <p>
+                Với nhu cầu tải nội dung để dùng ngoại tuyến, camera, micro và vị trí
+                được chặn mặc định ở mức Mạnh và Tối đa.
+              </p>
+            </div>
+          </section>
+
+          <section class="security-panel" data-security-panel="downloads">
+            <div class="security-section-heading">
+              <div>
+                <span class="section-kicker">LÁ CHẮN TẢI XUỐNG</span>
+                <h3>Kiểm tra tệp trước khi tải</h3>
+              </div>
+              <span class="security-hint">Không tự mở sau khi tải</span>
+            </div>
+
+            <div class="download-shield-list">
+              <label>
+                <span class="download-shield-icon">!</span>
+                <span><b>Chặn tệp thực thi nguy hiểm</b><small>.apk, .xapk, .exe, .bat, .cmd, .scr, .jar và định dạng tương tự</small></span>
+                <input type="checkbox" id="blockExecutableDownloads">
+                <i></i>
+              </label>
+
+              <label>
+                <span class="download-shield-icon">≠</span>
+                <span><b>Kiểm tra phần mở rộng và MIME</b><small>Cảnh báo khi tên tệp không khớp loại nội dung</small></span>
+                <input type="checkbox" id="checkMimeMismatch">
+                <i></i>
+              </label>
+
+              <label>
+                <span class="download-shield-icon">↗</span>
+                <span><b>Cảnh báo tải từ tên miền khác</b><small>Hỏi lại khi nguồn tải khác website đang mở</small></span>
+                <input type="checkbox" id="warnCrossDomainDownload">
+                <i></i>
+              </label>
+
+              <label>
+                <span class="download-shield-icon">⇩</span>
+                <span><b>Chặn nhiều lượt tải tự động</b><small>Không cho website liên tục tạo nhiều tệp</small></span>
+                <input type="checkbox" id="blockMultipleDownloads">
+                <i></i>
+              </label>
+            </div>
+
+            <div class="blocked-extension-card">
+              <span class="section-kicker">ĐỊNH DẠNG BỊ CHẶN</span>
+              <div class="blocked-extension-list">
+                <span>.apk</span><span>.xapk</span><span>.apks</span><span>.exe</span>
+                <span>.msi</span><span>.bat</span><span>.cmd</span><span>.scr</span>
+                <span>.jar</span><span>.dex</span><span>.sh</span><span>.bin</span>
+              </div>
+              <p>
+                Shield cũng phát hiện tên giả như <b>truyen.txt.apk</b> hoặc
+                <b>video.mp4.exe</b>.
+              </p>
+            </div>
+          </section>
+
+          <section class="security-panel" data-security-panel="offline">
+            <div class="offline-security-hero">
+              <span class="offline-security-icon">▣</span>
+              <div>
+                <span class="section-kicker">KHO NGOẠI TUYẾN AN TOÀN</span>
+                <h3>Khóa mạng cho nội dung đã lưu</h3>
+                <p>
+                  Trang HTML ngoại tuyến được thêm chính sách chặn mạng và mở trong iframe sandbox.
+                </p>
+              </div>
+              <label class="security-switch">
+                <input type="checkbox" id="offlineIsolationEnabled">
+                <i></i>
+              </label>
+            </div>
+
+            <div class="offline-security-grid">
+              <article><span>✓</span><div><b>Không Internet</b><small>Chặn request mạng từ bản HTML đã lưu</small></div></article>
+              <article><span>✓</span><div><b>Không JavaScript ngoài</b><small>Script và iframe ngoài bị loại bỏ</small></div></article>
+              <article><span>✓</span><div><b>Không cookie và tracker</b><small>Không gửi dữ liệu trở lại website</small></div></article>
+              <article><span>✓</span><div><b>Không quyền thiết bị</b><small>Camera, micro và vị trí không được cấp</small></div></article>
+              <article><span>✓</span><div><b>Không mở ứng dụng ngoài</b><small>Chặn intent, market và scheme lạ</small></div></article>
+              <article><span>✓</span><div><b>Tách khỏi web online</b><small>Nội dung offline mở bằng sandbox riêng</small></div></article>
+            </div>
+
+            <div class="offline-security-actions">
+              <button class="security-primary-button" data-action="offline-pages">Mở trang ngoại tuyến</button>
+              <button class="security-secondary-button" data-action="save-page-html">Lưu trang hiện tại</button>
+            </div>
+
+            <p class="security-disclaimer">
+              Nội dung đã lưu có thể mở bằng công cụ <b>Đọc truyện TXT</b>, làm sạch phần thừa
+              và nghe bằng giọng Google hoặc giọng hệ thống mà không cần tải lại website.
+            </p>
+          </section>
+        </div>
+      </section>
+    </div>
+
+
+    <div class="story-reader-backdrop hidden" id="storyReaderBackdrop"></div>
+    <aside class="story-reader-panel" id="storyReaderPanel" aria-hidden="true" aria-label="Công cụ đọc truyện TXT">
+      <header class="reader-panel-head">
+        <span class="reader-head-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path d="M4 5.5c2.7-.7 5.2-.2 8 1.5v12c-2.8-1.7-5.3-2.2-8-1.5v-12Z"/>
+            <path d="M20 5.5c-2.7-.7-5.2-.2-8 1.5v12c2.8-1.7 5.3-2.2 8-1.5v-12Z"/>
+            <path d="M16 9.5c1.2.8 1.2 3.2 0 4"/>
+          </svg>
+        </span>
+        <div class="reader-panel-head-copy">
+          <h2>Đọc truyện TXT</h2>
+          <p>Lấy chương sạch · Android Google TTS · thay từ khi đọc</p>
+        </div>
+        <span class="reader-status-pill" id="readerStatus" data-state="idle">Sẵn sàng</span>
+        <button class="reader-close-btn" id="closeStoryReader" aria-label="Đóng">×</button>
+      </header>
+
+      <nav class="reader-tabs" aria-label="Các phần của công cụ đọc truyện">
+        <button class="active" data-reader-tab="content">Nội dung</button>
+        <button data-reader-tab="voice">Giọng đọc</button>
+        <button data-reader-tab="replace">Thay thế</button>
+      </nav>
+
+      <div class="reader-panel-scroll">
+        <section class="reader-pane active" data-reader-pane="content">
+          <div class="reader-source-card">
+            <div class="reader-source-title-row">
+              <span class="reader-source-dot"></span>
+              <div>
+                <b id="readerSourceTitle">Văn bản chưa đặt tên</b>
+                <small id="readerSourceMeta">Chưa có nội dung</small>
+              </div>
+            </div>
+            <div class="reader-action-grid">
+              <button class="reader-action primary" id="readerExtractWebBtn">◈ Lấy chương đang mở</button>
+              <button class="reader-action" id="readerOpenTxtBtn">＋ Mở tệp TXT</button>
+              <button class="reader-action" id="readerCleanBtn">✦ Làm sạch nội dung</button>
+              <button class="reader-action" id="readerSaveTxtBtn">⇩ Lưu thành TXT</button>
+            </div>
+            <input class="hidden" id="readerFileInput" type="file" accept=".txt,text/plain">
+            <p class="reader-native-hint" id="readerNativeHint">
+              Nút này dùng chung bộ máy lấy chương với Chapter Clipper: xác định tiêu đề chương,
+              điểm bắt đầu/kết thúc và loại menu, quảng cáo, bình luận, nút chuyển chương.
+            </p>
+          </div>
+
+          <div class="reader-editor-wrap">
+            <div class="reader-editor-toolbar">
+              <button id="readerCopyBtn">Sao chép</button>
+              <button id="readerCleanBtnMirror">Làm sạch lại</button>
+              <button class="danger" id="readerClearBtn">Xóa nội dung</button>
+            </div>
+            <textarea
+              class="reader-textarea"
+              id="readerText"
+              placeholder="Lấy nội dung chương đang mở, mở tệp TXT hoặc dán văn bản vào đây…"
+              spellcheck="false"
+            ></textarea>
+            <div class="reader-editor-stats">
+              <span id="readerCharCount">0 ký tự</span>
+              <span id="readerSentenceCount">0 câu</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="reader-pane" data-reader-pane="voice">
+          <div class="reader-section-card">
+            <div class="reader-section-title">
+              <h3>Giọng đọc trên điện thoại</h3>
+              <small>Ưu tiên Google · Tiếng Việt</small>
+            </div>
+
+            <div class="reader-tts-engine-card">
+              <span class="reader-tts-engine-icon" aria-hidden="true">◖</span>
+              <div class="reader-tts-engine-copy">
+                <b id="readerTtsEngineName">Nhận dạng và tổng hợp giọng nói của Google</b>
+                <small id="readerTtsEngineMeta">
+                  Khi chạy APK, lqlq Browser sẽ lấy danh sách giọng đã cài trong Android.
+                </small>
+              </div>
+              <div class="reader-tts-engine-actions">
+                <button id="readerRefreshVoicesBtn" type="button">Làm mới</button>
+                <button id="readerOpenTtsSettingsBtn" type="button">Cài đặt</button>
+              </div>
+            </div>
+
+            <div class="reader-field">
+              <label for="readerVoiceSelect">Giọng tiếng Việt đã cài</label>
+              <select class="reader-select" id="readerVoiceSelect"></select>
+              <small class="reader-field-note" id="readerVoiceSourceNote">
+                Bản HTML dùng giọng trình duyệt; bản APK ưu tiên Google Speech Services trên Android.
+              </small>
+            </div>
+            <div class="reader-field">
+              <div class="reader-field-head"><span>Tốc độ đọc</span><span class="reader-field-value" id="readerRateValue">100</span></div>
+              <input class="reader-range" id="readerRate" type="range" min="0" max="300" step="1" value="100">
+            </div>
+            <div class="reader-field">
+              <div class="reader-field-head"><span>Tông đọc</span><span class="reader-field-value" id="readerPitchValue">100</span></div>
+              <input class="reader-range" id="readerPitch" type="range" min="0" max="300" step="1" value="100">
+            </div>
+            <div class="reader-field">
+              <div class="reader-field-head"><span>Âm lượng</span><span class="reader-field-value" id="readerVolumeValue">100%</span></div>
+              <input class="reader-range" id="readerVolume" type="range" min="0" max="100" step="1" value="100">
+            </div>
+            <div class="reader-field">
+              <div class="reader-field-head"><span>Nghỉ giữa các câu</span><span class="reader-field-value" id="readerPauseMsValue">0 ms</span></div>
+              <input class="reader-range" id="readerPauseMs" type="range" min="0" max="3000" step="50" value="0">
+            </div>
+          </div>
+
+          <div class="reader-section-card">
+            <div class="reader-toggle-row">
+              <div class="reader-toggle-copy"><b>Đọc từ vị trí con trỏ</b><small>Bắt đầu tại chỗ đang chọn trong văn bản</small></div>
+              <input id="readerReadCursor" type="checkbox" checked>
+            </div>
+            <div class="reader-toggle-row">
+              <div class="reader-toggle-copy"><b>Lặp lại toàn bộ</b><small>Đọc lại từ đầu khi kết thúc</small></div>
+              <input id="readerRepeat" type="checkbox">
+            </div>
+          </div>
+        </section>
+
+        <section class="reader-pane" data-reader-pane="replace">
+          <div class="reader-section-card">
+            <div class="reader-section-title">
+              <h3>Thay thế khi đọc</h3>
+              <small>Không sửa văn bản gốc</small>
+            </div>
+            <div class="reader-field">
+              <label for="readerReplacementRules">Mỗi dòng là một quy tắc</label>
+              <textarea class="reader-rule-textarea" id="readerReplacementRules" placeholder="Tên cũ => Tên mới&#10;MLBB => Mobile Legends&#10;... =>"></textarea>
+              <p class="reader-rule-example">Ví dụ: <code>Lâm Phàm =&gt; Lâm Phong</code>. Để trống phần sau mũi tên để bỏ từ đó khi đọc.</p>
+            </div>
+            <div class="reader-field">
+              <label for="readerSkipWords">Từ/cụm từ bỏ qua</label>
+              <textarea class="reader-rule-textarea" id="readerSkipWords" placeholder="Quảng cáo&#10;Nguồn truyện&#10;Hết chương"></textarea>
+              <p class="reader-rule-example">Có thể nhập mỗi dòng một mục hoặc ngăn cách bằng dấu phẩy.</p>
+            </div>
+            <div class="reader-toggle-row">
+              <div class="reader-toggle-copy"><b>Phân biệt chữ hoa/thường</b><small>Tắt để “Tên” và “tên” cùng được thay</small></div>
+              <input id="readerCaseSensitive" type="checkbox">
+            </div>
+            <div class="reader-rule-actions">
+              <button class="reader-secondary" id="readerPreviewRules">Kiểm tra quy tắc</button>
+              <button class="reader-primary" id="readerApplyRules">Áp dụng vào văn bản</button>
+            </div>
+            <p class="reader-rules-status" id="readerRulesStatus">Quy tắc sẽ được áp dụng tự động trước khi từng câu được gửi tới TTS.</p>
+          </div>
+        </section>
+      </div>
+
+      <footer class="reader-playback-dock">
+        <div class="reader-progress-row">
+          <div class="reader-progress-track"><div class="reader-progress-fill" id="readerProgressFill"></div></div>
+          <span class="reader-progress-text" id="readerProgressText">Chưa bắt đầu</span>
+        </div>
+        <p class="reader-now-reading" id="readerNowReading">Chưa có câu đang đọc.</p>
+        <div class="reader-playback-buttons">
+          <button id="readerPrevBtn" title="Câu trước">‹</button>
+          <button class="play" id="readerPlayBtn">▶ Đọc</button>
+          <button id="readerPauseBtn">Tạm dừng</button>
+          <button class="stop" id="readerStopBtn" title="Dừng">■</button>
+          <button id="readerNextBtn" title="Câu sau">›</button>
+        </div>
+      </footer>
+    </aside>
+
+    <div class="modal-backdrop hidden" id="searchModal">
+      <div class="modal compact-modal">
+        <h2>Chức năng tìm kiếm</h2>
+        <input
+          id="searchInput"
+          type="text"
+          placeholder="Nhập nội dung tìm kiếm"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <p class="error hidden" id="searchError">Không tìm thấy nội dung tìm kiếm.</p>
+        <div class="modal-actions">
+          <button id="cancelSearch">Hủy</button>
+          <button class="primary" id="submitSearch">Tìm kiếm</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="toast hidden" id="toast"></div>
+  </div>
+
+  <script src="app.js"></script>
+  <script src="v09-theme.js"></script>
+  <script src="v11-security.js"></script>
+  <script src="reader.js"></script>
+  <script src="v13-media.js"></script>
+  <script src="v14-image-editor.js"></script>
+  <script src="v15-chapter-clipper.js"></script>
+  <script src="v16-mobile-ui.js"></script>
+  <script src="v19-saved-pages-home.js"></script>
+  <script src="v20-mobile-image-tools.js"></script>
+  <script src="v21-mobile-batch-tools.js"></script>
+  <script src="v22-mobile-toolbar.js"></script>
+  <script src="android-glue.js"></script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+lqlq Browser v0.16
+
+- Thiết kế lại thanh trình duyệt trên điện thoại theo bố cục Chrome.
+- Chỉ giữ Home, Address/Shield, New Tab, Tab Count và menu ba chấm.
+- Ẩn Back/Forward/Reload và các công cụ riêng khỏi thanh mobile.
+- Các công cụ vẫn nằm trong menu chính.
+- Thêm trình quản lý thẻ toàn màn hình cho điện thoại.
+- Thêm số lượng thẻ cập nhật theo thời gian thực.
+- Thêm đóng thẻ, đóng thẻ khác và đóng tất cả.
+- Menu mobile được neo dưới thanh trên cùng.
+- Nâng z-index để menu luôn nổi trên nội dung website.
+- Thêm backdrop cho menu.
+- Thêm hỗ trợ dynamic viewport và safe area Android.

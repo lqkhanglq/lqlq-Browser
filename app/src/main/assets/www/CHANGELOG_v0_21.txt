@@ -1,0 +1,12 @@
+lqlq Browser v0.21
+
+- Thiết kế lại Xử lý nhiều ảnh trên điện thoại.
+- Thêm thanh dưới: Ảnh, Chọn, Kích thước, Xoay/lật và Xuất.
+- Chuyển bốn thẻ điều khiển thành bottom sheet.
+- Mỗi lần chỉ hiện một nhóm công cụ.
+- Danh sách ảnh luôn hiển thị trong vùng chính.
+- Hiển thị ảnh theo hai cột trên điện thoại.
+- Thêm nút Thêm ảnh ngay trên danh sách.
+- Tự ẩn phần giới thiệu và vùng kéo thả sau khi có ảnh.
+- Tự đóng bảng sau khi áp dụng thao tác để xem kết quả.
+- Giữ nguyên giao diện xử lý nhiều ảnh trên PC.

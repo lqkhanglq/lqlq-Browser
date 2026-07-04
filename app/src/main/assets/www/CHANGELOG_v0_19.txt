@@ -1,0 +1,13 @@
+lqlq Browser v0.19
+
+- Thay hộp tìm kiếm lớn bằng thanh tìm kiếm ngang.
+- Đưa nút tìm kiếm vào bên trong cùng một thanh.
+- Thay bốn thẻ chữ nhật cũ bằng sáu biểu tượng tròn.
+- Thêm mặc định Google, ChatGPT, Claude, Gemini, Grok và Perplexity.
+- Thêm chức năng Lưu trang hiện tại.
+- Thêm bảng Trang đã lưu.
+- Thêm mở, xóa và quản lý từng trang đã lưu.
+- Thêm nút lưu trang cạnh thanh địa chỉ trên máy tính.
+- Ẩn nút lưu riêng trên thanh điện thoại để không phá bố cục mobile.
+- Thêm nút Trang đã lưu vào khu vực thao tác nhanh.
+- Tách dữ liệu trang đã lưu giữa chế độ thường và chế độ bí mật.

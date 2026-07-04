@@ -1,0 +1,13 @@
+lqlq Browser v0.22
+
+- Thêm tự động ẩn thanh công cụ khi vuốt lên.
+- Vuốt xuống sẽ hiện thanh trở lại.
+- Thêm vạch kéo nhỏ ở giữa mép trên khi thanh bị ẩn.
+- Chạm hoặc kéo vạch xuống để mở thanh.
+- Thêm ba chế độ: Tự động, Luôn hiển thị, Luôn thu gọn.
+- Thêm mục cài đặt trong phần Cá nhân hóa.
+- Ghi nhớ chế độ đã chọn bằng localStorage.
+- Không tự ẩn khi menu, ngăn kéo, trình quản lý thẻ hoặc thanh địa chỉ đang mở.
+- Khi thanh ẩn, nội dung mở rộng lên trên và không để lại khoảng trống.
+- Thêm API nhận cuộn từ Android WebView.
+- Hỗ trợ prefers-reduced-motion.

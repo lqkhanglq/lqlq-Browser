@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">lqlq Browser</string>
+    <string name="channel_playback">Đọc truyện và nhạc nền</string>
+    <string name="channel_playback_desc">Điều khiển đọc truyện TXT và phát nhạc khi ứng dụng chạy nền</string>
+</resources>

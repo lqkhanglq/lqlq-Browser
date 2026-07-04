@@ -1,0 +1,15 @@
+lqlq Browser v0.18
+
+- Reader và Chapter Clipper dùng chung một bộ lấy chương.
+- Nút Lấy chương đang mở gọi LqlqChapterExtractor trước.
+- Không còn lấy nhầm nội dung giao diện lqlq Browser làm nội dung truyện.
+- Thêm LqlqPageBridge và LqlqAndroid vào danh sách cầu nối.
+- Hỗ trợ bridge trả JSON chương trực tiếp.
+- Hỗ trợ bridge trả HTML của active WebView.
+- Hỗ trợ URL thật từ active WebView.
+- Expose extractFromDocument để kiểm thử và tái sử dụng.
+- Thêm alias LqlqChapterClipper.
+- Cập nhật thông báo lỗi rõ nguyên nhân khi HTML chưa có DOM trang thật.
+
+- Giữ đúng xuống dòng khi trích xuất từ HTML do Android WebView trả về.
+- Sửa trường hợp nội dung chương, nút Chương tiếp và TRUYỆN HOT bị dính chung một dòng.
