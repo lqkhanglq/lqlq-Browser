@@ -385,6 +385,36 @@ $js
         }
     }
 
+    /**
+     * Việc C (v0.23.6): tiêm script ẩn quảng cáo DOM riêng biệt, LUÔN chạy
+     * cho MỌI trang web thật (gọi từ onPageFinished của createPageWebView()),
+     * không phụ thuộc Chapter Clipper bật/tắt theo tab.
+     */
+    private fun injectAdblock(webView: WebView) {
+        try {
+            val js = readAssetText("www/tools/adblock-content.js")
+            webView.evaluateJavascript(js, null)
+        } catch (_: Exception) {
+            // Im lặng bỏ qua — đây là tính năng nền, không cần báo lỗi cho người dùng.
+        }
+    }
+
+    /**
+     * So sánh 2 host có cùng "domain gốc" hay không, bỏ qua tiền tố phổ biến
+     * www./m. để không chặn nhầm site tự chuẩn hoá domain của chính nó
+     * (vd example.com -> www.example.com). Đơn giản hoá bằng cách so sánh
+     * 2 nhãn cuối cùng của host (registrable domain gần đúng) thay vì phụ
+     * thuộc thư viện Public Suffix List đầy đủ.
+     */
+    private fun isSameRootDomain(hostA: String, hostB: String): Boolean {
+        fun rootOf(host: String): String {
+            val stripped = host.removePrefix("www.").removePrefix("m.")
+            val parts = stripped.split(".")
+            return if (parts.size >= 2) parts.takeLast(2).joinToString(".") else stripped
+        }
+        return rootOf(hostA).equals(rootOf(hostB), ignoreCase = true)
+    }
+
     fun setToolbarHeightCss(cssPx: Float) {
         val density = resources.displayMetrics.density
         toolbarHeightPx = (cssPx * density).toInt().coerceAtLeast(0)
@@ -450,6 +480,14 @@ $js
         val webView = WebView(this)
         applyCommonSettings(webView.settings)
 
+        // Việc A (v0.23.6): chặn quảng cáo tự mở cửa sổ/tab mới ở tầng
+        // WebView (mạnh hơn nhiều so với chỉ override window.open bằng JS,
+        // JS override có thể bị bypass). App hiện KHÔNG có onCreateWindow()
+        // xử lý target=_blank nên tắt hẳn 2 cờ này không phá tính năng nào
+        // đang hoạt động (setSupportMultipleWindows mặc định đã là false).
+        webView.settings.setSupportMultipleWindows(false)
+        webView.settings.javaScriptCanOpenWindowsAutomatically = false
+
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
 
@@ -459,9 +497,38 @@ $js
                 request: WebResourceRequest
             ): Boolean {
                 val scheme = request.url.scheme ?: return false
-                if (scheme == "http" || scheme == "https") return false
-                openExternalUri(request.url)
-                return true
+                if (scheme != "http" && scheme != "https") {
+                    openExternalUri(request.url)
+                    return true
+                }
+
+                // Việc B (v0.23.6): chặn nhảy trang tự động (redirect quảng
+                // cáo/độc hại) mà KHÔNG kèm thao tác thật của người dùng.
+                // Chỉ chặn khi: (1) không có gesture (JS tự set location.href,
+                // timer, redirect ngầm...) VÀ (2) domain đích khác hẳn domain
+                // gốc hiện tại (bỏ qua www./m. để không chặn nhầm site tự
+                // chuẩn hoá domain của chính nó, ví dụ example.com -> www.example.com).
+                // Có gesture (người dùng bấm/gõ thật) → LUÔN cho đi, dù khác domain.
+                val hasGesture = try {
+                    request.hasGesture()
+                } catch (_: Exception) {
+                    true // an toàn: nếu không xác định được thì không chặn
+                }
+                if (!hasGesture) {
+                    val currentHost = view.url?.let { Uri.parse(it).host } ?: ""
+                    val targetHost = request.url.host ?: ""
+                    if (currentHost.isNotEmpty() && targetHost.isNotEmpty() &&
+                        !isSameRootDomain(currentHost, targetHost)
+                    ) {
+                        Toast.makeText(
+                            this@MainActivity,
+                            "Đã chặn chuyển hướng quảng cáo: $targetHost",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        return true
+                    }
+                }
+                return false
             }
 
             override fun onPageStarted(
@@ -476,6 +543,11 @@ $js
 
             override fun onPageFinished(view: WebView, url: String) {
                 notifyShellPage(tabId, url, view.title ?: "", loading = false)
+
+                // Việc C (v0.23.6): ẩn quảng cáo DOM LUÔN BẬT cho MỌI trang,
+                // độc lập với Chapter Clipper (không đi qua chapterClipperEnabledTabs).
+                injectAdblock(view)
+
                 // Việc 1 (v0.23.5): nếu người dùng đã bật Chapter Clipper cho
                 // tab này, tự tiêm lại ở MỌI trang mới (kể cả next-chapter tự
                 // động) — không bắt người dùng bấm lại nút mỗi lần chuyển trang.
