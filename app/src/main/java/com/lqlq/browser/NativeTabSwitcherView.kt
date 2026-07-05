@@ -54,7 +54,7 @@ class NativeTabSwitcherView(
 
     init {
         visibility = View.GONE
-        setBackgroundColor(Color.rgb(255, 249, 247))
+        setBackgroundColor(Color.rgb(238, 243, 248))
         isClickable = true
         isFocusable = true
         elevation = dp(24).toFloat()
@@ -80,7 +80,7 @@ class NativeTabSwitcherView(
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
-            background = rounded(Color.rgb(194, 65, 12), dp(20))
+            background = rounded(Color.rgb(24, 166, 74), dp(20))
             contentDescription = "Mở thẻ mới"
             setOnClickListener { callbacks.onNewTab() }
         }
@@ -93,7 +93,7 @@ class NativeTabSwitcherView(
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
             setPadding(dp(8), dp(5), dp(8), dp(5))
-            background = rounded(Color.rgb(255, 231, 224), dp(22))
+            background = rounded(Color.rgb(217, 224, 232), dp(22))
         }
         header.addView(modeChip, LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, dp(52)))
 
@@ -101,9 +101,9 @@ class NativeTabSwitcherView(
             text = "1"
             textSize = 18f
             gravity = Gravity.CENTER
-            setTextColor(Color.rgb(60, 43, 39))
+            setTextColor(Color.rgb(32, 33, 36))
             typeface = Typeface.DEFAULT_BOLD
-            background = rounded(Color.WHITE, dp(17), Color.rgb(244, 207, 198), dp(1))
+            background = rounded(Color.WHITE, dp(17), Color.rgb(217, 224, 232), dp(1))
         }
         modeChip.addView(countText, LinearLayout.LayoutParams(dp(42), dp(42)))
 
@@ -111,7 +111,7 @@ class NativeTabSwitcherView(
             text = "▦"
             textSize = 29f
             gravity = Gravity.CENTER
-            setTextColor(Color.rgb(50, 39, 36))
+            setTextColor(Color.rgb(95, 99, 104))
             contentDescription = "Chế độ lưới"
         }
         modeChip.addView(gridGlyph, LinearLayout.LayoutParams(dp(46), dp(42)))
@@ -123,7 +123,7 @@ class NativeTabSwitcherView(
             text = "⋮"
             textSize = 34f
             gravity = Gravity.CENTER
-            setTextColor(Color.rgb(45, 38, 36))
+            setTextColor(Color.rgb(32, 33, 36))
             contentDescription = "Tùy chọn thẻ"
             setOnClickListener { showMenu(this) }
         }
@@ -133,10 +133,10 @@ class NativeTabSwitcherView(
             hint = "Tìm thẻ của bạn"
             textSize = 18f
             isSingleLine = true
-            setTextColor(Color.rgb(68, 51, 47))
-            setHintTextColor(Color.rgb(105, 83, 78))
+            setTextColor(Color.rgb(32, 33, 36))
+            setHintTextColor(Color.rgb(95, 99, 104))
             setPadding(dp(20), 0, dp(20), 0)
-            background = rounded(Color.rgb(255, 222, 213), dp(28))
+            background = rounded(Color.rgb(217, 224, 232), dp(28))
             addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
@@ -310,13 +310,13 @@ class NativeTabSwitcherView(
                     text = "●"
                     textSize = 13f
                     gravity = Gravity.CENTER
-                    setTextColor(Color.rgb(74, 131, 92))
+                    setTextColor(Color.rgb(24, 166, 74))
                 }
                 header.addView(icon, LinearLayout.LayoutParams(dp(28), dp(36)))
 
                 title = TextView(context).apply {
                     textSize = 16f
-                    setTextColor(Color.rgb(43, 37, 35))
+                    setTextColor(Color.rgb(32, 33, 36))
                     maxLines = 1
                     ellipsize = android.text.TextUtils.TruncateAt.END
                     typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
@@ -329,7 +329,7 @@ class NativeTabSwitcherView(
                     text = "×"
                     textSize = 31f
                     gravity = Gravity.CENTER
-                    setTextColor(Color.rgb(52, 46, 43))
+                    setTextColor(Color.rgb(95, 99, 104))
                     contentDescription = "Đóng thẻ"
                 }
                 header.addView(close, LinearLayout.LayoutParams(dp(42), dp(42)))
@@ -345,7 +345,7 @@ class NativeTabSwitcherView(
                 previewLetter = TextView(context).apply {
                     textSize = 54f
                     gravity = Gravity.CENTER
-                    setTextColor(Color.rgb(172, 102, 78))
+                    setTextColor(Color.rgb(24, 166, 74))
                     typeface = Typeface.DEFAULT_BOLD
                 }
                 preview.addView(
@@ -356,7 +356,7 @@ class NativeTabSwitcherView(
                 val bottomCopy = LinearLayout(context).apply {
                     orientation = LinearLayout.VERTICAL
                     setPadding(dp(9), dp(7), dp(9), dp(7))
-                    background = rounded(Color.argb(230, 255, 247, 244), dp(10))
+                    background = rounded(Color.argb(230, 247, 250, 253), dp(10))
                 }
                 preview.addView(
                     bottomCopy,
@@ -365,7 +365,7 @@ class NativeTabSwitcherView(
 
                 previewDomain = TextView(context).apply {
                     textSize = 13f
-                    setTextColor(Color.rgb(61, 48, 44))
+                    setTextColor(Color.rgb(32, 33, 36))
                     typeface = Typeface.DEFAULT_BOLD
                     maxLines = 1
                     ellipsize = android.text.TextUtils.TruncateAt.END
@@ -374,7 +374,7 @@ class NativeTabSwitcherView(
 
                 previewUrl = TextView(context).apply {
                     textSize = 10f
-                    setTextColor(Color.rgb(111, 91, 85))
+                    setTextColor(Color.rgb(95, 99, 104))
                     maxLines = 2
                     ellipsize = android.text.TextUtils.TruncateAt.END
                 }
@@ -388,8 +388,8 @@ class NativeTabSwitcherView(
                 previewUrl.text = tab.url.ifBlank { "Nhấn để nhập địa chỉ hoặc tìm kiếm" }
 
                 val hue = positiveHash(tab.url.ifBlank { tab.title }) % 360
-                val fill = Color.HSVToColor(floatArrayOf(hue.toFloat(), 0.10f, 0.98f))
-                val stroke = if (active) Color.rgb(177, 58, 8) else Color.rgb(246, 213, 204)
+                val fill = Color.HSVToColor(floatArrayOf(hue.toFloat(), 0.06f, 0.98f))
+                val stroke = if (active) Color.rgb(24, 166, 74) else Color.rgb(217, 224, 232)
                 card.background = rounded(fill, dp(22), stroke, dp(if (active) 4 else 1))
 
                 card.setOnClickListener { onSelect(tab.id) }
