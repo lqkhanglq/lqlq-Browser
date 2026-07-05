@@ -15,55 +15,49 @@
   if (window.__lqlqAdblockLoaded) return;
   window.__lqlqAdblockLoaded = true;
 
-  const AD_SELECTORS = [
-    "iframe[src*='ads']",
-    "iframe[src*='doubleclick']",
-    "iframe[src*='googlesyndication']",
-    "iframe[src*='googleadservices']",
-    "[id*='ads' i]",
-    "[class*='ads' i]",
-    "[id*='advert' i]",
-    "[class*='advert' i]",
-    "[id*='banner' i]",
-    "[class*='banner' i]",
-    "[class*='popup' i]",
-    "[id*='popup' i]",
-    "[class*='float' i][class*='ad' i]"
+  // Chỉ chặn theo URL nguồn cụ thể của mạng quảng cáo đã biết (chính xác,
+  // không đoán mò) — an toàn cho MỌI trang.
+  const AD_IFRAME_SELECTORS = [
+    "iframe[src*='doubleclick.net']",
+    "iframe[src*='googlesyndication.com']",
+    "iframe[src*='googleadservices.com']",
+    "iframe[src*='adnxs.com']",
+    "iframe[src*='popads.net']",
+    "iframe[src*='popcash.net']"
   ];
 
-  function normalizeLine(s) {
-    return String(s || "")
-      .replace(/ /g, " ")
-      .replace(/[ \t\f\v]+/g, " ")
-      .trim();
+  // Việc (v0.23.18): SỬA LỖI NGHIÊM TRỌNG — regex/selector cũ dùng so khớp
+  // CHUỖI CON không có ranh giới từ (vd "ads?" khớp cả "load", "already",
+  // "gradient", "header"; "[class*='ads' i]" khớp cả class "loads-spinner").
+  // Trên trang thật (vd Google), điều này từng ẩn NHẦM một phần giao diện
+  // thật của trang (ô tìm kiếm tự nhiên biến mất) vì tình cờ khớp 1 trong
+  // các mẫu quá rộng đó. Giờ chỉ coi là "quảng cáo" khi từ khoá xuất hiện
+  // dưới dạng 1 TOKEN RIÊNG BIỆT (ngăn cách bởi dấu gạch/khoảng trắng/đầu
+  // cuối chuỗi trong kiểu đặt tên kebab-case phổ biến của class/id CSS),
+  // không phải là 1 chuỗi con nằm giữa từ khác.
+  const AD_TOKEN_RE = /(?:^|[-_ ])(ads?|advert(?:isement)?s?|banner|sponsored|popunder)(?:[-_ ]|$)/i;
+
+  function hasAdToken(value) {
+    return AD_TOKEN_RE.test(String(value || ""));
+  }
+
+  function isLikelyAdElement(el) {
+    return hasAdToken(el.id) || hasAdToken(el.className);
   }
 
   function hideAdsFast() {
     try {
-      AD_SELECTORS.forEach(sel => {
+      AD_IFRAME_SELECTORS.forEach(sel => {
         document.querySelectorAll(sel).forEach(el => {
-          if (el.closest && el.closest("#cc-panel")) return;
-          const text = normalizeLine(el.innerText || el.textContent || "");
-          if (/Chrome|Trình tiết kiệm bộ nhớ|hoạt động nhanh hơn/i.test(text)) return;
           el.style.setProperty("display", "none", "important");
           el.style.setProperty("visibility", "hidden", "important");
         });
       });
 
-      document.querySelectorAll("a, div").forEach(el => {
-        if (el.closest && el.closest("#cc-panel")) return;
-        let style;
-        try {
-          style = getComputedStyle(el);
-        } catch (e) {
-          return;
-        }
-        if (style.position !== "fixed") return;
-        const text = normalizeLine(el.innerText || el.textContent || "");
-        const html = (el.outerHTML || "").slice(0, 500).toLowerCase();
-        if (/ads?|advert|banner|popup|siêu|500k|casino|promo|click/.test(text.toLowerCase() + " " + html)) {
-          el.style.setProperty("display", "none", "important");
-        }
+      document.querySelectorAll("div, section, aside, iframe").forEach(el => {
+        if (!isLikelyAdElement(el)) return;
+        el.style.setProperty("display", "none", "important");
+        el.style.setProperty("visibility", "hidden", "important");
       });
     } catch (e) {}
   }

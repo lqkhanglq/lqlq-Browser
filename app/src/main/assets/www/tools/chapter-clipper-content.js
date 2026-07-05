@@ -99,21 +99,26 @@
     /^Đọc truyện/i
   ];
 
-  const AD_SELECTORS = [
-    "iframe[src*='ads']",
-    "iframe[src*='doubleclick']",
-    "iframe[src*='googlesyndication']",
-    "iframe[src*='googleadservices']",
-    "[id*='ads' i]",
-    "[class*='ads' i]",
-    "[id*='advert' i]",
-    "[class*='advert' i]",
-    "[id*='banner' i]",
-    "[class*='banner' i]",
-    "[class*='popup' i]",
-    "[id*='popup' i]",
-    "[class*='float' i][class*='ad' i]"
+  // Việc (v0.23.18): SỬA LỖI NGHIÊM TRỌNG — danh sách selector cũ dùng so
+  // khớp CHUỖI CON không ranh giới từ (vd "[class*='ads' i]" khớp cả class
+  // "loads-spinner"), từng ẩn nhầm giao diện thật của trang (ô tìm kiếm
+  // Google tự nhiên biến mất). Chỉ giữ lại phần chặn theo URL nguồn cụ thể
+  // (chính xác, an toàn) — phần so khớp class/id chuyển sang hasAdToken()
+  // bên dưới, có ranh giới từ đàng hoàng.
+  const AD_IFRAME_SELECTORS = [
+    "iframe[src*='doubleclick.net']",
+    "iframe[src*='googlesyndication.com']",
+    "iframe[src*='googleadservices.com']",
+    "iframe[src*='adnxs.com']",
+    "iframe[src*='popads.net']",
+    "iframe[src*='popcash.net']"
   ];
+
+  const AD_TOKEN_RE = /(?:^|[-_ ])(ads?|advert(?:isement)?s?|banner|sponsored|popunder)(?:[-_ ]|$)/i;
+
+  function hasAdToken(value) {
+    return AD_TOKEN_RE.test(String(value || ""));
+  }
 
   // ------------------------------------------------------------------
   // Chặn popup cơ bản: tổng quát cho mọi site (không hard-code 1 site) —
@@ -213,25 +218,19 @@
 
   function hideAdsFast() {
     try {
-      AD_SELECTORS.forEach(sel => {
+      AD_IFRAME_SELECTORS.forEach(sel => {
         document.querySelectorAll(sel).forEach(el => {
           if (el.closest && el.closest("#cc-panel")) return;
-          const text = normalizeLine(el.innerText || el.textContent || "");
-          if (/Chrome|Trình tiết kiệm bộ nhớ|hoạt động nhanh hơn/i.test(text)) return;
           el.style.setProperty("display", "none", "important");
           el.style.setProperty("visibility", "hidden", "important");
         });
       });
 
-      document.querySelectorAll("a, div").forEach(el => {
+      document.querySelectorAll("a, div, section, aside, iframe").forEach(el => {
         if (el.closest && el.closest("#cc-panel")) return;
-        const style = getComputedStyle(el);
-        if (style.position !== "fixed") return;
-        const text = normalizeLine(el.innerText || el.textContent || "");
-        const html = (el.outerHTML || "").slice(0, 500).toLowerCase();
-        if (/ads?|advert|banner|popup|siêu|500k|casino|promo|click/.test(text.toLowerCase() + " " + html)) {
-          el.style.setProperty("display", "none", "important");
-        }
+        if (!hasAdToken(el.id) && !hasAdToken(el.className)) return;
+        el.style.setProperty("display", "none", "important");
+        el.style.setProperty("visibility", "hidden", "important");
       });
     } catch (e) {}
   }
