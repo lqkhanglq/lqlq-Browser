@@ -2,6 +2,7 @@ package com.lqlq.browser
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.AlertDialog
 import android.app.DownloadManager
 import android.content.Context
 import android.content.Intent
@@ -25,6 +26,7 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.JsResult
 import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
@@ -186,6 +188,16 @@ class MainActivity : AppCompatActivity() {
         applyCommonSettings(shellWebView.settings)
         shellWebView.settings.allowFileAccess = true
 
+        // Việc 3 (v0.23.4): đặt nền trong suốt NGAY từ đầu, giữ nguyên mãi —
+        // không toggle WHITE/TRANSPARENT lúc mở/đóng menu nữa. Lý do: nếu
+        // WebView từng vẽ 1 khung hình với nền trắng đục (ngay cả trong quá
+        // khứ), khung hình đó có thể bị hiển thị lại y hệt trong khoảnh khắc
+        // bringChildToFront() trước khi CSS kịp vẽ lại nội dung thật (chớp
+        // trắng). Nền trong suốt cố định + html,body{background:...} đục
+        // trong CSS (bình thường) đảm bảo không còn khung hình trắng "cũ"
+        // nào có thể lộ ra. z-order vẫn do bringChildToFront() quyết định.
+        shellWebView.setBackgroundColor(Color.TRANSPARENT)
+
         ttsBridge = TtsBridge(applicationContext)
         shellBridge = ShellBridge(this)
         shellWebView.addJavascriptInterface(shellBridge, "LqlqAndroid")
@@ -286,6 +298,48 @@ class MainActivity : AppCompatActivity() {
         currentPageWebView()?.reload()
     }
 
+    // ------------------------------------------------------------------
+    // Việc 4 (v0.23.4): Chapter Clipper — content-script thật, tiêm trực
+    // tiếp vào WebView của trang web đang mở (không round-trip qua
+    // PageBridge/menu như kiến trúc cũ, tránh đơ/lag).
+    // ------------------------------------------------------------------
+
+    private fun readAssetText(path: String): String =
+        assets.open(path).bufferedReader(Charsets.UTF_8).use { it.readText() }
+
+    fun injectChapterClipper() {
+        val webView = currentPageWebView()
+        if (webView == null || !pageVisible) {
+            Toast.makeText(
+                this,
+                "Hãy mở một trang web thật rồi bật Chapter Clipper.",
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+        try {
+            val css = readAssetText("www/tools/chapter-clipper-styles.css")
+            val js = readAssetText("www/tools/chapter-clipper-content.js")
+            val injected = """
+(function () {
+  try {
+    if (!document.getElementById('lqlq-chapter-clipper-style')) {
+      var style = document.createElement('style');
+      style.id = 'lqlq-chapter-clipper-style';
+      style.textContent = ${JSONObject.quote(css)};
+      (document.head || document.documentElement).appendChild(style);
+    }
+  } catch (e) {}
+})();
+$js
+"""
+            webView.evaluateJavascript(injected, null)
+            Toast.makeText(this, "Đã bật Chapter Clipper trên trang này.", Toast.LENGTH_SHORT).show()
+        } catch (error: Exception) {
+            Toast.makeText(this, "Không nạp được Chapter Clipper.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     fun setToolbarHeightCss(cssPx: Float) {
         val density = resources.displayMetrics.density
         toolbarHeightPx = (cssPx * density).toInt().coerceAtLeast(0)
@@ -322,10 +376,9 @@ class MainActivity : AppCompatActivity() {
 
         if (overlayOpen) {
             // Đưa shell lên trên để menu/panel nổi trên trang web thật; nền
-            // shell phải trong suốt để thấy trang web phía dưới qua các vùng
-            // không phải menu (CSS ẩn nội dung trang chủ khi có trang thật mở).
+            // shell luôn trong suốt (đặt 1 lần trong setupShellWebView()) nên
+            // không cần chờ hay set lại ở đây — tránh chớp trắng do vẽ lại.
             root.bringChildToFront(shellWebView)
-            shellWebView.setBackgroundColor(Color.TRANSPARENT)
         } else {
             // Đóng overlay: nếu đang có trang web thật thì đưa nó lên trên;
             // nếu không (đang ở trang chủ) thì giữ shell trên cùng như cũ.
@@ -334,7 +387,6 @@ class MainActivity : AppCompatActivity() {
             } else {
                 root.bringChildToFront(shellWebView)
             }
-            shellWebView.setBackgroundColor(Color.WHITE)
         }
         root.invalidate()
     }
@@ -669,6 +721,49 @@ class MainActivity : AppCompatActivity() {
 
         override fun onHideCustomView() {
             exitCustomView()
+        }
+
+        // Việc 4 (v0.23.4): Chapter Clipper (content-script tiêm vào trang
+        // thật) dùng alert()/confirm() thường — WebView mặc định không hiện
+        // hộp thoại nếu không override 2 hàm này (onJsConfirm mặc định trả
+        // false ngay), nên phải tự vẽ AlertDialog native ở đây.
+        override fun onJsAlert(
+            view: WebView,
+            url: String,
+            message: String,
+            result: JsResult
+        ): Boolean {
+            try {
+                AlertDialog.Builder(this@MainActivity)
+                    .setMessage(message)
+                    .setPositiveButton("OK") { _, _ -> result.confirm() }
+                    .setOnCancelListener { result.cancel() }
+                    .setCancelable(true)
+                    .show()
+            } catch (_: Exception) {
+                result.confirm()
+            }
+            return true
+        }
+
+        override fun onJsConfirm(
+            view: WebView,
+            url: String,
+            message: String,
+            result: JsResult
+        ): Boolean {
+            try {
+                AlertDialog.Builder(this@MainActivity)
+                    .setMessage(message)
+                    .setPositiveButton("OK") { _, _ -> result.confirm() }
+                    .setNegativeButton("Hủy") { _, _ -> result.cancel() }
+                    .setOnCancelListener { result.cancel() }
+                    .setCancelable(true)
+                    .show()
+            } catch (_: Exception) {
+                result.cancel()
+            }
+            return true
         }
     }
 

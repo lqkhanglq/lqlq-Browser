@@ -69,6 +69,11 @@ class ShellBridge(private val activity: MainActivity) {
     }
 
     @JavascriptInterface
+    fun injectChapterClipper() {
+        activity.runOnUiThread { activity.injectChapterClipper() }
+    }
+
+    @JavascriptInterface
     fun openExternal(url: String) {
         try {
             activity.startActivity(

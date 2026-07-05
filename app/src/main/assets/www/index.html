@@ -14,6 +14,27 @@
   <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/icon-180.png" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="stylesheet" href="styles.css" />
+  <script>
+    // Việc 1/2 (v0.23.4): nếu phiên trước còn thẻ đang mở một trang web
+    // thật (http/https), ẩn ngay phần "trang chủ" (browser-stage) TRƯỚC
+    // khi nó kịp vẽ ra — tránh loé trang chủ 1 nhịp trước khi native mở
+    // lại trang cũ. Chạy đồng bộ ngay trong <head>, không đợi app.js.
+    (function () {
+      try {
+        var raw = localStorage.getItem("shieldBrowserPrototypeStateV2");
+        if (!raw) return;
+        var parsed = JSON.parse(raw);
+        var profile = parsed && parsed.normal;
+        if (!profile || !profile.tabs || !profile.tabs.length) return;
+        var tab = profile.tabs.find(function (t) {
+          return t && t.id === profile.activeTabId;
+        }) || profile.tabs[0];
+        if (tab && /^https?:\/\//i.test(String(tab.url || ""))) {
+          document.documentElement.classList.add("lqlq-native-page-open");
+        }
+      } catch (e) {}
+    })();
+  </script>
 </head>
 <body>
   <div id="app" class="app">
@@ -146,30 +167,9 @@
     </button>
 
     <main class="browser-stage">
-      <section class="page-card" id="pageView">
-        <div class="hero-header">
-          <div class="brand-lockup">
-            <div class="brand-mark" aria-hidden="true">
-              <svg viewBox="0 0 64 64">
-                <path class="brand-shield" d="M32 5 53 13v16c0 13.6-8.7 25.3-21 30C19.7 54.3 11 42.6 11 29V13L32 5Z"/>
-                <path class="brand-check" d="m22 31 7 7 14-16"/>
-              </svg>
-            </div>
-            <div>
-              <span class="eyebrow">DUYỆT WEB AN TOÀN HƠN</span>
-              <h1 id="pageTitle">lqlq Browser</h1>
-              <p id="pageUrl" class="page-url">https://google.com</p>
-            </div>
-          </div>
-
-          <div class="protection-pill">
-            <span class="protection-pulse"></span>
-            <div>
-              <b>Shield đang hoạt động</b>
-              <small>Quảng cáo và popup được kiểm soát</small>
-            </div>
-          </div>
-        </div>
+      <section class="page-card home-empty-state" id="pageView">
+        <h1 id="pageTitle" class="visually-hidden">lqlq Browser</h1>
+        <p id="pageUrl" class="visually-hidden">https://google.com</p>
 
         <div class="home-search-shell">
           <span class="home-search-icon" aria-hidden="true">⌕</span>
@@ -213,69 +213,7 @@
           ></div>
         </section>
 
-        <div class="dashboard-grid">
-          <article class="status-card protection-card">
-            <div class="card-heading">
-              <span class="card-icon shield-card-icon">◆</span>
-              <div>
-                <span class="section-kicker">BẢO VỆ</span>
-                <h3>Trạng thái thời gian thực</h3>
-              </div>
-            </div>
-
-            <div class="status-list">
-              <div class="status-row">
-                <span class="status-check">✓</span>
-                <div><b>Bộ lọc quảng cáo</b><small>Luôn bật</small></div>
-                <span class="status-tag good">Đang chạy</span>
-              </div>
-              <div class="status-row">
-                <span class="status-check">✓</span>
-                <div><b>Chặn popup và chuyển hướng</b><small>Giữ trang trong thẻ hiện tại</small></div>
-                <span class="status-tag good">Đang chạy</span>
-              </div>
-              <div class="status-row">
-                <span class="status-check">✓</span>
-                <div><b>Tương thích cảm ứng</b><small id="androidAdblockBadge">Android đã sẵn sàng</small></div>
-                <span class="status-tag neutral">Sẵn sàng</span>
-              </div>
-            </div>
-          </article>
-
-          <article class="status-card workflow-card">
-            <div class="card-heading">
-              <span class="card-icon workflow-card-icon">↗</span>
-              <div>
-                <span class="section-kicker">CÔNG CỤ</span>
-                <h3>Thao tác nhanh</h3>
-              </div>
-            </div>
-
-            <div class="workflow-actions">
-              <button data-ui-action="history">
-                <span>◷</span>
-                <div><b>Mở nhật ký</b><small>Xem các trang gần đây</small></div>
-              </button>
-              <button data-ui-action="bookmarks">
-                <span>★</span>
-                <div><b>Mở trang đã lưu</b><small>Xem và quản lý các lối tắt đã lưu</small></div>
-              </button>
-              <button data-ui-action="save-page-html">
-                <span>⇩</span>
-                <div><b>Lưu trang ngoại tuyến</b><small>Tải trang HTML đang mở</small></div>
-              </button>
-              <button data-ui-action="security-center">
-                <span>◈</span>
-                <div><b>Trung tâm Shield</b><small>Quyền, HTTPS, IP và tải xuống</small></div>
-              </button>
-            </div>
-          </article>
-        </div>
-
-        <p class="prototype-note">
-          Bản HTML dùng để kiểm tra giao diện và luồng thao tác. Bản APK WebView sẽ mở trang thật,
-          chặn request ở cấp Android và lưu trang ngoại tuyến đầy đủ hơn.
-        </p>
+        <span id="androidAdblockBadge" class="visually-hidden">Android đã sẵn sàng</span>
       </section>
 
       <aside class="side-drawer" id="sideDrawer">
@@ -335,11 +273,15 @@
         <span class="menu-copy"><b>Đọc truyện TXT</b><small>Lấy chương web, mở TXT và nghe bằng TTS</small></span>
         <span class="menu-new">Mới</span>
       </button>
-      <button data-action="chapter-clipper" class="chapter-clipper-menu-entry">
+      <button
+        data-action="chapter-clipper-native"
+        id="chapterClipperMenuBtn"
+        class="chapter-clipper-menu-entry"
+      >
         <span class="menu-icon chapter-clipper">TXT+</span>
         <span class="menu-copy">
           <b>Chapter Clipper</b>
-          <small>Lưu chương FULL, ghép lô TXT và chạy tự động</small>
+          <small>Bật panel nổi TXT+ ngay trên trang web đang mở</small>
         </span>
         <span class="menu-new">Mới</span>
       </button>
@@ -1794,7 +1736,9 @@
   <script src="reader.js"></script>
   <script src="v13-media.js"></script>
   <script src="v14-image-editor.js"></script>
-  <script src="v15-chapter-clipper.js"></script>
+  <!-- v15-chapter-clipper.js (v0.23.4): TẮT — kiến trúc PageBridge round-trip
+       cũ gây đơ/lag đã được thay bằng content-script tiêm thẳng vào WebView
+       của trang thật, xem tools/chapter-clipper-content.js + android-glue.js. -->
   <script src="v16-mobile-ui.js"></script>
   <script src="v19-saved-pages-home.js"></script>
   <script src="v20-mobile-image-tools.js"></script>

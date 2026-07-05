@@ -1,0 +1,193 @@
+/*
+ * chapter-clipper-styles.css — lqlq Browser v0.23.4
+ * Copy nguyên bản từ chapter_clipper_txt_plus_v1_3_auto/styles.css.
+ * Được nạp bằng native.injectChapterClipper() qua 1 thẻ <style> chèn
+ * thẳng vào WebView của trang web thật (xem MainActivity.injectChapterClipper()).
+ */
+#cc-panel {
+  position: fixed !important;
+  right: 18px !important;
+  bottom: 24px !important;
+  width: 292px !important;
+  z-index: 2147483647 !important;
+  background: #ffffff !important;
+  color: #222 !important;
+  border: 1px solid #24a848 !important;
+  border-radius: 12px !important;
+  box-shadow: 0 8px 28px rgba(0,0,0,.24) !important;
+  font-family: Arial, sans-serif !important;
+  font-size: 13px !important;
+  overflow: hidden !important;
+}
+
+#cc-head {
+  background: linear-gradient(135deg, #22aa49, #1c8d3c) !important;
+  color: white !important;
+  padding: 8px 10px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+}
+
+#cc-min {
+  background: rgba(255,255,255,.18) !important;
+  color: white !important;
+  border: 1px solid rgba(255,255,255,.55) !important;
+  border-radius: 5px !important;
+  width: 28px !important;
+  height: 24px !important;
+  cursor: pointer !important;
+}
+
+#cc-body {
+  padding: 10px !important;
+}
+
+#cc-body button {
+  width: 100% !important;
+  margin: 4px 0 !important;
+  padding: 8px !important;
+  border-radius: 7px !important;
+  border: 1px solid #24a848 !important;
+  background: #f4fff6 !important;
+  color: #177331 !important;
+  cursor: pointer !important;
+  font-weight: 700 !important;
+}
+
+#cc-body button:hover {
+  background: #e4ffea !important;
+}
+
+#cc-save-next {
+  background: #25b84d !important;
+  color: white !important;
+}
+
+#cc-save-next:hover {
+  background: #15983a !important;
+}
+
+#cc-test {
+  border-color: #2d8cff !important;
+  color: #1464b4 !important;
+  background: #f1f7ff !important;
+}
+
+.cc-two {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 6px !important;
+}
+
+.cc-two button {
+  font-size: 12px !important;
+  padding: 7px 4px !important;
+}
+
+.cc-row, .cc-check {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  margin: 8px 0 !important;
+  color: #333 !important;
+}
+
+#cc-batch-size {
+  width: 58px !important;
+  padding: 3px !important;
+  border: 1px solid #ccc !important;
+  border-radius: 4px !important;
+}
+
+.cc-hotkeys {
+  color: #666 !important;
+  font-size: 11px !important;
+  margin-top: 6px !important;
+}
+
+#cc-status {
+  white-space: pre-wrap !important;
+  background: #f7f7f7 !important;
+  border: 1px solid #ddd !important;
+  border-radius: 7px !important;
+  padding: 8px !important;
+  margin: 8px 0 0 0 !important;
+  max-height: 155px !important;
+  overflow: auto !important;
+  font-family: Consolas, monospace !important;
+  font-size: 12px !important;
+  color: #333 !important;
+}
+
+#cc-toast {
+  position: fixed !important;
+  right: 18px !important;
+  bottom: 365px !important;
+  max-width: 410px !important;
+  z-index: 2147483647 !important;
+  background: #111 !important;
+  color: white !important;
+  padding: 10px 12px !important;
+  border-radius: 8px !important;
+  opacity: 0 !important;
+  transform: translateY(10px) !important;
+  transition: .18s ease !important;
+  font-family: Arial, sans-serif !important;
+  font-size: 13px !important;
+}
+
+#cc-toast.show {
+  opacity: 1 !important;
+  transform: translateY(0) !important;
+}
+
+#cc-auto-box {
+  border: 1px dashed #24a848 !important;
+  border-radius: 8px !important;
+  padding: 6px 8px !important;
+  margin-bottom: 6px !important;
+  background: #f7fff9 !important;
+}
+
+#cc-auto-box.cc-running {
+  border-style: solid !important;
+  background: #fff7ec !important;
+  border-color: #e08a00 !important;
+}
+
+#cc-auto-box .cc-row {
+  margin: 2px 0 6px 0 !important;
+}
+
+#cc-auto-count {
+  width: 64px !important;
+  padding: 3px !important;
+  border: 1px solid #ccc !important;
+  border-radius: 4px !important;
+}
+
+#cc-auto-start {
+  background: #e08a00 !important;
+  border-color: #c67a00 !important;
+  color: white !important;
+}
+
+#cc-auto-start:hover {
+  background: #c67a00 !important;
+}
+
+#cc-auto-stop {
+  background: #fff1f1 !important;
+  border-color: #d33 !important;
+  color: #b22 !important;
+}
+
+#cc-auto-stop:hover {
+  background: #ffe2e2 !important;
+}
+
+#cc-body button:disabled {
+  opacity: .5 !important;
+  cursor: not-allowed !important;
+}

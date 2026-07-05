@@ -433,6 +433,30 @@
   );
 
   // ==================================================================
+  // 8b. Chapter Clipper (v0.23.4): tiêm content-script thật thẳng vào
+  //     WebView của trang web đang mở, thay cho kiến trúc PageBridge
+  //     round-trip cũ (v15-chapter-clipper.js, đã tắt trong index.html).
+  //     Nút menu vẫn giữ nguyên vị trí trong chrome-menu.
+  // ==================================================================
+
+  document.addEventListener(
+    "click",
+    event => {
+      const btn = event.target?.closest?.("#chapterClipperMenuBtn");
+      if (!btn) return;
+      event.preventDefault();
+      event.stopPropagation();
+      closeAllMenus();
+      if (typeof native.injectChapterClipper === "function") {
+        safeCall(() => native.injectChapterClipper());
+      } else {
+        safeCall(() => native.showToast?.("Bản này chưa hỗ trợ Chapter Clipper."));
+      }
+    },
+    true
+  );
+
+  // ==================================================================
   // 9. Lưu tệp: chuyển link tải blob:/data: sang thư mục Download
   // ==================================================================
 

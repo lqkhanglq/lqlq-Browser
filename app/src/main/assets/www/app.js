@@ -8,16 +8,24 @@ function uid() {
   return "id-" + Date.now() + "-" + Math.random().toString(16).slice(2);
 }
 
+// Việc 2 (v0.23.4): thẻ "trống" (chưa mở trang nào) dùng url rỗng thay vì
+// "https://google.com" giả lập — để không bị hiểu nhầm là "trang web thật
+// cần khôi phục" (xem android-glue.js/index.html: chỉ tự mở lại thẻ có
+// url http(s) thật), và để hiện đúng trạng thái "địa chỉ trống" ở #pageView.
+function blankTab(title = "Thẻ mới") {
+  return { id: uid(), title, url: "" };
+}
+
 const store = {
   normal: {
-    tabs: [{ id: uid(), title: "google.com", url: "https://google.com" }],
+    tabs: [blankTab("Thẻ mới")],
     activeTabId: null,
     history: [],
     bookmarks: [],
     downloads: []
   },
   private: {
-    tabs: [{ id: uid(), title: "Thẻ mới", url: "https://google.com" }],
+    tabs: [blankTab("Thẻ mới")],
     activeTabId: null,
     history: [],
     bookmarks: [],
@@ -103,11 +111,11 @@ function loadState() {
   }
 
   if (!store.normal.tabs || !store.normal.tabs.length) {
-    store.normal.tabs = [{ id: uid(), title: "google.com", url: "https://google.com" }];
+    store.normal.tabs = [blankTab("Thẻ mới")];
   }
 
   if (!store.private.tabs || !store.private.tabs.length) {
-    store.private.tabs = [{ id: uid(), title: "Thẻ mới", url: "https://google.com" }];
+    store.private.tabs = [blankTab("Thẻ mới")];
   }
 
   store.normal.activeTabId ||= store.normal.tabs[0].id;
@@ -175,13 +183,11 @@ function navigate(url, addHistory = true) {
   toast("Đã mở: " + tab.title + " · Bộ lọc quảng cáo đang bật");
 }
 
-function newTab(url = "https://google.com") {
+function newTab(url = "") {
   const profile = currentProfile();
-  const tab = {
-    id: uid(),
-    title: titleFromUrl(url),
-    url
-  };
+  const tab = url
+    ? { id: uid(), title: titleFromUrl(url), url }
+    : blankTab("Thẻ mới");
 
   profile.tabs.push(tab);
   profile.activeTabId = tab.id;
@@ -193,11 +199,9 @@ function closeTab(id) {
   const profile = currentProfile();
 
   if (profile.tabs.length <= 1) {
-    profile.tabs[0] = {
-      id: uid(),
-      title: "google.com",
-      url: "https://google.com"
-    };
+    // Đóng thẻ cuối cùng → về thẻ trống (thanh địa chỉ trống), KHÔNG mở
+    // lại google.com giả lập (Việc 2, v0.23.4).
+    profile.tabs[0] = blankTab("Thẻ mới");
     profile.activeTabId = profile.tabs[0].id;
   } else {
     const index = profile.tabs.findIndex(tab => tab.id === id);
@@ -251,9 +255,9 @@ function renderTabs() {
 function renderPage() {
   const tab = activeTab();
 
-  els.addressInput.value = tab.url;
+  els.addressInput.value = tab.url || "";
   els.pageTitle.textContent = tab.title;
-  els.pageUrl.textContent = tab.url;
+  els.pageUrl.textContent = tab.url || "";
   els.fakeSearch.value = "";
   els.zoomLabel.textContent = store.zoom + "%";
 
@@ -262,6 +266,13 @@ function renderPage() {
 
   // Không hiển thị chữ hoặc nhãn mô tả vùng riêng.
   els.app.classList.toggle("private-context", store.mode === "private");
+
+  // Việc 2 (v0.23.4): chưa có trang thật nào mở (thẻ trống) và không có
+  // native page đang hiển thị phía dưới → focus sẵn ô địa chỉ để gõ ngay.
+  const nativePageOpen = document.body.classList.contains("lqlq-native-page-open");
+  if (!tab.url && !nativePageOpen && document.activeElement !== els.fakeSearch) {
+    setTimeout(() => els.fakeSearch?.focus(), 30);
+  }
 }
 
 function render() {

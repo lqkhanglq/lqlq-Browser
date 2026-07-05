@@ -9626,11 +9626,13 @@ html[data-theme="dark"] .mobile-toolbar-mode-check {
    để lộ đúng trang web thật phía sau; chỉ giữ top-shell + menu/panel.
    ===================================================================== */
 html:has(body.lqlq-native-page-open),
-body.lqlq-native-page-open {
+body.lqlq-native-page-open,
+html.lqlq-native-page-open {
   background: transparent !important;
 }
 
-body.lqlq-native-page-open .browser-stage {
+body.lqlq-native-page-open .browser-stage,
+html.lqlq-native-page-open .browser-stage {
   visibility: hidden;
 }
 
@@ -9639,6 +9641,36 @@ body.lqlq-native-page-open .chrome-menu,
 body.lqlq-native-page-open .tools-menu,
 body.lqlq-native-page-open .side-drawer,
 body.lqlq-native-page-open .mobile-menu-backdrop,
-body.lqlq-native-page-open .mobile-tabs-overlay {
+body.lqlq-native-page-open .mobile-tabs-overlay,
+html.lqlq-native-page-open .top-shell,
+html.lqlq-native-page-open .chrome-menu,
+html.lqlq-native-page-open .tools-menu,
+html.lqlq-native-page-open .side-drawer,
+html.lqlq-native-page-open .mobile-menu-backdrop,
+html.lqlq-native-page-open .mobile-tabs-overlay {
   visibility: visible;
+}
+
+/* =====================================================================
+   v0.23.4 — Việc 2: bỏ màn hình trang chủ giả lập. #pageView chỉ còn
+   thanh địa chỉ trống + "Trang đã lưu" khi chưa có trang thật nào mở.
+   ===================================================================== */
+.visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.home-empty-state {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 24px;
+  padding-top: 48px;
 }
