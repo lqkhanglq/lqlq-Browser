@@ -1,6 +1,21 @@
 (() => {
   "use strict";
 
+  // Việc (v0.23.36): VIẾT LẠI TỪ ĐẦU "Các thẻ đang mở" theo yêu cầu người
+  // dùng — bản cũ tích luỹ qua nhiều lớp (nhóm thẻ kéo-thả, ảnh xem trước
+  // native, đổi chế độ lưới/danh sách) suốt nhiều vòng vá mà vẫn còn báo lỗi
+  // "trống hoàn toàn khi đang xem trang web thật". Nguyên nhân khả nghi nhất
+  // (không loại trừ hoàn toàn nhưng rất đáng ngờ): bản cũ GHI ĐÈ hàm
+  // render() TOÀN CỤC để tự render lại lưới tab mỗi khi render() được gọi
+  // (mà render() bị gọi RẤT THƯỜNG XUYÊN khi đang xem trang thật — mỗi lần
+  // onNativePage() nhận cập nhật từ onPageStarted/doUpdateVisitedHistory/
+  // onPageFinished của MainActivity.kt) — dựng lại toàn bộ DOM lưới liên tục
+  // trong lúc trang đang tải/điều hướng, dễ sinh trạng thái không nhất quán.
+  // Bản viết lại này CHỈ render lưới khi người dùng THỰC SỰ mở nó
+  // (openTabSwitcher), không còn hook vào render() toàn cục nữa. Bỏ hẳn
+  // tính năng nhóm thẻ + ảnh xem trước + đổi chế độ xem — chỉ còn danh sách
+  // thẻ đơn giản, đáng tin cậy, giống cấu trúc cơ bản của Chrome.
+
   const refs = {
     home: document.getElementById("mobileHomeBtn"),
     newTab: document.getElementById("mobileNewTabBtn"),
@@ -17,122 +32,8 @@
     viewToggle: document.getElementById("mobileTabsViewToggle")
   };
 
-  // Việc (v0.23.24 — Vấn đề 4): Nhóm thẻ kiểu Chrome — bản đơn giản nhất.
-  // Mỗi profile có 1 danh sách nhóm (id/tên/màu), mỗi tab tham chiếu tới 1
-  // nhóm qua tab.groupId. Không hỗ trợ kéo-thả như Chrome thật, chỉ cần
-  // gán/bỏ nhóm qua nút "⋮" trên mỗi thẻ trong lưới "Các thẻ đang mở".
-  const GROUP_COLORS = ["#4f8f6d", "#4a7fc4", "#c48a3f", "#b1548a", "#7a63c9", "#c15a4d"];
-
-  function ensureProfileGroups(profile) {
-    if (!Array.isArray(profile.tabGroups)) profile.tabGroups = [];
-    return profile.tabGroups;
-  }
-
-  function findGroup(profile, groupId) {
-    return ensureProfileGroups(profile).find(g => g.id === groupId) || null;
-  }
-
-  function nextGroupColor(profile) {
-    const groups = ensureProfileGroups(profile);
-    return GROUP_COLORS[groups.length % GROUP_COLORS.length];
-  }
-
-  let openGroupMenuEl = null;
-
-  function closeGroupMenu() {
-    openGroupMenuEl?.remove();
-    openGroupMenuEl = null;
-  }
-
-  function assignTabToGroup(tab, groupId) {
-    tab.groupId = groupId || null;
-    saveState();
-    renderMobileTabs();
-  }
-
-  function openGroupMenu(tab, anchorEl) {
-    closeGroupMenu();
-    const profile = currentProfile();
-    const groups = ensureProfileGroups(profile);
-
-    const menu = document.createElement("div");
-    menu.className = "mobile-tab-group-menu";
-
-    const rect = anchorEl.getBoundingClientRect();
-    menu.style.top = `${Math.min(rect.bottom + 6, window.innerHeight - 220)}px`;
-    menu.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - 268))}px`;
-
-    if (tab.groupId) {
-      const clearBtn = document.createElement("button");
-      clearBtn.type = "button";
-      clearBtn.className = "mobile-tab-group-menu-item";
-      clearBtn.textContent = "✕ Bỏ khỏi nhóm";
-      clearBtn.addEventListener("click", () => {
-        assignTabToGroup(tab, null);
-        closeGroupMenu();
-      });
-      menu.appendChild(clearBtn);
-    }
-
-    groups.forEach(group => {
-      const item = document.createElement("button");
-      item.type = "button";
-      item.className = "mobile-tab-group-menu-item";
-
-      const dot = document.createElement("span");
-      dot.className = "mobile-tab-group-menu-dot";
-      dot.style.background = group.color;
-
-      const label = document.createElement("span");
-      label.textContent = group.name;
-
-      item.append(dot, label);
-      item.addEventListener("click", () => {
-        assignTabToGroup(tab, group.id);
-        closeGroupMenu();
-      });
-      menu.appendChild(item);
-    });
-
-    const inputRow = document.createElement("div");
-    inputRow.className = "mobile-tab-group-menu-input";
-
-    const input = document.createElement("input");
-    input.type = "text";
-    input.placeholder = "Tên nhóm mới";
-    input.maxLength = 24;
-
-    const createBtn = document.createElement("button");
-    createBtn.type = "button";
-    createBtn.textContent = "Tạo";
-    createBtn.addEventListener("click", () => {
-      const name = input.value.trim();
-      if (!name) return;
-      const group = {
-        id: uid(),
-        name,
-        color: nextGroupColor(profile)
-      };
-      groups.push(group);
-      assignTabToGroup(tab, group.id);
-      closeGroupMenu();
-    });
-
-    inputRow.append(input, createBtn);
-    menu.appendChild(inputRow);
-
-    document.body.appendChild(menu);
-    openGroupMenuEl = menu;
-
-    setTimeout(() => {
-      document.addEventListener("click", function onOutsideClick(event) {
-        if (!menu.contains(event.target)) {
-          closeGroupMenu();
-          document.removeEventListener("click", onOutsideClick, true);
-        }
-      }, true);
-    }, 0);
-  }
+  // Nút đổi chế độ xem không còn dùng nữa (chỉ còn 1 kiểu lưới đơn giản).
+  if (refs.viewToggle) refs.viewToggle.style.display = "none";
 
   function isMobileLayout() {
     return window.matchMedia("(max-width: 700px)").matches;
@@ -142,10 +43,7 @@
     const profile = currentProfile();
     const count = Math.max(1, profile.tabs.length);
     refs.count.textContent = count > 99 ? ":D" : String(count);
-    refs.tabs.setAttribute(
-      "aria-label",
-      `${count} thẻ đang mở`
-    );
+    refs.tabs.setAttribute("aria-label", `${count} thẻ đang mở`);
   }
 
   function faviconLetter(tab) {
@@ -153,132 +51,88 @@
     return title.charAt(0).toUpperCase() || "T";
   }
 
-  let tabsFilter = "";
-
-  function tabMatchesFilter(tab) {
-    if (!tabsFilter) return true;
-    const haystack = `${tab.title || ""} ${tab.url || ""}`.toLowerCase();
-    return haystack.includes(tabsFilter);
+  function domainHue(tab) {
+    const seed = String(tab.url || tab.title || "T").split("/")[2] || tab.title || "T";
+    let hash = 0;
+    for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+    return hash % 360;
   }
 
-  function renderMobileTabs() {
+  function createTabCard(tab, activeTabId) {
+    const card = document.createElement("article");
+    card.className = "mobile-tab-card" + (tab.id === activeTabId ? " active" : "");
+
+    const preview = document.createElement("div");
+    preview.className = "mobile-tab-card-preview";
+    preview.style.background = `linear-gradient(180deg, hsl(${domainHue(tab)} 45% 94%), hsl(${domainHue(tab)} 35% 88%))`;
+    preview.innerHTML = `<span>${escapeHtml(faviconLetter(tab))}</span>`;
+
+    if (tab.id === activeTabId) {
+      const badge = document.createElement("span");
+      badge.className = "mobile-tab-active-badge";
+      badge.textContent = "Đang mở";
+      preview.appendChild(badge);
+    }
+
+    const closeButton = document.createElement("button");
+    closeButton.className = "mobile-tab-card-close";
+    closeButton.type = "button";
+    closeButton.setAttribute("aria-label", `Đóng ${tab.title || "thẻ"}`);
+    closeButton.textContent = "×";
+    closeButton.addEventListener("click", event => {
+      event.stopPropagation();
+      closeTab(tab.id);
+      renderTabSwitcherGrid();
+      updateMobileTabCount();
+    });
+
+    const copy = document.createElement("div");
+    copy.className = "mobile-tab-card-copy";
+
+    const titleEl = document.createElement("b");
+    titleEl.textContent = tab.title || "Thẻ mới";
+
+    const urlEl = document.createElement("small");
+    urlEl.textContent = tab.url || "";
+
+    copy.append(titleEl, urlEl);
+
+    card.append(preview, closeButton, copy);
+    card.dataset.searchText = `${tab.title || ""} ${tab.url || ""}`.toLowerCase();
+
+    card.addEventListener("click", () => {
+      switchTab(tab.id);
+      closeTabSwitcher();
+    });
+
+    return card;
+  }
+
+  // Chỉ render khi thực sự cần (mở lưới, hoặc đóng/mở thẻ trong khi lưới
+  // đang mở) — KHÔNG hook vào render() toàn cục nữa.
+  function renderTabSwitcherGrid() {
     const profile = currentProfile();
-    const groups = ensureProfileGroups(profile);
-    closeGroupMenu();
+    const activeTabId = profile.activeTabId;
+
     refs.grid.innerHTML = "";
 
-    const visibleTabs = profile.tabs.filter(tabMatchesFilter);
-
-    if (!visibleTabs.length) {
-      refs.grid.innerHTML = `<div class="mobile-tab-card-empty" style="grid-column:1/-1;text-align:center;padding:24px 8px;color:#89958d;font-size:12px;">Không tìm thấy thẻ phù hợp.</div>`;
+    if (!profile.tabs.length) {
+      refs.grid.innerHTML = `<div class="mobile-tab-card-empty">Chưa có thẻ nào.</div>`;
       return;
     }
 
-    visibleTabs.forEach(tab => {
-      const group = tab.groupId ? findGroup(profile, tab.groupId) : null;
-
-      const card = document.createElement("article");
-      card.className =
-        "mobile-tab-card"
-        + (tab.id === profile.activeTabId ? " active" : "");
-      if (group) card.style.borderColor = group.color;
-
-      const preview = document.createElement("div");
-      preview.className = "mobile-tab-card-preview";
-
-      const domainColorSeed = String(tab.url || tab.title || "").split("/")[2] || tab.title || "T";
-      let hash = 0;
-      for (let i = 0; i < domainColorSeed.length; i++) hash = (hash * 31 + domainColorSeed.charCodeAt(i)) >>> 0;
-      const hue = hash % 360;
-      preview.style.background = `linear-gradient(180deg, hsl(${hue} 45% 94%), hsl(${hue} 35% 88%))`;
-      preview.innerHTML = `<span>${escapeHtml(faviconLetter(tab))}</span>`;
-
-      // Việc "vẫn lag/trống" (v0.23.34): BỎ HẲN việc gọi native.getTabThumbnail()
-      // — đây là nguồn gốc bất ổn nhất qua 3 lần vá liên tiếp (v0.23.31/32/33)
-      // mà vẫn còn báo lỗi mới ("trống hoàn toàn, không cả thẻ nào"), rất có
-      // thể do gọi cầu nối native N lần đồng bộ trong 1 vòng lặp render khi
-      // đang có trang web thật hiển thị. Quay lại icon chữ+màu cục bộ (không
-      // native, không mạng) — kém đẹp hơn ảnh thật nhưng ĐÁNG TIN CẬY tuyệt
-      // đối, đúng ưu tiên người dùng yêu cầu (mượt/ổn định hơn là đẹp).
-      if (tab.id === profile.activeTabId) {
-        const activeBadge = document.createElement("span");
-        activeBadge.className = "mobile-tab-active-badge";
-        activeBadge.textContent = "Đang mở";
-        preview.appendChild(activeBadge);
-      }
-
-      if (group) {
-        const chip = document.createElement("span");
-        chip.className = "mobile-tab-group-chip";
-        chip.style.background = group.color;
-        chip.textContent = group.name;
-        preview.appendChild(chip);
-      }
-
-      const menuButton = document.createElement("button");
-      menuButton.className = "mobile-tab-card-menu";
-      menuButton.type = "button";
-      menuButton.setAttribute("aria-label", `Tùy chọn nhóm cho ${tab.title || "thẻ"}`);
-      menuButton.textContent = "⋮";
-      menuButton.addEventListener("click", event => {
-        event.stopPropagation();
-        openGroupMenu(tab, menuButton);
-      });
-
-      const closeButton = document.createElement("button");
-      closeButton.className = "mobile-tab-card-close";
-      closeButton.type = "button";
-      closeButton.setAttribute("aria-label", `Đóng ${tab.title}`);
-      closeButton.textContent = "×";
-
-      const copy = document.createElement("div");
-      copy.className = "mobile-tab-card-copy";
-
-      // Việc "Các thẻ đang mở bị lag" (v0.23.30): trước đây mỗi thẻ tải 1
-      // ảnh favicon.ico THẬT QUA MẠNG (faviconForUrl → origin + "/favicon.ico")
-      // ngay khi mở lưới — có bao nhiêu thẻ là bấy nhiêu request mạng cùng
-      // lúc, gây cảm giác nặng/lag thật sự khi có nhiều thẻ hoặc mạng chậm.
-      // Đã bỏ hẳn, chỉ dùng icon chữ cái local đã có sẵn trong `preview`
-      // (gradient màu theo domain + chữ cái đầu) — không cần mạng, tức thì.
-      const titleRow = document.createElement("div");
-      titleRow.className = "mobile-tab-card-copy-title";
-      const titleEl = document.createElement("b");
-      titleEl.textContent = tab.title || "Thẻ mới";
-      titleRow.append(titleEl);
-
-      const urlEl = document.createElement("small");
-      urlEl.textContent = tab.url || "https://google.com";
-
-      copy.append(titleRow, urlEl);
-
-      closeButton.addEventListener("click", event => {
-        event.stopPropagation();
-        closeTab(tab.id);
-        renderMobileTabs();
-        updateMobileTabCount();
-      });
-
-      card.addEventListener("click", () => {
-        switchTab(tab.id);
-        closeTabSwitcher();
-      });
-
-      card.append(preview, closeButton, menuButton, copy);
-      // Lưu sẵn text tìm kiếm trên chính card (thay vì phải đọc lại profile
-      // mỗi lần gõ phím) để lọc bằng cách ẩn/hiện (mục 4 — độ mượt): tránh
-      // phải huỷ-dựng-lại toàn bộ DOM + gọi lại getTabThumbnail() (bridge
-      // native, có mã hoá base64 ảnh) cho MỌI thẻ mỗi lần gõ 1 ký tự.
-      card.dataset.searchText = `${tab.title || ""} ${tab.url || ""}`.toLowerCase();
-      refs.grid.appendChild(card);
+    const fragment = document.createDocumentFragment();
+    profile.tabs.forEach(tab => {
+      fragment.appendChild(createTabCard(tab, activeTabId));
     });
+    refs.grid.appendChild(fragment);
   }
 
-  // Lọc theo từ khoá bằng cách ẩn/hiện card đã dựng sẵn — KHÔNG dựng lại
-  // DOM, KHÔNG gọi lại getTabThumbnail(). Chỉ renderMobileTabs() đầy đủ khi
-  // mở lưới lần đầu hoặc dữ liệu tab thực sự đổi (đóng/mở/đổi nhóm...).
-  function applyTabsFilterInPlace() {
+  let tabsFilter = "";
+  let searchDebounceTimer = null;
+
+  function applyTabsFilter() {
     const cards = refs.grid.querySelectorAll(".mobile-tab-card");
-    if (!cards.length) return;
     let visibleCount = 0;
     cards.forEach(card => {
       const match = !tabsFilter || (card.dataset.searchText || "").includes(tabsFilter);
@@ -291,7 +145,6 @@
       if (!emptyEl) {
         emptyEl = document.createElement("div");
         emptyEl.className = "mobile-tab-card-empty";
-        emptyEl.style.cssText = "grid-column:1/-1;text-align:center;padding:24px 8px;color:#89958d;font-size:12px;";
         emptyEl.textContent = "Không tìm thấy thẻ phù hợp.";
         refs.grid.appendChild(emptyEl);
       }
@@ -301,55 +154,26 @@
     }
   }
 
-  let searchDebounceTimer = null;
-
   function openTabSwitcher() {
     closeMenus();
     tabsFilter = "";
     if (refs.search) refs.search.value = "";
 
-    // Việc (v0.23.27 — Vấn đề: "Các thẻ đang mở" không hiện gì): bỏ ẩn
-    // overlay TRƯỚC khi render nội dung lưới thẻ. Trước đây renderMobileTabs()
-    // chạy trước — nếu nó ném lỗi (vd. dữ liệu tab/nhóm hỏng), toàn bộ hàm này
-    // dừng lại NGAY LẬP TỨC và 2 dòng bỏ class "hidden" / thêm class mở overlay
-    // phía dưới KHÔNG BAO GIỜ chạy được → màn hình không hiện gì cả, đúng như
-    // triệu chứng người dùng báo. Nay overlay luôn được mở trước, và việc
-    // render nội dung được bọc try/catch riêng để lỗi (nếu có) không còn làm
-    // "biến mất" cả tính năng nữa.
+    // Mở overlay TRƯỚC khi render nội dung — nếu render lỗi vì lý do gì đó,
+    // overlay vẫn hiện và thông báo lỗi thật sẽ hiện trong lưới thay vì cả
+    // tính năng "biến mất" không dấu vết.
     refs.overlay.classList.remove("hidden");
     document.body.classList.add("mobile-overlay-open");
 
     try {
-      renderMobileTabs();
-      // Việc "vẫn trống dù đang có nhiều thẻ" (v0.23.35): đã qua nhiều vòng
-      // sửa (v0.23.27/31-34) mà vẫn có báo cáo trống hoàn toàn khi đang xem
-      // 1 trang web thật, dù không hề throw lỗi gì (không thấy cả thông báo
-      // "Không thể tải danh sách thẻ"). Thêm kiểm tra ĐỐI CHIẾU: nếu
-      // profile.tabs thực sự có thẻ nhưng lưới lại không có card nào được
-      // tạo ra (mâu thuẫn), hiện rõ SỐ LƯỢNG THẺ THỰC TẾ + trạng thái để có
-      // manh mối chẩn đoán thật, thay vì im lặng trống trơn không dấu vết.
-      const actualTabCount = currentProfile().tabs.length;
-      const cardCount = refs.grid.querySelectorAll(".mobile-tab-card").length;
-      if (actualTabCount > 0 && cardCount === 0 && !refs.grid.querySelector(".mobile-tab-card-empty")) {
-        refs.grid.innerHTML = `<div class="mobile-tab-card-empty" style="grid-column:1/-1;text-align:center;padding:24px 8px;color:#89958d;font-size:12px;">Có ${actualTabCount} thẻ trong dữ liệu nhưng lưới không tạo được thẻ nào (lỗi hiển thị — vui lòng chụp màn hình này báo lại).</div>`;
-      } else if (cardCount > 0 && refs.grid.offsetHeight < 10) {
-        // Card CÓ được tạo ra (đúng số lượng) nhưng vùng lưới bị co lại gần
-        // như 0px chiều cao — đây là dấu hiệu lỗi CSS/layout (kích thước bị
-        // sập), không phải thiếu dữ liệu. Hiện rõ để phân biệt 2 loại lỗi.
-        const note = document.createElement("div");
-        note.style.cssText = "grid-column:1/-1;text-align:center;padding:8px;color:#c0392b;font-size:11px;background:#fff3f0;border-radius:8px;";
-        note.textContent = `Cảnh báo: ${cardCount} thẻ đã tạo nhưng vùng lưới cao ${refs.grid.offsetHeight}px (lỗi co layout) — vui lòng chụp màn hình này báo lại.`;
-        refs.grid.prepend(note);
-      }
+      renderTabSwitcherGrid();
     } catch (error) {
       console.warn("lqlq mobile tabs:", error);
-      const message = escapeHtml(String(error?.message || error));
-      refs.grid.innerHTML = `<div class="mobile-tab-card-empty" style="grid-column:1/-1;text-align:center;padding:24px 8px;color:#89958d;font-size:12px;">Không thể tải danh sách thẻ: ${message}</div>`;
+      refs.grid.innerHTML = `<div class="mobile-tab-card-empty">Không thể tải danh sách thẻ: ${escapeHtml(String(error?.message || error))}</div>`;
     }
   }
 
   function closeTabSwitcher() {
-    closeGroupMenu();
     refs.overlay.classList.add("hidden");
     document.body.classList.remove("mobile-overlay-open");
   }
@@ -369,25 +193,20 @@
   function closeOtherTabs() {
     const profile = currentProfile();
     const current = activeTab();
-
     profile.tabs = [current];
     profile.activeTabId = current.id;
     saveState();
     render();
-    renderMobileTabs();
+    renderTabSwitcherGrid();
   }
 
   function closeAllTabs() {
     const profile = currentProfile();
-    profile.tabs = [{
-      id: uid(),
-      title: "google.com",
-      url: "https://google.com"
-    }];
+    profile.tabs = [{ id: uid(), title: "google.com", url: "https://google.com" }];
     profile.activeTabId = profile.tabs[0].id;
     saveState();
     render();
-    renderMobileTabs();
+    renderTabSwitcherGrid();
   }
 
   function syncMenuBackdrop() {
@@ -395,33 +214,12 @@
       refs.menuBackdrop.classList.add("hidden");
       return;
     }
-
     const menuOpen =
       !els.chromeMenu.classList.contains("hidden")
       || !els.toolsMenu.classList.contains("hidden");
-
     refs.menuBackdrop.classList.toggle("hidden", !menuOpen);
     document.body.classList.toggle("mobile-menu-open", menuOpen);
   }
-
-  const previousRender = render;
-  render = function renderWithMobileChrome() {
-    previousRender();
-
-    try {
-      updateMobileTabCount();
-    } catch (error) {
-      console.warn("lqlq mobile tab count:", error);
-    }
-
-    if (!refs.overlay.classList.contains("hidden")) {
-      try {
-        renderMobileTabs();
-      } catch (error) {
-        console.warn("lqlq mobile tabs render:", error);
-      }
-    }
-  };
 
   refs.home.addEventListener("click", () => {
     closeMenus();
@@ -435,32 +233,17 @@
   refs.closeOthers.addEventListener("click", closeOtherTabs);
   refs.closeAll.addEventListener("click", closeAllTabs);
 
-  // Việc (v0.23.24 — Vấn đề 1): ô "Tìm thẻ của bạn" lọc theo tiêu đề/URL các
-  // tab đang mở, phía client-side. Nút đổi kiểu xem chuyển giữa lưới 2 cột
-  // (mặc định) và danh sách 1 cột (giống nút "danh sách số/lưới" của Chrome).
   refs.search?.addEventListener("input", () => {
-    // Debounce ~180ms — tránh lọc lại ngay lập tức trên MỖI ký tự gõ, đặc
-    // biệt vì applyTabsFilterInPlace() giờ chỉ ẩn/hiện (rẻ) chứ không dựng
-    // lại DOM nữa, nhưng vẫn debounce để gõ nhanh mượt hơn, giống Chrome.
     const value = String(refs.search.value || "").trim().toLowerCase();
     if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
     searchDebounceTimer = setTimeout(() => {
       tabsFilter = value;
-      applyTabsFilterInPlace();
+      applyTabsFilter();
     }, 180);
   });
 
-  // Việc "Các thẻ đang mở vẫn lag/trống" (v0.23.34): người dùng yêu cầu bỏ
-  // hẳn cách/logic cũ thay vì tiếp tục vá — bỏ nút đổi chế độ lưới/danh
-  // sách (nguồn gây lỗi "trống tiêu đề" ở list-mode vừa sửa xong lại phát
-  // sinh thêm báo lỗi mới), chỉ còn ĐÚNG 1 chế độ lưới đơn giản, giống
-  // Chrome, giảm bề mặt lỗi.
-  if (refs.viewToggle) refs.viewToggle.style.display = "none";
-
   refs.overlay.addEventListener("click", event => {
-    if (event.target === refs.overlay) {
-      closeTabSwitcher();
-    }
+    if (event.target === refs.overlay) closeTabSwitcher();
   });
 
   refs.menuBackdrop.addEventListener("click", () => {
@@ -469,14 +252,8 @@
   });
 
   const menuObserver = new MutationObserver(syncMenuBackdrop);
-  menuObserver.observe(els.chromeMenu, {
-    attributes: true,
-    attributeFilter: ["class"]
-  });
-  menuObserver.observe(els.toolsMenu, {
-    attributes: true,
-    attributeFilter: ["class"]
-  });
+  menuObserver.observe(els.chromeMenu, { attributes: true, attributeFilter: ["class"] });
+  menuObserver.observe(els.toolsMenu, { attributes: true, attributeFilter: ["class"] });
 
   els.addressInput.addEventListener("focus", () => {
     if (isMobileLayout()) {
@@ -486,20 +263,26 @@
 
   window.addEventListener("resize", () => {
     syncMenuBackdrop();
-
-    if (!isMobileLayout()) {
-      closeTabSwitcher();
-    }
+    if (!isMobileLayout()) closeTabSwitcher();
   });
 
   document.addEventListener("keydown", event => {
-    if (
-      event.key === "Escape"
-      && !refs.overlay.classList.contains("hidden")
-    ) {
+    if (event.key === "Escape" && !refs.overlay.classList.contains("hidden")) {
       closeTabSwitcher();
     }
   });
+
+  // Chỉ cần cập nhật SỐ LƯỢNG thẻ (số nhỏ trên icon) mỗi khi render() toàn
+  // cục chạy — rẻ, không dựng lại DOM. Lưới chi tiết chỉ dựng khi thực sự mở.
+  const previousRender = render;
+  render = function renderWithMobileChrome() {
+    previousRender();
+    try {
+      updateMobileTabCount();
+    } catch (error) {
+      console.warn("lqlq mobile tab count:", error);
+    }
+  };
 
   updateMobileTabCount();
   syncMenuBackdrop();

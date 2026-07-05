@@ -7560,6 +7560,14 @@ html[data-theme="comfort"] .chapter-clipper-actions > button {
   padding: 14px;
 }
 
+.mobile-tab-card-empty {
+  grid-column: 1 / -1;
+  padding: 24px 8px;
+  text-align: center;
+  color: #89958d;
+  font-size: 12px;
+}
+
 .mobile-tabs-grid.list-mode {
   grid-template-columns: 1fr;
 }
