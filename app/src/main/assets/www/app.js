@@ -403,6 +403,8 @@ function openDrawer(type) {
       // nên cho bật/tắt riêng, MẶC ĐỊNH TẮT cho mượt hơn.
       const domEnabled = window.lqlqGetAdblockDomEnabled?.() ?? false;
       const domainGuardEnabled = window.lqlqGetDomainGuardEnabled?.() ?? true;
+      const badLoadRecoveryEnabled = window.lqlqGetBadLoadRecoveryEnabled?.() ?? false;
+      const blockNoticeToastsEnabled = window.lqlqGetBlockNoticeToastsEnabled?.() ?? true;
       els.drawerContent.innerHTML = `
         <div class="info-panel">
           <h3>Chặn quảng cáo/chuyển hướng</h3>
@@ -411,6 +413,10 @@ function openDrawer(type) {
             <span class="reader-toggle-copy"><b>Chặn nhảy trang quảng cáo/domain lạ</b><small>Mặc định bật</small></span>
             <input type="checkbox" id="domainGuardToggle" ${domainGuardEnabled ? "checked" : ""} onchange="window.lqlqSetDomainGuardEnabled(this.checked)">
           </label>
+          <label class="reader-toggle-row" style="cursor:pointer">
+            <span class="reader-toggle-copy"><b>Thông báo khi chặn</b><small>Hiện dòng chữ "Đã chặn..." — mặc định bật</small></span>
+            <input type="checkbox" id="blockNoticeToastsToggle" ${blockNoticeToastsEnabled ? "checked" : ""} onchange="window.lqlqSetBlockNoticeToastsEnabled(this.checked)">
+          </label>
         </div>
         <div class="info-panel">
           <h3>Ẩn quảng cáo hiển thị trong trang (DOM)</h3>
@@ -418,6 +424,14 @@ function openDrawer(type) {
           <label class="reader-toggle-row" style="cursor:pointer">
             <span class="reader-toggle-copy"><b>Ẩn quảng cáo trong trang</b><small>Mặc định tắt để mượt hơn</small></span>
             <input type="checkbox" id="adblockDomToggle" ${domEnabled ? "checked" : ""} onchange="window.lqlqSetAdblockDomEnabled(this.checked)">
+          </label>
+        </div>
+        <div class="info-panel">
+          <h3>Tự quay lại khi trang lỗi</h3>
+          <p>Nếu trang chính trả mã lỗi HTTP (503, 502, 404...), tự bấm Back về trang trước. Mã lỗi này thường chỉ do server đích đang quá tải/bảo trì, không phải quảng cáo — mặc định tắt.</p>
+          <label class="reader-toggle-row" style="cursor:pointer">
+            <span class="reader-toggle-copy"><b>Tự quay lại khi trang lỗi (HTTP 4xx/5xx)</b><small>Mặc định tắt</small></span>
+            <input type="checkbox" id="badLoadRecoveryToggle" ${badLoadRecoveryEnabled ? "checked" : ""} onchange="window.lqlqSetBadLoadRecoveryEnabled(this.checked)">
           </label>
         </div>
       `;

@@ -183,6 +183,32 @@ class ShellBridge(private val activity: MainActivity) {
     fun isDomainGuardEnabled(): Boolean = activity.domainGuardEnabled
 
     /**
+     * Bật/tắt tự bấm Back khi trang chính trả mã lỗi HTTP ≥ 400
+     * (MainActivity.badLoadRecoveryEnabled, mặc định TẮT).
+     */
+    @JavascriptInterface
+    fun setBadLoadRecoveryEnabled(enabled: Boolean) {
+        activity.badLoadRecoveryEnabled = enabled
+    }
+
+    @JavascriptInterface
+    fun isBadLoadRecoveryEnabled(): Boolean = activity.badLoadRecoveryEnabled
+
+    /**
+     * Bật/tắt các thông báo (Toast) khi chặn quảng cáo/chuyển hướng lạ hoặc
+     * khi tự quay lại do trang lỗi (MainActivity.blockNoticeToastsEnabled,
+     * mặc định BẬT). Không ảnh hưởng tới việc CÓ chặn hay không — chỉ ẩn/hiện
+     * dòng chữ thông báo.
+     */
+    @JavascriptInterface
+    fun setBlockNoticeToastsEnabled(enabled: Boolean) {
+        activity.blockNoticeToastsEnabled = enabled
+    }
+
+    @JavascriptInterface
+    fun isBlockNoticeToastsEnabled(): Boolean = activity.blockNoticeToastsEnabled
+
+    /**
      * Đồng bộ (không cần runOnUiThread callback riêng) vì WebView JS→Java
      * hỗ trợ giá trị trả về ngay khi gọi cùng luồng UI; dùng để cập nhật
      * trạng thái nút menu (bật/tắt) mỗi khi mở menu hoặc chuyển tab.

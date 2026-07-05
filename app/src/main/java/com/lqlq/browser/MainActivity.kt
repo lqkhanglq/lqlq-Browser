@@ -33,7 +33,6 @@ import android.webkit.MimeTypeMap
 import android.webkit.URLUtil
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
-import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
@@ -190,6 +189,27 @@ class MainActivity : AppCompatActivity() {
     @Volatile
     var domainGuardEnabled: Boolean = true
 
+    /**
+     * Tự bấm Back khi trang chính tải xong nhưng trả mã lỗi HTTP ≥ 400 (xem
+     * onReceivedHttpError bên dưới). Mặc định TẮT: lỗi 503/502 thường chỉ là
+     * server đích đang quá tải/bảo trì tạm thời, không phải quảng cáo hay
+     * nguy hiểm gì cả — xem ShellBridge.setBadLoadRecoveryEnabled().
+     */
+    @Volatile
+    var badLoadRecoveryEnabled: Boolean = false
+
+    /**
+     * Hiện Toast mỗi khi chặn quảng cáo/chuyển hướng lạ hoặc tự quay lại do
+     * trang lỗi. Mặc định BẬT. Tắt cờ này không tắt việc CHẶN — chỉ ẩn dòng
+     * thông báo — xem ShellBridge.setBlockNoticeToastsEnabled().
+     */
+    @Volatile
+    var blockNoticeToastsEnabled: Boolean = true
+
+    private fun showBlockNoticeToast(message: String) {
+        if (!blockNoticeToastsEnabled) return
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+    }
 
     /** Lớp phủ của giao diện (menu, panel...) đang mở → phải nổi trên trang web. */
     @Volatile
@@ -1970,11 +1990,7 @@ $js
                     !isSearchOrAiToolHost(tabRootDomain[tabId]) &&
                     isBlockedAdHost(request.url.host)
                 ) {
-                    Toast.makeText(
-                        this@MainActivity,
-                        "Đã chặn quảng cáo: ${request.url.host}",
-                        Toast.LENGTH_SHORT
-                    ).show()
+                    showBlockNoticeToast("Đã chặn quảng cáo: ${request.url.host}")
                     return true
                 }
 
@@ -1991,11 +2007,7 @@ $js
                     !safeHost.isNullOrEmpty() && !targetHost.isNullOrEmpty() &&
                     !isSameRootDomain(safeHost, targetHost)
                 ) {
-                    Toast.makeText(
-                        this@MainActivity,
-                        "Đã chặn chuyển hướng lạ: $targetHost",
-                        Toast.LENGTH_SHORT
-                    ).show()
+                    showBlockNoticeToast("Đã chặn chuyển hướng lạ: $targetHost")
                     return true
                 }
                 return false
@@ -2034,11 +2046,7 @@ $js
                     if (request.isForMainFrame) {
                         runOnUiThread {
                             try { view.stopLoading() } catch (_: Exception) {}
-                            Toast.makeText(
-                                this@MainActivity,
-                                "Đã chặn quảng cáo/chuyển hướng lạ: $targetHost",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            showBlockNoticeToast("Đã chặn quảng cáo/chuyển hướng lạ: $targetHost")
                         }
                     }
                     return WebResourceResponse(
@@ -2102,39 +2110,33 @@ $js
             // qua shouldOverrideUrlLoading() ở trên (WebView tự âm thầm theo
             // chuỗi redirect của 1 request đã được cho phép), nên lọt qua
             // "Việc B" và trang đích cuối cùng (thường hỏng/trắng) vẫn hiện
-            // ra. Bắt lỗi tải trang CHÍNH (main frame) ở đây và tự quay lại
-            // trang trước đó thay vì để màn hình trắng.
-            private fun recoverFromBadLoad(view: WebView, reason: String) {
-                runOnUiThread {
-                    if (view.canGoBack()) {
-                        Toast.makeText(
-                            this@MainActivity,
-                            "Trang đích không tải được ($reason) — đã quay lại trang trước.",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                        view.stopLoading()
-                        view.goBack()
-                    }
-                }
-            }
-
-            override fun onReceivedError(
-                view: WebView,
-                request: WebResourceRequest,
-                error: WebResourceError
-            ) {
-                if (request.isForMainFrame) {
-                    recoverFromBadLoad(view, "lỗi kết nối")
-                }
-            }
-
+            // ra. Bắt mã lỗi HTTP của trang CHÍNH ở đây và tự quay lại trang
+            // trước đó thay vì để màn hình trắng.
+            //
+            // TẮT MẶC ĐỊNH (badLoadRecoveryEnabled): mã lỗi HTTP như 503/502
+            // thường chỉ là server đích đang quá tải/bảo trì tạm thời, không
+            // liên quan gì tới quảng cáo — tự bấm Back trong trường hợp đó
+            // gây khó chịu hơn là hữu ích. Không còn bắt lỗi kết nối
+            // (onReceivedError) nữa vì lỗi mạng tạm thời (mất sóng, DNS chậm)
+            // cũng bị coi nhầm là "trang hỏng do quảng cáo".
             override fun onReceivedHttpError(
                 view: WebView,
                 request: WebResourceRequest,
                 errorResponse: android.webkit.WebResourceResponse
             ) {
-                if (request.isForMainFrame && errorResponse.statusCode >= 400) {
-                    recoverFromBadLoad(view, "HTTP ${errorResponse.statusCode}")
+                if (badLoadRecoveryEnabled &&
+                    request.isForMainFrame &&
+                    errorResponse.statusCode >= 400
+                ) {
+                    runOnUiThread {
+                        if (view.canGoBack()) {
+                            showBlockNoticeToast(
+                                "Trang đích không tải được (HTTP ${errorResponse.statusCode}) — đã quay lại trang trước."
+                            )
+                            view.stopLoading()
+                            view.goBack()
+                        }
+                    }
                 }
             }
 

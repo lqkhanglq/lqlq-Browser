@@ -77,6 +77,60 @@
 
   safeCall(() => native.setDomainGuardEnabled?.(window.lqlqGetDomainGuardEnabled()));
 
+  // ==================================================================
+  // 0b3. Tự quay lại (Back) khi trang chính trả mã lỗi HTTP ≥ 400 — MẶC ĐỊNH
+  //      TẮT. Lỗi 503/502 thường chỉ là server đích quá tải/bảo trì tạm
+  //      thời, không phải quảng cáo — tự bấm Back trong trường hợp đó gây
+  //      khó chịu hơn là hữu ích.
+  // ==================================================================
+  const BAD_LOAD_RECOVERY_KEY = "lqlqBadLoadRecoveryEnabledV1";
+
+  window.lqlqGetBadLoadRecoveryEnabled = () => {
+    try {
+      return localStorage.getItem(BAD_LOAD_RECOVERY_KEY) === "1";
+    } catch {
+      return false;
+    }
+  };
+
+  window.lqlqSetBadLoadRecoveryEnabled = enabled => {
+    safeCall(() => {
+      try {
+        localStorage.setItem(BAD_LOAD_RECOVERY_KEY, enabled ? "1" : "0");
+      } catch {}
+      native.setBadLoadRecoveryEnabled?.(Boolean(enabled));
+    });
+  };
+
+  safeCall(() => native.setBadLoadRecoveryEnabled?.(window.lqlqGetBadLoadRecoveryEnabled()));
+
+  // ==================================================================
+  // 0b4. Thông báo (Toast) khi chặn quảng cáo/chuyển hướng lạ hoặc tự quay
+  //      lại do trang lỗi — MẶC ĐỊNH BẬT. Không ảnh hưởng tới việc CÓ chặn
+  //      hay không, chỉ ẩn/hiện dòng chữ thông báo.
+  // ==================================================================
+  const BLOCK_NOTICE_TOASTS_KEY = "lqlqBlockNoticeToastsEnabledV1";
+
+  window.lqlqGetBlockNoticeToastsEnabled = () => {
+    try {
+      const raw = localStorage.getItem(BLOCK_NOTICE_TOASTS_KEY);
+      return raw === null ? true : raw === "1";
+    } catch {
+      return true;
+    }
+  };
+
+  window.lqlqSetBlockNoticeToastsEnabled = enabled => {
+    safeCall(() => {
+      try {
+        localStorage.setItem(BLOCK_NOTICE_TOASTS_KEY, enabled ? "1" : "0");
+      } catch {}
+      native.setBlockNoticeToastsEnabled?.(Boolean(enabled));
+    });
+  };
+
+  safeCall(() => native.setBlockNoticeToastsEnabled?.(window.lqlqGetBlockNoticeToastsEnabled()));
+
   // Android Chrome không hiện Tiện ích/Task Manager/DevTools trong menu di
   // động. Tab groups chưa có model native nên ẩn thay vì để nút bấm không làm
   // gì — mọi mục còn hiển thị đều phải có hành vi thật.
