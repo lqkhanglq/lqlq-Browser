@@ -1039,49 +1039,75 @@ $js
         }
     }
 
+    /**
+     * Việc "Lưu trang/Trang đã lưu bị lag" (v0.23.29): hàm này trước đây đọc
+     * và COPY TOÀN BỘ file .mht (có thể vài MB vì chứa ảnh/CSS nhúng) NGAY
+     * TRÊN LUỒNG GIAO DIỆN CHÍNH (được gọi từ ShellBridge qua runOnUiThread)
+     * — với file lớn, việc này gây đơ/treo giao diện thật sự (không phải
+     * cảm giác), và có thể khiến người dùng tưởng "mở không được". Chuyển
+     * toàn bộ phần đọc/copy file sang luồng nền; chỉ các thao tác bắt buộc
+     * phải chạy trên UI thread (tạo/điều khiển WebView) mới quay lại UI thread.
+     */
     private fun loadOfflineHtml(uri: Uri) {
-        try {
-            val mimeType = contentResolver.getType(uri) ?: ""
-            val name = queryDisplayName(uri) ?: ""
-            val isMht = mimeType.contains("mimearchive", true) ||
-                mimeType.contains("rfc822", true) ||
-                mimeType.contains("multipart/related", true) ||
-                name.endsWith(".mht", true) ||
-                name.endsWith(".mhtml", true)
+        Thread {
+            try {
+                val mimeType = contentResolver.getType(uri) ?: ""
+                val name = queryDisplayName(uri) ?: ""
+                val isMht = mimeType.contains("mimearchive", true) ||
+                    mimeType.contains("rfc822", true) ||
+                    mimeType.contains("multipart/related", true) ||
+                    name.endsWith(".mht", true) ||
+                    name.endsWith(".mhtml", true)
 
-            val tabId = "offline-html"
-            activeTabId = tabId
-            val webView = pageWebViews.getOrPut(tabId) { createPageWebView(tabId) }
-            bringPageToFront(webView)
-
-            if (isMht) {
-                // .mht giữ nguyên ảnh/CSS đã đóng gói — cần copy về file cục bộ
-                // rồi mở bằng file:// (webView cần allowFileAccess = true).
-                val tempFile = File(cacheDir, "offline_open_${System.currentTimeMillis()}.mht")
-                contentResolver.openInputStream(uri)?.use { input ->
-                    tempFile.outputStream().use { output -> input.copyTo(output) }
-                } ?: throw IllegalStateException("empty")
-                webView.settings.allowFileAccess = true
-                webView.loadUrl("file://${tempFile.absolutePath}")
-            } else {
-                val html = contentResolver.openInputStream(uri)
-                    ?.bufferedReader(Charsets.UTF_8)
-                    ?.use { it.readText() }
-                    ?: throw IllegalStateException("empty")
-                if (html.isBlank()) throw IllegalStateException("blank")
-                webView.loadDataWithBaseURL(
-                    "https://offline.lqlq.local/",
-                    html,
-                    "text/html",
-                    "utf-8",
-                    null
-                )
+                if (isMht) {
+                    // .mht giữ nguyên ảnh/CSS đã đóng gói — copy về file cục bộ
+                    // (chạy nền) rồi mở bằng file:// trên UI thread.
+                    val tempFile = File(cacheDir, "offline_open_${System.currentTimeMillis()}.mht")
+                    contentResolver.openInputStream(uri)?.use { input ->
+                        tempFile.outputStream().use { output -> input.copyTo(output) }
+                    } ?: throw IllegalStateException("empty")
+                    runOnUiThread { openOfflineMhtFile(tempFile) }
+                } else {
+                    val html = contentResolver.openInputStream(uri)
+                        ?.bufferedReader(Charsets.UTF_8)
+                        ?.use { it.readText() }
+                        ?: throw IllegalStateException("empty")
+                    if (html.isBlank()) throw IllegalStateException("blank")
+                    runOnUiThread { openOfflineHtmlString(html) }
+                }
+            } catch (_: Exception) {
+                runOnUiThread {
+                    Toast.makeText(this, "Không đọc được tệp này.", Toast.LENGTH_SHORT).show()
+                }
             }
-            setPageVisible(true)
-            Toast.makeText(this, "Đã mở trang ngoại tuyến.", Toast.LENGTH_SHORT).show()
-        } catch (_: Exception) {
-            Toast.makeText(this, "Không đọc được tệp này.", Toast.LENGTH_SHORT).show()
-        }
+        }.start()
+    }
+
+    private fun openOfflineMhtFile(tempFile: File) {
+        val tabId = "offline-html"
+        activeTabId = tabId
+        val webView = pageWebViews.getOrPut(tabId) { createPageWebView(tabId) }
+        bringPageToFront(webView)
+        webView.settings.allowFileAccess = true
+        webView.loadUrl("file://${tempFile.absolutePath}")
+        setPageVisible(true)
+        Toast.makeText(this, "Đã mở trang ngoại tuyến.", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun openOfflineHtmlString(html: String) {
+        val tabId = "offline-html"
+        activeTabId = tabId
+        val webView = pageWebViews.getOrPut(tabId) { createPageWebView(tabId) }
+        bringPageToFront(webView)
+        webView.loadDataWithBaseURL(
+            "https://offline.lqlq.local/",
+            html,
+            "text/html",
+            "utf-8",
+            null
+        )
+        setPageVisible(true)
+        Toast.makeText(this, "Đã mở trang ngoại tuyến.", Toast.LENGTH_SHORT).show()
     }
 
     fun saveActivePageOffline() {
