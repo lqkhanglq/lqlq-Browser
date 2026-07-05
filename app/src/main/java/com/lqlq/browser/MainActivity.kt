@@ -43,6 +43,42 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val SHELL_HOST = "appassets.androidapp.com"
         private const val SHELL_URL = "https://$SHELL_HOST/assets/www/index.html"
+
+        // Việc "chặn quảng cáo/nhảy trang giống metruyenchu_clipper_android_project"
+        // (v0.23.11): project tham khảo chặn TUYỆT ĐỐI theo danh sách domain quảng
+        // cáo/redirect đã biết (rules.json của Chapter Clipper gốc), không phụ
+        // thuộc gesture — vì vậy trang web không hề bị đổi/nhảy dù chỉ 1 khoảnh
+        // khắc. Đây là danh sách mạng quảng cáo/redirect phổ biến (mở rộng từ
+        // rules.json gốc: doubleclick, googlesyndication, googleadservices,
+        // popads, popcash + vài mạng phổ biến khác hay gặp trên site đọc truyện/
+        // xem phim lậu). Khớp theo domain gốc (endsWith) nên bao gồm mọi subdomain.
+        private val AD_HOST_BLOCKLIST = listOf(
+            "doubleclick.net",
+            "googlesyndication.com",
+            "googleadservices.com",
+            "adnxs.com",
+            "popads.net",
+            "popcash.net",
+            "propellerads.com",
+            "adsterra.com",
+            "exoclick.com",
+            "exosrv.com",
+            "mgid.com",
+            "taboola.com",
+            "outbrain.com",
+            "revcontent.com",
+            "adservice.google.com",
+            "clickadu.com",
+            "hilltopads.net",
+            "adcash.com",
+            "juicyads.com"
+        )
+
+        private fun isBlockedAdHost(host: String?): Boolean {
+            if (host.isNullOrEmpty()) return false
+            val h = host.lowercase()
+            return AD_HOST_BLOCKLIST.any { h == it || h.endsWith(".$it") }
+        }
     }
 
     private lateinit var root: FrameLayout
@@ -510,6 +546,19 @@ $js
                     return true
                 }
 
+                // Việc (v0.23.11): chặn TUYỆT ĐỐI domain quảng cáo/redirect đã
+                // biết, không cần xét gesture — giống hệt cách
+                // metruyenchu_clipper_android_project chặn cứng bằng danh sách
+                // domain (rules.json), nên trang web không hề bị đổi/nhảy.
+                if (isBlockedAdHost(request.url.host)) {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Đã chặn quảng cáo: ${request.url.host}",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    return true
+                }
+
                 // Việc B (v0.23.6): chặn nhảy trang tự động (redirect quảng
                 // cáo/độc hại) mà KHÔNG kèm thao tác thật của người dùng.
                 // Chỉ chặn khi: (1) không có gesture (JS tự set location.href,
@@ -537,6 +586,39 @@ $js
                     }
                 }
                 return false
+            }
+
+            // Việc (v0.23.11): shouldOverrideUrlLoading() KHÔNG được gọi lại
+            // cho từng bước của 1 chuỗi redirect HTTP phía server (Location
+            // header) — WebView tự âm thầm theo, nên quảng cáo dùng redirect
+            // server-side vẫn lọt qua chặn ở trên và từng gây màn hình trắng
+            // (đã vá tạm bằng onReceivedError/goBack, nhưng trang vẫn "nhảy"
+            // trong chốc lát). shouldInterceptRequest() được gọi lại cho MỌI
+            // request kể cả từng chặng redirect và mọi tài nguyên con
+            // (iframe/script quảng cáo), nên chặn domain đã biết ở đây chặn
+            // được TRƯỚC KHI có bất kỳ nội dung nào tải/hiện ra — trang giữ
+            // nguyên hoàn toàn, không đổi/nhảy, giống hệt cách
+            // metruyenchu_clipper_android_project chặn bằng rules.json.
+            override fun shouldInterceptRequest(
+                view: WebView,
+                request: WebResourceRequest
+            ): WebResourceResponse? {
+                if (isBlockedAdHost(request.url.host)) {
+                    if (request.isForMainFrame) {
+                        // Chặn ngay cả bước điều hướng chính (redirect server-
+                        // side tới domain quảng cáo) — dừng tải để KHÔNG bao
+                        // giờ hiện trang trắng/hỏng của domain đó ra màn hình.
+                        runOnUiThread {
+                            try { view.stopLoading() } catch (_: Exception) {}
+                        }
+                    }
+                    return WebResourceResponse(
+                        "text/plain",
+                        "UTF-8",
+                        java.io.ByteArrayInputStream(ByteArray(0))
+                    )
+                }
+                return null
             }
 
             override fun onPageStarted(
