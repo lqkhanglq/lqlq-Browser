@@ -489,6 +489,12 @@
   }
 
   function downloadTxt(filename, text) {
+    try {
+      if (window.LqlqAndroid && typeof window.LqlqAndroid.saveTextFile === "function") {
+        const ok = window.LqlqAndroid.saveTextFile(String(filename), "﻿" + String(text));
+        if (ok) return;
+      }
+    } catch (e) {}
     const blob = new Blob(["﻿", text], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");

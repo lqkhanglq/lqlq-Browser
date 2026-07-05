@@ -488,6 +488,13 @@ $js
         webView.settings.setSupportMultipleWindows(false)
         webView.settings.javaScriptCanOpenWindowsAutomatically = false
 
+        // Chapter Clipper (content-script tiêm vào trang thật) cần lưu file
+        // TXT ra Download — gắn cùng bridge LqlqAndroid.saveTextFile() dùng
+        // cho shellWebView, vì trước đây page WebView không có bridge này
+        // nên xuất TXT rơi vào nhánh blob:/<a download> mà DownloadListener
+        // của app từ chối xử lý (xem startDownload()).
+        webView.addJavascriptInterface(shellBridge, "LqlqAndroid")
+
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
 
