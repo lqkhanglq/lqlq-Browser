@@ -1005,7 +1005,20 @@
     if (adRuns > 40) clearInterval(adTimer);
   }, 500);
 
-  const observer = new MutationObserver(() => hideAdsFast());
+  // Việc (v0.23.27 — tối ưu hiệu năng): trang phức tạp đổi DOM liên tục
+  // (quảng cáo, live chat) từng khiến hideAdsFast() chạy lại NGAY trên mỗi
+  // mutation — đặc biệt lãng phí vì adblock-content.js cũng có thể đang
+  // chạy song song trên cùng trang. Gộp bằng debounce ~200ms.
+  let clipperAdDebounce = 0;
+  function scheduleClipperHideAdsFast() {
+    if (clipperAdDebounce) clearTimeout(clipperAdDebounce);
+    clipperAdDebounce = setTimeout(() => {
+      clipperAdDebounce = 0;
+      hideAdsFast();
+    }, 200);
+  }
+
+  const observer = new MutationObserver(() => scheduleClipperHideAdsFast());
   setTimeout(() => {
     if (document.body) observer.observe(document.body, { childList: true, subtree: true });
   }, 1000);

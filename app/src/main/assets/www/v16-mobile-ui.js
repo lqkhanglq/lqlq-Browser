@@ -266,9 +266,24 @@
     closeMenus();
     tabsFilter = "";
     if (refs.search) refs.search.value = "";
-    renderMobileTabs();
+
+    // Việc (v0.23.27 — Vấn đề: "Các thẻ đang mở" không hiện gì): bỏ ẩn
+    // overlay TRƯỚC khi render nội dung lưới thẻ. Trước đây renderMobileTabs()
+    // chạy trước — nếu nó ném lỗi (vd. dữ liệu tab/nhóm hỏng), toàn bộ hàm này
+    // dừng lại NGAY LẬP TỨC và 2 dòng bỏ class "hidden" / thêm class mở overlay
+    // phía dưới KHÔNG BAO GIỜ chạy được → màn hình không hiện gì cả, đúng như
+    // triệu chứng người dùng báo. Nay overlay luôn được mở trước, và việc
+    // render nội dung được bọc try/catch riêng để lỗi (nếu có) không còn làm
+    // "biến mất" cả tính năng nữa.
     refs.overlay.classList.remove("hidden");
     document.body.classList.add("mobile-overlay-open");
+
+    try {
+      renderMobileTabs();
+    } catch (error) {
+      console.warn("lqlq mobile tabs:", error);
+      refs.grid.innerHTML = `<div class="mobile-tab-card-empty" style="grid-column:1/-1;text-align:center;padding:24px 8px;color:#89958d;font-size:12px;">Không thể tải danh sách thẻ.</div>`;
+    }
   }
 
   function closeTabSwitcher() {
@@ -330,10 +345,19 @@
   const previousRender = render;
   render = function renderWithMobileChrome() {
     previousRender();
-    updateMobileTabCount();
+
+    try {
+      updateMobileTabCount();
+    } catch (error) {
+      console.warn("lqlq mobile tab count:", error);
+    }
 
     if (!refs.overlay.classList.contains("hidden")) {
-      renderMobileTabs();
+      try {
+        renderMobileTabs();
+      } catch (error) {
+        console.warn("lqlq mobile tabs render:", error);
+      }
     }
   };
 

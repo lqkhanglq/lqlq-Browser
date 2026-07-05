@@ -320,50 +320,67 @@ function submitHiddenSearch() {
 }
 
 function openDrawer(type) {
-  const profile = currentProfile();
+  // Việc (v0.23.27 — Vấn đề: "Nhật ký"/"Trang đã lưu" không hiện gì): mở
+  // panel (thêm class "open" → native đưa shellWebView lên trên trang web
+  // thật) TRƯỚC, rồi mới render nội dung bên trong try/catch riêng. Trước
+  // đây nếu renderList()/truy cập profile.* ném lỗi giữa hàm, cả hàm dừng
+  // NGAY SAU khi thêm class "open" nhưng TRƯỚC khi kịp có nội dung — và vì
+  // exception xảy ra đồng bộ ngay trong sự kiện click, không ảnh hưởng gì
+  // tới việc class đã add, nhưng để phòng các lỗi tương tự trong tương lai
+  // (vd. dữ liệu profile hỏng do các đợt thêm tabGroups/Trang đã lưu), toàn
+  // bộ phần render nội dung được bọc try/catch để KHÔNG BAO GIỜ làm panel
+  // "im lặng không hiện gì" nữa — tối thiểu cũng thấy khung panel trống.
   els.drawer.classList.add("open");
 
-  if (type === "history") {
-    els.drawerTitle.textContent = "Nhật ký";
-    renderList(profile.history, "Chưa có lịch sử.", "history");
-    return;
-  }
+  try {
+    const profile = currentProfile();
 
-  if (type === "bookmarks") {
-    els.drawerTitle.textContent = "Dấu trang và danh sách";
-    renderList(profile.bookmarks, "Chưa có dấu trang.");
-    return;
-  }
+    if (type === "history") {
+      els.drawerTitle.textContent = "Nhật ký";
+      renderList(profile.history || [], "Chưa có lịch sử.", "history");
+      return;
+    }
 
-  if (type === "downloads") {
-    els.drawerTitle.textContent = "Tệp đã tải xuống";
-    renderList(profile.downloads, "Chưa có tệp tải xuống.");
-    return;
-  }
+    if (type === "bookmarks") {
+      els.drawerTitle.textContent = "Dấu trang và danh sách";
+      renderList(profile.bookmarks || [], "Chưa có dấu trang.");
+      return;
+    }
 
-  if (type === "adblock") {
-    els.drawerTitle.textContent = "Bộ lọc quảng cáo";
+    if (type === "downloads") {
+      els.drawerTitle.textContent = "Tệp đã tải xuống";
+      renderList(profile.downloads || [], "Chưa có tệp tải xuống.");
+      return;
+    }
+
+    if (type === "adblock") {
+      els.drawerTitle.textContent = "Bộ lọc quảng cáo";
+      els.drawerContent.innerHTML = `
+        <div class="info-panel">
+          <h3>Bộ lọc đang bật</h3>
+          <p>Chặn popup, tab quảng cáo, chuyển hướng và các miền quảng cáo phổ biến.</p>
+          <p><b>Trạng thái:</b> luôn bật.</p>
+          <p><b>Android:</b> đã thêm xử lý touch/pointer và liên kết mở ứng dụng/tab mới.</p>
+          <p class="offline-save-note">
+            Bản HTML chỉ chặn được nội dung trong chính tài liệu đang chạy.
+            Khi thành APK WebView, bộ chặn Android sẽ có thêm quyền chặn request mạng trước khi tải.
+          </p>
+        </div>
+      `;
+      return;
+    }
+
+    els.drawerTitle.textContent = "Thông tin";
     els.drawerContent.innerHTML = `
       <div class="info-panel">
-        <h3>Bộ lọc đang bật</h3>
-        <p>Chặn popup, tab quảng cáo, chuyển hướng và các miền quảng cáo phổ biến.</p>
-        <p><b>Trạng thái:</b> luôn bật.</p>
-        <p><b>Android:</b> đã thêm xử lý touch/pointer và liên kết mở ứng dụng/tab mới.</p>
-        <p class="offline-save-note">
-          Bản HTML chỉ chặn được nội dung trong chính tài liệu đang chạy.
-          Khi thành APK WebView, bộ chặn Android sẽ có thêm quyền chặn request mạng trước khi tải.
-        </p>
+        <p>Chức năng này sẽ được nối với Android WebView ở bản APK.</p>
       </div>
     `;
-    return;
+  } catch (error) {
+    console.warn("lqlq openDrawer:", error);
+    els.drawerTitle.textContent = "Thông tin";
+    els.drawerContent.innerHTML = `<p class="note">Không thể tải nội dung: ${escapeHtml(String(error?.message || error))}</p>`;
   }
-
-  els.drawerTitle.textContent = "Thông tin";
-  els.drawerContent.innerHTML = `
-    <div class="info-panel">
-      <p>Chức năng này sẽ được nối với Android WebView ở bản APK.</p>
-    </div>
-  `;
 }
 
 function faviconForUrl(url) {

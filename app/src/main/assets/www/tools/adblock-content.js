@@ -101,6 +101,19 @@
     } catch (e) {}
   }
 
+  // Việc (v0.23.27 — tối ưu hiệu năng): trang có nhiều thay đổi DOM động
+  // (quảng cáo tự nạp lại, live chat, v.v.) từng khiến hideAdsFast() chạy
+  // NGAY LẬP TỨC trên MỖI mutation — rất tốn CPU. Gộp nhiều mutation liên
+  // tiếp trong ~200ms thành 1 lần chạy duy nhất bằng debounce timer.
+  let debounceTimer = 0;
+  function scheduleHideAdsFast() {
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      debounceTimer = 0;
+      hideAdsFast();
+    }, 200);
+  }
+
   try {
     hideAdsFast();
     if (document.readyState === "loading") {
@@ -108,7 +121,7 @@
     }
     window.addEventListener("load", hideAdsFast);
 
-    const observer = new MutationObserver(() => hideAdsFast());
+    const observer = new MutationObserver(() => scheduleHideAdsFast());
     const startObserving = () => {
       if (document.body) {
         observer.observe(document.body, { childList: true, subtree: true });
