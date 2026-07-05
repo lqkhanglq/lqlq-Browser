@@ -274,11 +274,19 @@ class BrowserTabStore(context: Context) {
     private fun ensureModeHasTab(mode: String) {
         val normalized = normalizeMode(mode)
         val list = listFor(normalized)
-        if (list.isEmpty()) list += newBlankTab()
+        var changed = false
+        if (list.isEmpty()) {
+            list += newBlankTab()
+            changed = true
+        }
         if (activeIds[normalized].isNullOrBlank() || list.none { it.id == activeIds[normalized] }) {
             activeIds[normalized] = list.first().id
+            changed = true
         }
-        persistIfNeeded(normalized)
+        // Getter như currentTab()/stateJson() gọi hàm này rất thường xuyên.
+        // Chỉ ghi SharedPreferences khi thật sự phải sửa phiên, tránh serialize
+        // toàn bộ danh sách thẻ trong mỗi lần vẽ UI hoặc đọc snapshot.
+        if (changed) persistIfNeeded(normalized)
     }
 
     private fun listFor(mode: String): MutableList<BrowserTab> =

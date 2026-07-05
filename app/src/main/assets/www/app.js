@@ -107,6 +107,14 @@ function loadState() {
       Object.assign(store.private, parsed.private || {});
       store.zoom = parsed.zoom || 100;
 
+      // Favicon thuộc cache native, không thuộc localStorage. Xóa data URL
+      // lịch sử của bản cũ để giảm thời gian parse và tránh đầy quota.
+      for (const profile of [store.normal, store.private]) {
+        if (Array.isArray(profile.history)) {
+          profile.history = profile.history.map(item => ({ ...item, favicon: "" }));
+        }
+      }
+
       // Trong APK, danh sách thẻ do Android quản lý duy nhất. Không khôi phục
       // mảng tabs cũ từ localStorage vì đó là nguyên nhân tạo "thẻ ma": JS có
       // thẻ nhưng native không có WebView tương ứng. Lịch sử/dấu trang/tải xuống
@@ -139,11 +147,31 @@ function loadState() {
 }
 
 function saveState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({
+  const snapshot = () => JSON.stringify({
     normal: store.normal,
     private: store.private,
     zoom: store.zoom
-  }));
+  });
+
+  try {
+    localStorage.setItem(STORAGE_KEY, snapshot());
+  } catch (error) {
+    // localStorage có giới hạn dung lượng. Favicon data URL và nhật ký cũ có
+    // thể làm đầy quota, khiến mọi lần lưu sau đó âm thầm hỏng. Thu gọn phần
+    // có thể tái tạo rồi thử lại một lần, thay vì làm mất dấu trang hiện tại.
+    for (const profile of [store.normal, store.private]) {
+      profile.history = Array.isArray(profile.history) ? profile.history.slice(0, 100) : [];
+      profile.downloads = Array.isArray(profile.downloads) ? profile.downloads.slice(0, 80) : [];
+      for (const item of profile.history) {
+        if (typeof item?.favicon === "string" && item.favicon.length > 8192) item.favicon = "";
+      }
+    }
+    try {
+      localStorage.setItem(STORAGE_KEY, snapshot());
+    } catch (retryError) {
+      console.warn("Không thể lưu trạng thái trình duyệt:", retryError || error);
+    }
+  }
 }
 
 function currentProfile() {
@@ -180,11 +208,13 @@ function navigate(url, addHistory = true) {
   tab.url = finalUrl;
   tab.title = titleFromUrl(finalUrl);
 
-  if (addHistory) {
+  // Trong APK, chỉ ghi Nhật ký khi WebView đã tải xong URL cuối cùng.
+  // Ghi ngay ở đây sẽ tạo bản ghi trùng và lưu cả URL trung gian/redirect.
+  if (addHistory && !NATIVE_TAB_STORE) {
     currentProfile().history.unshift({
       title: tab.title,
       url: finalUrl,
-      favicon: faviconForUrl(finalUrl),
+      favicon: "",
       time: new Date().toLocaleString("vi-VN")
     });
     currentProfile().history = currentProfile().history.slice(0, 200);
@@ -403,15 +433,6 @@ function openDrawer(type) {
   }
 }
 
-function faviconForUrl(url) {
-  try {
-    const parsed = new URL(url);
-    return parsed.origin + "/favicon.ico";
-  } catch {
-    return "";
-  }
-}
-
 function faviconFallbackLetter(item) {
   const source = String(item?.title || item?.url || "W").trim();
   return source.charAt(0) || "W";
@@ -422,24 +443,26 @@ function createHistoryRow(item) {
   row.className = "history-row";
 
   const iconWrap = document.createElement("span");
-  const image = document.createElement("img");
-  image.className = "history-favicon";
-  image.alt = "";
-  image.loading = "lazy";
-  image.referrerPolicy = "no-referrer";
-  image.src = item.favicon || faviconForUrl(item.url);
-
   const fallback = document.createElement("span");
-  fallback.className = "history-favicon-fallback hidden";
+  fallback.className = "history-favicon-fallback";
   fallback.textContent = faviconFallbackLetter(item);
-
-  image.addEventListener("error", () => {
-    image.classList.add("hidden");
-    fallback.classList.remove("hidden");
-  });
-
-  iconWrap.appendChild(image);
   iconWrap.appendChild(fallback);
+
+  // Không tạo request /favicon.ico khi mở Nhật ký. Chỉ dùng icon data: đã
+  // được WebChromeClient cache lúc trang tải; nếu chưa có thì hiện chữ ngay.
+  const faviconData = String(item?.favicon || "");
+  if (/^data:image\//i.test(faviconData)) {
+    const image = document.createElement("img");
+    image.className = "history-favicon";
+    image.alt = "";
+    image.decoding = "async";
+    image.src = faviconData;
+    image.addEventListener("load", () => fallback.classList.add("hidden"), { once: true });
+    image.addEventListener("error", () => image.remove(), { once: true });
+    iconWrap.prepend(image);
+  } else {
+    window.LqlqLocalFavicon?.hydrate?.(iconWrap, fallback, item?.url || "");
+  }
 
   const title = document.createElement("div");
   title.className = "history-title";
@@ -483,9 +506,9 @@ function renderList(items, emptyText, listType = "generic") {
   els.drawerContent.innerHTML = "";
 
   if (listType === "history") {
-    items.forEach(item => {
-      els.drawerContent.appendChild(createHistoryRow(item));
-    });
+    const fragment = document.createDocumentFragment();
+    items.forEach(item => fragment.appendChild(createHistoryRow(item)));
+    els.drawerContent.appendChild(fragment);
     return;
   }
 
@@ -736,6 +759,33 @@ function handleAction(action) {
     case "fullscreen":
       closeMenus();
       document.documentElement.requestFullscreen?.();
+      break;
+
+    case "print":
+      closeMenus();
+      if (typeof window.LqlqAndroid?.printPage === "function") {
+        window.LqlqAndroid.printPage();
+      } else {
+        window.print?.();
+      }
+      break;
+
+    case "offline-pages":
+    case "open-offline-html":
+      closeMenus();
+      if (typeof window.LqlqAndroid?.openHtmlFile === "function") {
+        window.LqlqAndroid.openHtmlFile();
+      } else {
+        toast("Chức năng này chỉ có trong ứng dụng Android.");
+      }
+      break;
+
+    case "tab-groups":
+    case "extensions":
+    case "task-manager":
+    case "developer-tools":
+      closeMenus();
+      toast("Mục này chưa được hỗ trợ trên Android.");
       break;
 
     case "tools":
@@ -1827,7 +1877,10 @@ document.addEventListener("fullscreenchange", () => {
   }
 });
 
-installStrictAdAndPopupBlocker();
+// Shell trong APK là tài nguyên cục bộ tin cậy; không chạy bộ quét quảng cáo
+// toàn DOM mỗi 1,8 giây ở đây. Website thật đã có lớp chặn native/content-script
+// riêng. Việc bỏ quét shell giảm CPU và tránh giật trang thẻ mới/menu.
+if (!NATIVE_TAB_STORE) installStrictAdAndPopupBlocker();
 
 
 

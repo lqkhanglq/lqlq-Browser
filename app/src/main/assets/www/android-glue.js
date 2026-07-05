@@ -1,5 +1,5 @@
 /*
- * android-glue.js — lqlq Browser v0.24.0 APK
+ * android-glue.js — lqlq Browser v0.25.0 APK
  *
  * Cầu nối giữa giao diện HTML và lớp native Android.
  * Chỉ hoạt động khi chạy trong APK (window.LqlqAndroid tồn tại);
@@ -46,6 +46,13 @@
   // Báo cho native biết trạng thái ngay khi shell nạp xong, vì mặc định
   // native cũng để tắt — chỉ cần đồng bộ khi người dùng đã từng bật trước đó.
   safeCall(() => native.setAdblockDomEnabled?.(window.lqlqGetAdblockDomEnabled()));
+
+  // Android Chrome không hiện Tiện ích/Task Manager/DevTools trong menu di
+  // động. Tab groups chưa có model native nên ẩn thay vì để nút bấm không làm
+  // gì — mọi mục còn hiển thị đều phải có hành vi thật.
+  ["extensions", "task-manager", "developer-tools", "tab-groups"].forEach(action => {
+    document.querySelectorAll(`[data-action="${action}"]`).forEach(element => element.remove());
+  });
 
   // ==================================================================
   // 0c. Đồng bộ chủ đề (v09-theme.js) sang bộ chuyển thẻ native, để màu
@@ -96,6 +103,7 @@
         window.render?.();
         window.ShieldMobileChrome?.update?.();
       }
+      window.dispatchEvent(new CustomEvent("lqlq-tab-state-changed", { detail: state }));
     });
   }
 
@@ -273,19 +281,29 @@
           profile.history.unshift({
             title: info.title || tab.title,
             url: info.url,
-            favicon: window.faviconForUrl ? window.faviconForUrl(info.url) : "",
+            // Favicon nằm trong cache native theo URL; không ghi base64
+            // vào lịch sử/localStorage.
+            favicon: "",
             time: new Date().toLocaleString("vi-VN")
           });
           profile.history = profile.history.slice(0, 200);
         }
 
-        window.saveState?.();
+        // URL loading tạm thời không cần ghi localStorage; native TabStore
+        // mới là nguồn dữ liệu thật. Chỉ chốt trạng thái khi trang tải xong.
+        if (!info.loading) window.saveState?.();
         if (String(profile.activeTabId) === String(info.tabId)) {
           const address = $("addressInput");
           if (address && document.activeElement !== address) {
             address.value = info.url;
           }
-          window.render?.();
+          // Không dựng lại toàn bộ dải tab desktop trong mỗi callback tải
+          // trang; chỉ cập nhật phần trang/toolbar đang nhìn thấy.
+          window.renderPage?.();
+          window.ShieldMobileChrome?.update?.();
+          if (!info.loading) {
+            window.dispatchEvent(new CustomEvent("lqlq-active-page-changed", { detail: info }));
+          }
         }
       });
     },
@@ -297,7 +315,12 @@
     // điều hướng online lại URL gốc.
     onOfflinePageSaved(info) {
       safeCall(() => {
-        window.LqlqSavedPages?.attachOfflineUri?.(info.url, info.offlineUri, info.title);
+        window.LqlqSavedPages?.attachOfflineUri?.(
+          info.url,
+          info.offlineUri,
+          info.title,
+          info.faviconData || ""
+        );
       });
     },
 

@@ -30,6 +30,12 @@ class ShellBridge(private val activity: MainActivity) {
     fun getTabState(): String = activity.getTabStateJson()
 
     @JavascriptInterface
+    fun getActivePageSnapshot(): String = activity.getActivePageSnapshotJson()
+
+    @JavascriptInterface
+    fun getCachedFaviconData(url: String): String = activity.getCachedFaviconData(url)
+
+    @JavascriptInterface
     fun showTabSwitcher() {
         activity.runOnUiThread { activity.showNativeTabSwitcher() }
     }
@@ -121,13 +127,18 @@ class ShellBridge(private val activity: MainActivity) {
      * "Trang đã lưu" có gắn cờ offline, thay vì điều hướng online lại URL.
      */
     @JavascriptInterface
-    fun openOfflineUri(uriString: String) {
-        activity.runOnUiThread { activity.openOfflineUriFromShell(uriString) }
+    fun openOfflineUri(uriString: String, fallbackUrl: String) {
+        activity.runOnUiThread { activity.openOfflineUriFromShell(uriString, fallbackUrl) }
     }
 
     @JavascriptInterface
     fun reloadPage() {
         activity.runOnUiThread { activity.reloadActivePage() }
+    }
+
+    @JavascriptInterface
+    fun printPage() {
+        activity.runOnUiThread { activity.printActivePage() }
     }
 
     @JavascriptInterface
@@ -273,12 +284,21 @@ class ShellBridge(private val activity: MainActivity) {
                     put(MediaStore.Downloads.DISPLAY_NAME, safeName)
                     put(MediaStore.Downloads.MIME_TYPE, safeMime)
                     put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                    put(MediaStore.Downloads.IS_PENDING, 1)
                 }
                 val uri = activity.contentResolver.insert(
                     MediaStore.Downloads.EXTERNAL_CONTENT_URI, values
                 ) ?: throw IllegalStateException("insert null")
-                activity.contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
-                resultUri = uri.toString()
+                try {
+                    activity.contentResolver.openOutputStream(uri, "w")?.use { it.write(bytes) }
+                        ?: throw IllegalStateException("output null")
+                    val ready = ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }
+                    activity.contentResolver.update(uri, ready, null, null)
+                    resultUri = uri.toString()
+                } catch (error: Exception) {
+                    activity.contentResolver.delete(uri, null, null)
+                    throw error
+                }
             } else {
                 val dir = Environment
                     .getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)

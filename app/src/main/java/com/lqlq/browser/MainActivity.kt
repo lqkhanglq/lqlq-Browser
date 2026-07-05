@@ -4,7 +4,9 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.app.AlertDialog
 import android.app.DownloadManager
+import android.app.ActivityManager
 import android.content.Context
+import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
@@ -14,6 +16,9 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.OpenableColumns
+import android.provider.MediaStore
+import android.print.PrintAttributes
+import android.print.PrintManager
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.CookieManager
@@ -34,9 +39,13 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
 import androidx.webkit.WebViewAssetLoader
 import org.json.JSONObject
 import java.io.File
+import java.io.FileInputStream
+import java.io.InputStream
+import java.util.concurrent.ConcurrentHashMap
 
 class MainActivity : AppCompatActivity() {
 
@@ -127,10 +136,14 @@ class MainActivity : AppCompatActivity() {
     private val pageWebViews = LinkedHashMap<String, WebView>()
     private val pageLastUsedAt = mutableMapOf<String, Long>()
     private var activeTabId: String? = null
+    @Volatile
     private var pageVisible = false
     private var shellReady = false
 
-    private val maxCachedPageWebViews = 4
+    private val maxCachedPageWebViews: Int by lazy {
+        val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+        if (activityManager?.isLowRamDevice == true) 2 else 4
+    }
 
     /**
      * Các tab đã bật Chapter Clipper (việc 1, v0.23.5): một khi người dùng
@@ -149,7 +162,16 @@ class MainActivity : AppCompatActivity() {
      * sách domain quảng cáo đã biết (danh sách tĩnh không theo kịp domain
      * rác đổi liên tục kiểu "scouplayen.qp").
      */
-    private val tabRootDomain = mutableMapOf<String, String>()
+    private val tabRootDomain = ConcurrentHashMap<String, String>()
+
+    /**
+     * Khoảng thời gian ngắn cho chuỗi điều hướng do người dùng chủ động bấm.
+     * Chrome cho phép liên kết sang domain khác và theo redirect của nó; chỉ
+     * những chuyển hướng tự phát, không có gesture, mới bị lớp bảo vệ domain
+     * của ứng dụng chặn. Map concurrent vì shouldInterceptRequest chạy ngoài
+     * luồng giao diện.
+     */
+    private val tabUserNavigationUntil = ConcurrentHashMap<String, Long>()
 
 
     /** Lớp phủ của giao diện (menu, panel...) đang mở → phải nổi trên trang web. */
@@ -163,6 +185,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var shellBridge: ShellBridge
     private lateinit var pageToolsBridge: PageToolsBridge
     private lateinit var pageBridge: PageBridge
+    private lateinit var faviconStore: FaviconStore
+
+    @Volatile
+    private var offlineSaveInProgress = false
 
     private val htmlFileLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -212,6 +238,7 @@ class MainActivity : AppCompatActivity() {
         volumeControlStream = AudioManager.STREAM_MUSIC
 
         tabStore = BrowserTabStore(this)
+        faviconStore = FaviconStore(this)
         activeTabId = tabStore.activeTabId()
 
         root = FrameLayout(this)
@@ -265,16 +292,14 @@ class MainActivity : AppCompatActivity() {
     private fun requestStartupPermissions() {
         val wanted = mutableListOf<String>()
 
+        // Trình chọn tệp dùng Storage Access Framework và lưu trang dùng
+        // MediaStore, nên Android 13+ không cần quyền đọc toàn bộ ảnh/video/
+        // âm thanh. Chỉ xin quyền thật sự cần: thông báo và ghi Downloads cũ.
         if (Build.VERSION.SDK_INT >= 33) {
             wanted += Manifest.permission.POST_NOTIFICATIONS
-            wanted += Manifest.permission.READ_MEDIA_AUDIO
-            wanted += Manifest.permission.READ_MEDIA_VIDEO
-            wanted += Manifest.permission.READ_MEDIA_IMAGES
-        } else {
-            wanted += Manifest.permission.READ_EXTERNAL_STORAGE
-            if (Build.VERSION.SDK_INT <= 28) {
-                wanted += Manifest.permission.WRITE_EXTERNAL_STORAGE
-            }
+        }
+        if (Build.VERSION.SDK_INT <= 28) {
+            wanted += Manifest.permission.WRITE_EXTERNAL_STORAGE
         }
 
         val missing = wanted.filter {
@@ -292,7 +317,6 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     private fun setupShellWebView() {
         applyCommonSettings(shellWebView.settings)
-        shellWebView.settings.allowFileAccess = true
 
         // Việc 3 (v0.23.4): đặt nền trong suốt NGAY từ đầu, giữ nguyên mãi —
         // không toggle WHITE/TRANSPARENT lúc mở/đóng menu nữa. Lý do: nếu
@@ -357,18 +381,26 @@ class MainActivity : AppCompatActivity() {
         settings.javaScriptEnabled = true
         settings.domStorageEnabled = true
         settings.databaseEnabled = true
+        settings.cacheMode = WebSettings.LOAD_DEFAULT
         settings.loadWithOverviewMode = true
         settings.useWideViewPort = true
         settings.builtInZoomControls = true
         settings.displayZoomControls = false
         settings.setSupportZoom(true)
         settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            settings.safeBrowsingEnabled = true
+        }
+        settings.loadsImagesAutomatically = true
+        settings.blockNetworkImage = false
+        settings.allowContentAccess = true
 
-        // SỬA LỖI KHÔNG CÓ ÂM THANH: cho phép media tự phát không cần chạm.
+        // Không cấp quyền file:// cho mọi website. Chỉ WebView đang mở MHT cục
+        // bộ mới bật tạm allowFileAccess trong openOfflineMhtFile().
+        settings.allowFileAccess = false
+
+        // Giữ hành vi media hiện có của ứng dụng.
         settings.mediaPlaybackRequiresUserGesture = false
-
-        // Cần để mở tệp .mht đã lưu bằng file://... (trang ngoại tuyến).
-        settings.allowFileAccess = true
     }
 
     /**
@@ -447,6 +479,27 @@ class MainActivity : AppCompatActivity() {
 
     fun getTabStateJson(): String = tabStore.stateJson()
 
+    /**
+     * Snapshot đồng bộ dùng bởi nút "Lưu trang hiện tại". Nguồn dữ liệu là
+     * TabStore native nên không phụ thuộc callback JavaScript có đến kịp hay
+     * không. Favicon chỉ lấy từ cache cục bộ do WebChromeClient thu được.
+     */
+    fun getActivePageSnapshotJson(): String {
+        val tab = tabStore.currentTab()
+        val url = tab.url.trim()
+        return JSONObject().apply {
+            put("tabId", tab.id)
+            put("url", url)
+            put("title", tab.title)
+            put("loading", tab.isLoading)
+            put("visible", pageVisible && activeTabId == tab.id)
+            put("faviconData", faviconStore.peekDataUrl(url))
+        }.toString()
+    }
+
+    /** Favicon cache cục bộ cho trang thẻ mới; tuyệt đối không phát request mạng. */
+    fun getCachedFaviconData(url: String): String = faviconStore.getDataUrl(url)
+
     fun showNativeTabSwitcher() {
         nativeTabSwitcher.show(tabStore.tabs(), tabStore.activeTabId())
         root.bringChildToFront(nativeTabSwitcher)
@@ -480,6 +533,7 @@ class MainActivity : AppCompatActivity() {
         destroyPageWebView(tabId)
         chapterClipperEnabledTabs.remove(tabId)
         tabRootDomain.remove(tabId)
+        tabUserNavigationUntil.remove(tabId)
         val next = tabStore.closeTab(tabId)
         activeTabId = next.id
         activateTab(next)
@@ -493,6 +547,7 @@ class MainActivity : AppCompatActivity() {
             destroyPageWebView(id)
             chapterClipperEnabledTabs.remove(id)
             tabRootDomain.remove(id)
+            tabUserNavigationUntil.remove(id)
         }
         val keep = tabStore.closeOtherTabs(keepId)
         activeTabId = keep.id
@@ -506,6 +561,7 @@ class MainActivity : AppCompatActivity() {
             destroyPageWebView(id)
             chapterClipperEnabledTabs.remove(id)
             tabRootDomain.remove(id)
+            tabUserNavigationUntil.remove(id)
         }
         val blank = tabStore.closeAllTabs()
         activeTabId = blank.id
@@ -525,6 +581,7 @@ class MainActivity : AppCompatActivity() {
 
         val webView = pageWebViews.getOrPut(tab.id) { createPageWebView(tab.id) }
         bringPageToFront(webView)
+        webView.settings.allowFileAccess = url.startsWith("file:", ignoreCase = true)
         webView.loadUrl(url)
         setPageVisible(true)
         trimPageWebViewCache()
@@ -533,10 +590,36 @@ class MainActivity : AppCompatActivity() {
 
     fun showHome() {
         setPageVisible(false)
+        if (shellReady) {
+            shellWebView.evaluateJavascript(
+                "window.dispatchEvent(new CustomEvent('lqlq-home-shown'));",
+                null
+            )
+        }
     }
 
     fun reloadActivePage() {
         currentPageWebView()?.reload()
+    }
+
+    fun printActivePage() {
+        val page = currentPageWebView()
+        if (page == null || !pageVisible) {
+            Toast.makeText(this, "Hãy mở một trang web trước khi in.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        try {
+            val manager = getSystemService(Context.PRINT_SERVICE) as PrintManager
+            val title = (page.title ?: "lqlq Browser").take(80)
+            val adapter = page.createPrintDocumentAdapter(title)
+            manager.print(
+                "lqlq-$title",
+                adapter,
+                PrintAttributes.Builder().build()
+            )
+        } catch (_: Exception) {
+            Toast.makeText(this, "Không mở được trình in Android.", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun restoreActiveTabAfterShellLoad() {
@@ -560,6 +643,7 @@ class MainActivity : AppCompatActivity() {
         val loadedUrl = webView.url.orEmpty()
         if (forceReload || loadedUrl.isBlank() || loadedUrl != tab.url) {
             Uri.parse(tab.url).host?.let { tabRootDomain[tab.id] = it }
+            webView.settings.allowFileAccess = tab.url.startsWith("file:", ignoreCase = true)
             webView.loadUrl(tab.url)
         } else {
             notifyShellPage(tab.id, loadedUrl, webView.title ?: tab.title, loading = false)
@@ -614,7 +698,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun notifyShellTabsChanged() {
-        if (::nativeTabSwitcher.isInitialized) {
+        if (::nativeTabSwitcher.isInitialized && nativeTabSwitcher.isOpen) {
             nativeTabSwitcher.submitTabs(tabStore.tabs(), tabStore.activeTabId())
         }
         if (!shellReady) return
@@ -822,6 +906,16 @@ $js
         if (::nativeTabSwitcher.isInitialized) {
             nativeTabSwitcher.applyTheme(dark, accentColor)
         }
+
+        // Đồng bộ các vùng hệ thống Android với giao diện đang chọn, tránh
+        // thanh trạng thái/điều hướng sáng chói khi app ở chế độ tối.
+        val systemBarColor = if (dark) Color.rgb(0x0d, 0x15, 0x10) else Color.rgb(0xf8, 0xfb, 0xff)
+        window.statusBarColor = systemBarColor
+        window.navigationBarColor = systemBarColor
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            isAppearanceLightStatusBars = !dark
+            isAppearanceLightNavigationBars = !dark
+        }
     }
 
     private fun updatePageVisibility() {
@@ -951,33 +1045,27 @@ $js
                     return true
                 }
 
-                // Việc (v0.23.13 + v0.23.16): chặn TUYỆT ĐỐI mọi điều hướng
-                // TOÀN TRANG (main frame) sang domain khác domain gốc hiện
-                // tại của TAB, KHÔNG xét gesture nữa — giống hệt cách
-                // metruyenchu_clipper_android_project chỉ whitelist 1 domain
-                // và chặn mọi thứ khác vô điều kiện. Lý do bỏ ngoại lệ
-                // gesture: quảng cáo hay dùng lớp phủ vô hình để "đánh cắp"
-                // đúng cú chạm thật của người dùng.
-                //
-                // CHỈ áp dụng cho main frame (request.isForMainFrame) — nhiều
-                // trang (kể cả Google) dùng điều hướng NỘI BỘ trong khung con
-                // (iframe) sang domain khác cho chức năng chính đáng (ô tìm
-                // kiếm, gợi ý...); chặn cả sub-frame từng làm hỏng hộp tìm
-                // kiếm của Google.
-                //
-                // Miễn trừ 2 chiều với công cụ tìm kiếm/AI (isSearchOrAiToolHost):
-                // bỏ qua khi đang Ở ĐÓ (bấm ra ngoài từ kết quả tìm kiếm) HOẶC
-                // đang quay VỀ ĐÓ từ trang khác (bấm nút back trên Google, hay
-                // trang có link quay lại Google/ChatGPT) — trước đây chỉ xét 1
-                // chiều nên "quay lại Google" từ trang khác vẫn bị chặn.
-                //
-                // Điều hướng CHỦ ĐỘNG sang domain khác (gõ địa chỉ mới, bấm
-                // liên kết nhanh ở trang chủ) vẫn luôn được vì đi qua
-                // openPage() — nơi đã tự cập nhật tabRootDomain thành domain
-                // mới TRƯỚC khi gọi loadUrl(), nên không bị chặn nhầm ở đây.
+                // Liên kết main-frame có gesture là thao tác thật của người
+                // dùng. Cho phép chuyển domain và cả chuỗi redirect ngắn sau
+                // đó, thay vì khoá mọi liên kết ngoài như bản cũ. Đây là hành
+                // vi gần trình duyệt Android/Chrome hơn nhưng vẫn giữ chặn cứng
+                // các host quảng cáo ở phía trên.
+                if (request.isForMainFrame && request.hasGesture()) {
+                    tabUserNavigationUntil[tabId] = System.currentTimeMillis() + 8_000L
+                    request.url.host?.let { tabRootDomain[tabId] = it }
+                    return false
+                }
+
+                // Chặn điều hướng main-frame tự phát sang domain khác. Chỉ
+                // áp dụng cho khung chính; iframe/tài nguyên con không bị lớp
+                // này can thiệp. Công cụ tìm kiếm/AI được miễn trừ để kết quả
+                // tìm kiếm hoạt động bình thường. Điều hướng chủ động từ thanh
+                // địa chỉ/trang chủ đi qua openPage() và cập nhật domain trước.
                 val safeHost = tabRootDomain[tabId]
                 val targetHost = request.url.host
-                if (request.isForMainFrame &&
+                val userNavigationActive =
+                    (tabUserNavigationUntil[tabId] ?: 0L) >= System.currentTimeMillis()
+                if (request.isForMainFrame && !userNavigationActive &&
                     !isSearchOrAiToolHost(safeHost) && !isSearchOrAiToolHost(targetHost) &&
                     !safeHost.isNullOrEmpty() && !targetHost.isNullOrEmpty() &&
                     !isSameRootDomain(safeHost, targetHost)
@@ -992,19 +1080,9 @@ $js
                 return false
             }
 
-            // Việc (v0.23.13): shouldOverrideUrlLoading() KHÔNG được gọi lại
-            // cho từng bước của 1 chuỗi redirect HTTP phía server (Location
-            // header) — WebView tự âm thầm theo. shouldInterceptRequest()
-            // được gọi lại cho MỌI request kể cả từng chặng redirect và mọi
-            // tài nguyên con (iframe/script quảng cáo), nên chặn ở đây chặn
-            // được TRƯỚC KHI có bất kỳ nội dung nào tải/hiện ra.
-            //
-            // Chặn theo 2 lớp, cả 2 đều KHÔNG xét gesture (xem giải thích ở
-            // shouldOverrideUrlLoading phía trên — gesture không còn đáng tin
-            // vì lớp phủ quảng cáo vô hình có thể "đánh cắp" cú chạm thật):
-            // 1) Danh sách domain quảng cáo/redirect ĐÃ BIẾT (isBlockedAdHost).
-            // 2) Domain gốc khác domain hiện tại của tab (tabRootDomain) —
-            //    bắt được cả domain rác đổi liên tục kiểu "scouplayen.qp".
+            // shouldInterceptRequest() còn kiểm tra từng bước redirect
+            // phía server. Danh sách host quảng cáo luôn bị chặn; guard domain
+            // chỉ chặn chuyển hướng main-frame tự phát ngoài cửa sổ gesture.
             override fun shouldInterceptRequest(
                 view: WebView,
                 request: WebResourceRequest
@@ -1018,9 +1096,11 @@ $js
                 if (isSearchOrAiToolHost(tabRootDomain[tabId])) return null
 
                 val blockedByList = isBlockedAdHost(targetHost)
+                val userNavigationActive =
+                    (tabUserNavigationUntil[tabId] ?: 0L) >= System.currentTimeMillis()
                 var blockedByRootDomainGuard = false
 
-                if (!blockedByList && request.isForMainFrame) {
+                if (!blockedByList && !userNavigationActive && request.isForMainFrame) {
                     val safeHost = tabRootDomain[tabId]
                     if (!isSearchOrAiToolHost(safeHost) && !isSearchOrAiToolHost(targetHost) &&
                         !safeHost.isNullOrEmpty() && !targetHost.isNullOrEmpty() &&
@@ -1067,6 +1147,7 @@ $js
                 // chỉ khi 1 trang THẬT SỰ tải xong (không phải bị chặn giữa
                 // chừng), làm cơ sở để chặn tuyệt đối điều hướng lạ sau này.
                 Uri.parse(url).host?.let { tabRootDomain[tabId] = it }
+                tabUserNavigationUntil.remove(tabId)
 
                 // Việc C (v0.23.6): ẩn quảng cáo DOM LUÔN BẬT cho MỌI trang,
                 // độc lập với Chapter Clipper (không đi qua chapterClipperEnabledTabs).
@@ -1166,7 +1247,7 @@ $js
             }
         }
 
-        webView.webChromeClient = createChromeClient()
+        webView.webChromeClient = createChromeClient(tabId)
 
         webView.setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
             startDownload(url, userAgent, contentDisposition, mimeType)
@@ -1183,7 +1264,7 @@ $js
             loading = loading,
             persist = !loading
         )
-        if (::nativeTabSwitcher.isInitialized) {
+        if (::nativeTabSwitcher.isInitialized && nativeTabSwitcher.isOpen) {
             nativeTabSwitcher.submitTabs(tabStore.tabs(), tabStore.activeTabId())
         }
         if (!shellReady) return
@@ -1193,6 +1274,7 @@ $js
             put("url", url)
             put("title", title)
             put("loading", loading)
+            if (!loading) put("faviconData", faviconStore.peekDataUrl(url))
         }
         shellWebView.evaluateJavascript(
             "window.LqlqGlue && LqlqGlue.onNativePage($payload);",
@@ -1281,25 +1363,30 @@ $js
         }
     }
 
-    /** Việc (v0.23.24 — Vấn đề 2): entry point gọi từ ShellBridge.openOfflineUri(). */
-    fun openOfflineUriFromShell(uriString: String) {
+    /** Mở bản lưu ngoại tuyến; nếu tệp đã bị xóa thì quay lại URL online. */
+    fun openOfflineUriFromShell(uriString: String, fallbackUrl: String) {
         try {
-            loadOfflineHtml(Uri.parse(uriString))
+            loadOfflineHtml(Uri.parse(uriString), fallbackUrl)
         } catch (_: Exception) {
+            fallbackToOnlinePage(fallbackUrl)
+        }
+    }
+
+    private fun fallbackToOnlinePage(fallbackUrl: String) {
+        if (fallbackUrl.startsWith("http://", true) || fallbackUrl.startsWith("https://", true)) {
+            val tabId = activeTabId ?: tabStore.activeTabId()
+            openPage(tabId, fallbackUrl)
+            Toast.makeText(this, "Bản ngoại tuyến không còn. Đã mở trang online.", Toast.LENGTH_SHORT).show()
+        } else {
             Toast.makeText(this, "Không mở được tệp đã lưu.", Toast.LENGTH_SHORT).show()
         }
     }
 
     /**
-     * Việc "Lưu trang/Trang đã lưu bị lag" (v0.23.29): hàm này trước đây đọc
-     * và COPY TOÀN BỘ file .mht (có thể vài MB vì chứa ảnh/CSS nhúng) NGAY
-     * TRÊN LUỒNG GIAO DIỆN CHÍNH (được gọi từ ShellBridge qua runOnUiThread)
-     * — với file lớn, việc này gây đơ/treo giao diện thật sự (không phải
-     * cảm giác), và có thể khiến người dùng tưởng "mở không được". Chuyển
-     * toàn bộ phần đọc/copy file sang luồng nền; chỉ các thao tác bắt buộc
-     * phải chạy trên UI thread (tạo/điều khiển WebView) mới quay lại UI thread.
+     * Đọc/copy MHT ở luồng nền. Bản MHT đã mở được cache theo Uri để lần mở
+     * sau gần như tức thì; cache cũ được dọn theo tuổi và giới hạn số lượng.
      */
-    private fun loadOfflineHtml(uri: Uri) {
+    private fun loadOfflineHtml(uri: Uri, fallbackUrl: String = "") {
         Thread {
             try {
                 val mimeType = contentResolver.getType(uri) ?: ""
@@ -1311,12 +1398,23 @@ $js
                     name.endsWith(".mhtml", true)
 
                 if (isMht) {
-                    // .mht giữ nguyên ảnh/CSS đã đóng gói — copy về file cục bộ
-                    // (chạy nền) rồi mở bằng file:// trên UI thread.
-                    val tempFile = File(cacheDir, "offline_open_${System.currentTimeMillis()}.mht")
-                    contentResolver.openInputStream(uri)?.use { input ->
-                        tempFile.outputStream().use { output -> input.copyTo(output) }
-                    } ?: throw IllegalStateException("empty")
+                    val openCache = File(cacheDir, "offline_open_v1").apply { mkdirs() }
+                    trimOfflineOpenCache(openCache)
+                    val cacheName = "${uri.toString().hashCode().toUInt().toString(16)}.mht"
+                    val tempFile = File(openCache, cacheName)
+                    if (!tempFile.isFile || tempFile.length() <= 0L) {
+                        val partial = File(openCache, "$cacheName.part")
+                        contentResolver.openInputStream(uri)?.use { input ->
+                            partial.outputStream().buffered().use { output ->
+                                input.copyTo(output, DEFAULT_BUFFER_SIZE)
+                            }
+                        } ?: throw IllegalStateException("empty")
+                        if (!partial.renameTo(tempFile)) {
+                            partial.copyTo(tempFile, overwrite = true)
+                            partial.delete()
+                        }
+                    }
+                    tempFile.setLastModified(System.currentTimeMillis())
                     runOnUiThread { openOfflineMhtFile(tempFile) }
                 } else {
                     val html = contentResolver.openInputStream(uri)
@@ -1327,11 +1425,21 @@ $js
                     runOnUiThread { openOfflineHtmlString(html) }
                 }
             } catch (_: Exception) {
-                runOnUiThread {
-                    Toast.makeText(this, "Không đọc được tệp này.", Toast.LENGTH_SHORT).show()
-                }
+                runOnUiThread { fallbackToOnlinePage(fallbackUrl) }
             }
         }.start()
+    }
+
+    private fun trimOfflineOpenCache(directory: File) {
+        val files = directory.listFiles()?.filter { it.isFile && !it.name.endsWith(".part") }
+            ?.sortedByDescending { it.lastModified() }
+            ?: emptyList()
+        files.drop(8).forEach { try { it.delete() } catch (_: Exception) {} }
+        directory.listFiles()?.filter { it.name.endsWith(".part") }?.forEach {
+            if (System.currentTimeMillis() - it.lastModified() > 60_000L) {
+                try { it.delete() } catch (_: Exception) {}
+            }
+        }
     }
 
     private fun openOfflineMhtFile(tempFile: File) {
@@ -1368,60 +1476,126 @@ $js
     }
 
     fun saveActivePageOffline() {
+        if (offlineSaveInProgress) {
+            Toast.makeText(this, "Đang lưu trang trước đó…", Toast.LENGTH_SHORT).show()
+            return
+        }
+
         val page = currentPageWebView()
         if (page == null || !pageVisible) {
             Toast.makeText(this, "Chưa có trang web nào đang mở.", Toast.LENGTH_SHORT).show()
             return
         }
-        val title = (page.title ?: "trang-web").take(60).ifBlank { "trang-web" }
 
-        // saveWebArchive() lưu file .mht đầy đủ (HTML + ảnh + CSS đóng gói
-        // cùng file), khác với outerHTML cũ (chỉ có HTML, mất ảnh/CSS).
+        // Chụp metadata trước khi saveWebArchive chạy bất đồng bộ; người dùng có
+        // thể chuyển trang/tab trong lúc file đang được tạo.
+        val sourceUrl = page.url.orEmpty()
+        val sourceTitle = (page.title ?: tabStore.currentTab().title)
+            .take(80)
+            .ifBlank { "trang-web" }
+        val safeTitle = sourceTitle.replace(Regex("[\\/:*?\"<>|]"), "_")
+            .trim().ifBlank { "trang-web" }
+
+        offlineSaveInProgress = true
+        Toast.makeText(this, "Đang lưu trang ngoại tuyến…", Toast.LENGTH_SHORT).show()
+
         val cacheMhtDir = File(cacheDir, "offline_mht").apply { mkdirs() }
+        cleanupOfflineTempFiles(cacheMhtDir)
         val tempPath = File(cacheMhtDir, "page_${System.currentTimeMillis()}.mht").absolutePath
+
         page.saveWebArchive(tempPath, false) { savedPath ->
-            if (savedPath == null) {
+            if (savedPath.isNullOrBlank()) {
+                offlineSaveInProgress = false
                 Toast.makeText(this, "Không lưu được nội dung trang.", Toast.LENGTH_SHORT).show()
                 return@saveWebArchive
             }
-            val sourceUrl = page.url ?: ""
+
             Thread {
+                var savedUri: String? = null
                 try {
-                    val bytes = File(savedPath).readBytes()
-                    val savedUri = shellBridge.saveBytesReturningUri(
-                        "${title}_offline.mht",
-                        "application/x-mimearchive",
-                        bytes
-                    )
-                    if (savedUri != null) {
-                        // Việc (v0.23.24 — Vấn đề 2): báo cho JS biết chính xác
-                        // Uri của tệp .mht vừa lưu, để "Trang đã lưu" gắn cờ
-                        // offline + lưu lại Uri này, cho phép mở lại ĐÚNG tệp
-                        // (qua LqlqPageBridge/openOfflineUri) thay vì chỉ điều
-                        // hướng online lại URL gốc.
-                        val payload = JSONObject().apply {
-                            put("url", sourceUrl)
-                            put("title", title)
-                            put("offlineUri", savedUri)
-                        }
-                        runOnUiThread {
-                            shellWebView.evaluateJavascript(
-                                "window.LqlqGlue && LqlqGlue.onOfflinePageSaved($payload);",
-                                null
-                            )
-                        }
+                    val archive = File(savedPath)
+                    if (!archive.isFile || archive.length() <= 0L) {
+                        throw IllegalStateException("empty archive")
+                    }
+                    FileInputStream(archive).use { input ->
+                        savedUri = saveStreamToDownloads(
+                            "${safeTitle}_offline_${System.currentTimeMillis()}.mht",
+                            "application/x-mimearchive",
+                            input
+                        )
                     }
                 } catch (_: Exception) {
-                    runOnUiThread {
-                        Toast.makeText(this, "Không đọc được tệp đã lưu.", Toast.LENGTH_SHORT).show()
-                    }
+                    savedUri = null
                 } finally {
-                    try {
-                        File(savedPath).delete()
-                    } catch (_: Exception) {
+                    try { File(savedPath).delete() } catch (_: Exception) {}
+                }
+
+                runOnUiThread {
+                    offlineSaveInProgress = false
+                    if (savedUri == null) {
+                        Toast.makeText(this, "Không ghi được tệp trang ngoại tuyến.", Toast.LENGTH_SHORT).show()
+                        return@runOnUiThread
                     }
+
+                    Toast.makeText(this, "Đã lưu trang vào Download.", Toast.LENGTH_SHORT).show()
+                    val payload = JSONObject().apply {
+                        put("url", sourceUrl)
+                        put("title", sourceTitle)
+                        put("offlineUri", savedUri)
+                        put("faviconData", faviconStore.peekDataUrl(sourceUrl))
+                    }
+                    shellWebView.evaluateJavascript(
+                        "window.LqlqGlue && LqlqGlue.onOfflinePageSaved($payload);",
+                        null
+                    )
                 }
             }.start()
+        }
+    }
+
+    /** Ghi stream trực tiếp ra Download, không đọc toàn bộ MHT vào RAM. */
+    private fun saveStreamToDownloads(fileName: String, mimeType: String, input: InputStream): String? {
+        val safeName = fileName.replace(Regex("[\\/:*?\"<>|]"), "_")
+            .ifBlank { "lqlq-page.mht" }
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val values = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, safeName)
+                    put(MediaStore.Downloads.MIME_TYPE, mimeType)
+                    put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                    put(MediaStore.Downloads.IS_PENDING, 1)
+                }
+                val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                    ?: return null
+                try {
+                    contentResolver.openOutputStream(uri, "w")?.use { output ->
+                        input.copyTo(output, DEFAULT_BUFFER_SIZE)
+                    } ?: throw IllegalStateException("no output stream")
+                    val ready = ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }
+                    contentResolver.update(uri, ready, null, null)
+                    uri.toString()
+                } catch (error: Exception) {
+                    contentResolver.delete(uri, null, null)
+                    throw error
+                }
+            } else {
+                val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                    .apply { mkdirs() }
+                val file = File(dir, safeName)
+                file.outputStream().buffered().use { output -> input.copyTo(output, DEFAULT_BUFFER_SIZE) }
+                Uri.fromFile(file).toString()
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun cleanupOfflineTempFiles(directory: File) {
+        val cutoff = System.currentTimeMillis() - 24L * 60L * 60L * 1000L
+        directory.listFiles()?.forEach { file ->
+            if (file.isFile && file.lastModified() < cutoff) {
+                try { file.delete() } catch (_: Exception) {}
+            }
         }
     }
 
@@ -1429,7 +1603,20 @@ $js
     // WebChromeClient chung: chọn tệp + video toàn màn hình
     // ------------------------------------------------------------------
 
-    private fun createChromeClient() = object : WebChromeClient() {
+    private fun createChromeClient(pageTabId: String? = null) = object : WebChromeClient() {
+        override fun onReceivedTitle(view: WebView, title: String) {
+            val tabId = pageTabId ?: return
+            val url = view.url.orEmpty()
+            if (url.isNotBlank()) {
+                // Chỉ cập nhật metadata; lịch sử vẫn chỉ ghi ở onPageFinished.
+                notifyShellPage(tabId, url, title, loading = true)
+            }
+        }
+
+        override fun onReceivedIcon(view: WebView, icon: android.graphics.Bitmap) {
+            if (pageTabId == null) return
+            faviconStore.put(view.url, icon)
+        }
         override fun onShowFileChooser(
             webView: WebView,
             callback: ValueCallback<Array<Uri>>,
@@ -1588,9 +1775,19 @@ $js
         shellWebView.resumeTimers()
     }
 
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
+            val active = activeTabId
+            pageWebViews.keys.filter { it != active }.toList().forEach { destroyPageWebView(it) }
+        }
+        faviconStore.trimAsync()
+    }
+
     override fun onDestroy() {
         BridgeHub.jsRunner = null
         ttsBridge?.shutdown()
+        if (::faviconStore.isInitialized) faviconStore.shutdown()
         // Ứng dụng bị đóng hẳn → WebView không còn, dừng service và gỡ thông báo
         try {
             stopService(Intent(this, PlaybackService::class.java))

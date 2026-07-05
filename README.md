@@ -1,6 +1,6 @@
-# lqlq Browser — Android APK (v0.24)
+# lqlq Browser — Android APK (v0.25)
 
-Project Android của lqlq Browser, build APK trực tiếp bằng GitHub Actions. Bản v0.24 thay toàn bộ hệ thống thẻ cũ bằng kiến trúc native ổn định hơn.
+Project Android của lqlq Browser, build APK trực tiếp bằng GitHub Actions. Bản v0.25 giữ hệ thống thẻ native và làm lại Dấu trang/Trang đã lưu, cache favicon, lưu ngoại tuyến và các điểm nghẽn hiệu năng của shell Android.
 
 ## Cách build trên GitHub
 
@@ -9,8 +9,8 @@ Project Android của lqlq Browser, build APK trực tiếp bằng GitHub Action
 3. Vào tab **Actions** → chọn workflow **Build lqlq Browser APK** → bấm **Run workflow** (hoặc chỉ cần push code là tự chạy).
 4. Chờ build xong (~5-10 phút) → mở lần chạy → kéo xuống mục **Artifacts** → tải `lqlq-browser-apk`.
 5. Trong file zip tải về có 2 APK:
-   - `lqlq-browser-v0.24.0-debug.apk`
-   - `lqlq-browser-v0.24.0-release.apk` ← nên cài bản này.
+   - `lqlq-browser-v0.25.0-debug.apk`
+   - `lqlq-browser-v0.25.0-release.apk` ← nên cài bản này.
 
 **Chữ ký ổn định:** repo có sẵn `keystore/lqlq-release.keystore`, mọi lần build đều ký cùng một chữ ký, nên cài bản mới đè lên bản cũ được, không phải gỡ ra cài lại.
 

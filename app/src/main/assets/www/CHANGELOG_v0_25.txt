@@ -1,0 +1,22 @@
+lqlq Browser v0.25.0 — Trang đã lưu ổn định + thẻ mới mượt
+
+- “Lưu trang hiện tại” lấy URL/tiêu đề từ TabStore native thay vì bản sao JavaScript có thể trễ.
+- Tách lối tắt mặc định trên trang thẻ mới khỏi Dấu trang thật của người dùng.
+- Loại bỏ request mạng /favicon.ico khi mở thẻ mới hoặc Trang đã lưu.
+- Thêm cache favicon native giới hạn dung lượng; icon chỉ tải từ cache cục bộ khi phần tử sắp hiện.
+- Không còn nhét favicon base64 lớn vào localStorage; tự di chuyển dữ liệu cũ sang schema nhẹ hơn.
+- Chống đầy localStorage: tự thu gọn Nhật ký/Tải xuống và bỏ favicon cũ trước khi thử lưu lại.
+- Lưu MHT theo luồng trực tiếp ra Download, không đọc toàn bộ file vào RAM.
+- Chống bấm lưu ngoại tuyến lặp; gắn đúng URI ngoại tuyến vào đúng URL nguồn.
+- Mở MHT qua cache file giới hạn 8 mục và quay lại URL online nếu file đã bị xóa.
+- WebView dùng LOAD_DEFAULT, Safe Browsing, file access mặc định tắt và cache renderer 2–4 thẻ theo RAM máy.
+- Không ghi SharedPreferences trong mỗi lần chỉ đọc TabStore.
+- Không dựng lại toàn bộ dải tab desktop trong từng callback tải trang.
+- Không chạy bộ quét quảng cáo toàn DOM định kỳ trên shell nội bộ của APK.
+- Liên kết do người dùng bấm được chuyển domain/redirect hợp lệ; chuyển hướng tự phát vẫn bị bảo vệ.
+- Bỏ các quyền đọc toàn bộ ảnh/video/âm thanh không cần thiết; dùng SAF/MediaStore đúng Android.
+- Thanh trạng thái và thanh điều hướng Android đổi sáng/tối theo chủ đề ứng dụng.
+- Nút In dùng Android PrintManager; mục mở trang ngoại tuyến gọi đúng trình chọn tệp.
+- Ẩn các mục desktop chưa có backend trên Android thay vì để nút bấm không phản hồi.
+- Sửa Nhật ký bị ghi trùng URL ngay lúc bắt đầu điều hướng.
+- versionCode 61, versionName 0.25.0.
