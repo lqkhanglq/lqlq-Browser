@@ -4804,9 +4804,9 @@ html[data-theme="comfort"] .offline-security-grid article {
 
 .reader-tabs {
   display: grid;
-  /* Việc (v0.23.25): còn 2 tab (Giọng đọc/Thay thế) — "Nội dung" đã tách
-     ra khỏi hệ thống tab, luôn hiện mặc định ở vùng chính. */
-  grid-template-columns: repeat(2, 1fr);
+  /* Việc (v0.23.26): 3 tab trong overlay cài đặt (Thao tác/Giọng đọc/Thay
+     thế) — vùng "Nội dung" chính giờ chỉ còn khung văn bản, không có tab. */
+  grid-template-columns: repeat(3, 1fr);
   gap: 6px;
   padding: 10px 14px;
   border-bottom: 1px solid rgba(64, 103, 79, .12);

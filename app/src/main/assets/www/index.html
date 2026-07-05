@@ -1537,26 +1537,11 @@
 
       <div class="reader-panel-scroll">
         <section class="reader-pane active" data-reader-pane="content">
-          <div class="reader-source-card">
-            <div class="reader-source-title-row">
-              <span class="reader-source-dot"></span>
-              <div>
-                <b id="readerSourceTitle">Văn bản chưa đặt tên</b>
-                <small id="readerSourceMeta">Chưa có nội dung</small>
-              </div>
-            </div>
-            <div class="reader-action-grid">
-              <button class="reader-action primary" id="readerExtractWebBtn">◈ Lấy chương đang mở</button>
-              <button class="reader-action" id="readerOpenTxtBtn">＋ Mở tệp TXT</button>
-              <button class="reader-action" id="readerCleanBtn">✦ Làm sạch nội dung</button>
-              <button class="reader-action" id="readerSaveTxtBtn">⇩ Lưu thành TXT</button>
-            </div>
-            <input class="hidden" id="readerFileInput" type="file" accept=".txt,text/plain">
-            <p class="reader-native-hint" id="readerNativeHint">
-              Nút này dùng chung bộ máy lấy chương với Chapter Clipper: xác định tiêu đề chương,
-              điểm bắt đầu/kết thúc và loại menu, quảng cáo, bình luận, nút chuyển chương.
-            </p>
-          </div>
+          <!-- Việc (v0.23.26): thẻ nguồn + 4 nút thao tác (Lấy chương/Mở
+               tệp/Làm sạch/Lưu TXT) chuyển hẳn vào tab "Thao tác" trong
+               overlay cài đặt (⚙) — vùng Nội dung giờ chỉ còn khung văn bản,
+               chiếm trọn từ đầu đến cuối bảng. -->
+          <input class="hidden" id="readerFileInput" type="file" accept=".txt,text/plain">
 
           <div class="reader-editor-wrap">
             <div class="reader-editor-toolbar">
@@ -1588,12 +1573,35 @@
             <button id="readerSettingsCloseBtn" aria-label="Đóng cài đặt">✕</button>
           </div>
           <nav class="reader-tabs" aria-label="Các phần cài đặt">
-            <button class="active" data-reader-tab="voice">Giọng đọc</button>
+            <button class="active" data-reader-tab="actions">Thao tác</button>
+            <button data-reader-tab="voice">Giọng đọc</button>
             <button data-reader-tab="replace">Thay thế</button>
           </nav>
 
           <div class="reader-settings-scroll">
-            <section class="reader-pane active" data-reader-pane="voice">
+            <section class="reader-pane active" data-reader-pane="actions">
+              <div class="reader-source-card">
+                <div class="reader-source-title-row">
+                  <span class="reader-source-dot"></span>
+                  <div>
+                    <b id="readerSourceTitle">Văn bản chưa đặt tên</b>
+                    <small id="readerSourceMeta">Chưa có nội dung</small>
+                  </div>
+                </div>
+                <div class="reader-action-grid">
+                  <button class="reader-action primary" id="readerExtractWebBtn">◈ Lấy chương đang mở</button>
+                  <button class="reader-action" id="readerOpenTxtBtn">＋ Mở tệp TXT</button>
+                  <button class="reader-action" id="readerCleanBtn">✦ Làm sạch nội dung</button>
+                  <button class="reader-action" id="readerSaveTxtBtn">⇩ Lưu thành TXT</button>
+                </div>
+                <p class="reader-native-hint" id="readerNativeHint">
+                  Nút này dùng chung bộ máy lấy chương với Chapter Clipper: xác định tiêu đề chương,
+                  điểm bắt đầu/kết thúc và loại menu, quảng cáo, bình luận, nút chuyển chương.
+                </p>
+              </div>
+            </section>
+
+            <section class="reader-pane" data-reader-pane="voice">
               <div class="reader-section-card">
                 <div class="reader-section-title">
                   <h3>Giọng đọc trên điện thoại</h3>
