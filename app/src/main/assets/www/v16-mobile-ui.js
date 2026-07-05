@@ -271,9 +271,44 @@
       });
 
       card.append(preview, closeButton, menuButton, copy);
+      // Lưu sẵn text tìm kiếm trên chính card (thay vì phải đọc lại profile
+      // mỗi lần gõ phím) để lọc bằng cách ẩn/hiện (mục 4 — độ mượt): tránh
+      // phải huỷ-dựng-lại toàn bộ DOM + gọi lại getTabThumbnail() (bridge
+      // native, có mã hoá base64 ảnh) cho MỌI thẻ mỗi lần gõ 1 ký tự.
+      card.dataset.searchText = `${tab.title || ""} ${tab.url || ""}`.toLowerCase();
       refs.grid.appendChild(card);
     });
   }
+
+  // Lọc theo từ khoá bằng cách ẩn/hiện card đã dựng sẵn — KHÔNG dựng lại
+  // DOM, KHÔNG gọi lại getTabThumbnail(). Chỉ renderMobileTabs() đầy đủ khi
+  // mở lưới lần đầu hoặc dữ liệu tab thực sự đổi (đóng/mở/đổi nhóm...).
+  function applyTabsFilterInPlace() {
+    const cards = refs.grid.querySelectorAll(".mobile-tab-card");
+    if (!cards.length) return;
+    let visibleCount = 0;
+    cards.forEach(card => {
+      const match = !tabsFilter || (card.dataset.searchText || "").includes(tabsFilter);
+      card.style.display = match ? "" : "none";
+      if (match) visibleCount++;
+    });
+
+    let emptyEl = refs.grid.querySelector(".mobile-tab-card-empty");
+    if (!visibleCount) {
+      if (!emptyEl) {
+        emptyEl = document.createElement("div");
+        emptyEl.className = "mobile-tab-card-empty";
+        emptyEl.style.cssText = "grid-column:1/-1;text-align:center;padding:24px 8px;color:#89958d;font-size:12px;";
+        emptyEl.textContent = "Không tìm thấy thẻ phù hợp.";
+        refs.grid.appendChild(emptyEl);
+      }
+      emptyEl.style.display = "";
+    } else if (emptyEl) {
+      emptyEl.style.display = "none";
+    }
+  }
+
+  let searchDebounceTimer = null;
 
   function openTabSwitcher() {
     closeMenus();
@@ -390,8 +425,15 @@
   // tab đang mở, phía client-side. Nút đổi kiểu xem chuyển giữa lưới 2 cột
   // (mặc định) và danh sách 1 cột (giống nút "danh sách số/lưới" của Chrome).
   refs.search?.addEventListener("input", () => {
-    tabsFilter = String(refs.search.value || "").trim().toLowerCase();
-    renderMobileTabs();
+    // Debounce ~180ms — tránh lọc lại ngay lập tức trên MỖI ký tự gõ, đặc
+    // biệt vì applyTabsFilterInPlace() giờ chỉ ẩn/hiện (rẻ) chứ không dựng
+    // lại DOM nữa, nhưng vẫn debounce để gõ nhanh mượt hơn, giống Chrome.
+    const value = String(refs.search.value || "").trim().toLowerCase();
+    if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(() => {
+      tabsFilter = value;
+      applyTabsFilterInPlace();
+    }, 180);
   });
 
   let tabsListMode = false;

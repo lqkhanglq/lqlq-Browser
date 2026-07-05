@@ -7567,18 +7567,61 @@ html[data-theme="comfort"] .chapter-clipper-actions > button {
 .mobile-tabs-grid.list-mode .mobile-tab-card {
   display: flex;
   align-items: center;
+  min-height: 56px;
 }
 
 .mobile-tabs-grid.list-mode .mobile-tab-card-preview {
   min-height: 0;
   width: 56px;
   height: 56px;
+  /* flex-shrink:0 quan trọng — nếu không, khi copy cần nhiều chỗ, preview
+     có thể bị flex co lại nhỏ hơn 56px thay vì giữ đúng kích thước cố định. */
   flex: 0 0 56px;
+  overflow: hidden;
+  /* overflow:hidden — sửa lỗi: badge "Đang mở" (.mobile-tab-active-badge,
+     left:42px) và chip nhóm được định vị TUYỆT ĐỐI theo preview. Ở chế độ
+     lưới preview rộng 168px+ nên chúng nằm gọn bên trong. Ở chế độ danh
+     sách preview chỉ còn 56px — nếu không cắt (overflow:hidden), badge/chip
+     sẽ tràn ra ngoài và ĐÈ LÊN vùng tiêu đề/địa chỉ (copy) nằm ngay bên
+     phải, vì badge/chip có z-index cao hơn copy. Đây là nguyên nhân khiến
+     dòng thẻ đang active chỉ thấy chữ "Đang mở" thay vì tiêu đề thật. */
+  border-radius: 12px;
+}
+
+.mobile-tabs-grid.list-mode .mobile-tab-card-preview span {
+  width: 34px;
+  height: 34px;
+  font-size: 14px;
+  border-radius: 10px;
+}
+
+.mobile-tabs-grid.list-mode .mobile-tab-active-badge,
+.mobile-tabs-grid.list-mode .mobile-tab-group-chip {
+  display: none;
 }
 
 .mobile-tabs-grid.list-mode .mobile-tab-card-copy {
-  flex: 1;
+  flex: 1 1 auto;
+  /* min-width:0 quan trọng cho flex item chứa text overflow/ellipsis — nếu
+     thiếu, trình duyệt tính min-width theo nội dung (intrinsic), khiến
+     item không co lại được và có thể bị đẩy ra ngoài/che khuất khi tổng
+     chiều rộng vượt quá thẻ. */
+  min-width: 0;
+  border-top: none;
+  background: transparent;
+  /* padding-right rộng hơn để tiêu đề/địa chỉ (ellipsis) không bị nút đóng
+     (position:absolute, right:7, rộng 29px) đè lên phần chữ cuối dòng. */
+  padding: 8px 44px 8px 10px;
 }
+
+html[data-theme="dark"] .mobile-tabs-grid.list-mode .mobile-tab-card-copy {
+  background: transparent;
+}
+
+/* closeButton/.mobile-tab-card-menu vẫn dùng position:absolute định vị
+   theo .mobile-tab-card (đã position:relative) như chế độ lưới — không
+   cần đổi vì chúng luôn neo ở góc thẻ (top:7 trái/phải), không phụ thuộc
+   preview, nên không bị ảnh hưởng bởi việc preview thu nhỏ còn 56px. */
 
 .mobile-tab-card {
   position: relative;
