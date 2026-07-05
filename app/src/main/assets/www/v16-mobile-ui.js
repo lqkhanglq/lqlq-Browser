@@ -227,18 +227,17 @@
       const copy = document.createElement("div");
       copy.className = "mobile-tab-card-copy";
 
+      // Việc "Các thẻ đang mở bị lag" (v0.23.30): trước đây mỗi thẻ tải 1
+      // ảnh favicon.ico THẬT QUA MẠNG (faviconForUrl → origin + "/favicon.ico")
+      // ngay khi mở lưới — có bao nhiêu thẻ là bấy nhiêu request mạng cùng
+      // lúc, gây cảm giác nặng/lag thật sự khi có nhiều thẻ hoặc mạng chậm.
+      // Đã bỏ hẳn, chỉ dùng icon chữ cái local đã có sẵn trong `preview`
+      // (gradient màu theo domain + chữ cái đầu) — không cần mạng, tức thì.
       const titleRow = document.createElement("div");
       titleRow.className = "mobile-tab-card-copy-title";
-      const favicon = document.createElement("img");
-      favicon.className = "mobile-tab-card-favicon";
-      favicon.alt = "";
-      favicon.loading = "lazy";
-      favicon.referrerPolicy = "no-referrer";
-      favicon.src = (typeof faviconForUrl === "function" && faviconForUrl(tab.url)) || "";
-      favicon.addEventListener("error", () => favicon.classList.add("hidden"));
       const titleEl = document.createElement("b");
       titleEl.textContent = tab.title || "Thẻ mới";
-      titleRow.append(favicon, titleEl);
+      titleRow.append(titleEl);
 
       const urlEl = document.createElement("small");
       urlEl.textContent = tab.url || "https://google.com";

@@ -272,21 +272,26 @@
     },
 
     // Lệnh từ thanh thông báo → Đọc truyện TXT
+    // Việc "nút dừng/phát trên thông báo không có tác dụng" (v0.23.30): kể từ
+    // khi gộp 3 nút Đọc/Tạm dừng/Dừng thành 1 nút duy nhất
+    // (readerPlayPauseBtn, xem reader.js v0.23.25), các id cũ readerPlayBtn/
+    // readerPauseBtn/readerStopBtn không còn tồn tại trong index.html nữa —
+    // $(...) trả về null, ?.click() không làm gì cả, âm thầm không lỗi.
     readerCmd(cmd) {
       safeCall(() => {
         if (cmd === "toggle") {
-          const state = $("readerStatus")?.dataset.state;
-          if (state === "speaking" || state === "paused") {
-            $("readerPauseBtn")?.click();
-          } else {
-            $("readerPlayBtn")?.click();
-          }
+          $("readerPlayPauseBtn")?.click();
         } else if (cmd === "next") {
           $("readerNextBtn")?.click();
         } else if (cmd === "prev") {
           $("readerPrevBtn")?.click();
         } else if (cmd === "stop") {
-          $("readerStopBtn")?.click();
+          // Không còn nút "Dừng" riêng — nếu đang đọc/tạm dừng thì bấm nút
+          // gộp để tạm dừng (tương đương "dừng" theo thiết kế mới).
+          const state = $("readerStatus")?.dataset.state;
+          if (state === "speaking") {
+            $("readerPlayPauseBtn")?.click();
+          }
         }
       });
     },
