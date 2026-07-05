@@ -4804,11 +4804,61 @@ html[data-theme="comfort"] .offline-security-grid article {
 
 .reader-tabs {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* Việc (v0.23.25): còn 2 tab (Giọng đọc/Thay thế) — "Nội dung" đã tách
+     ra khỏi hệ thống tab, luôn hiện mặc định ở vùng chính. */
+  grid-template-columns: repeat(2, 1fr);
   gap: 6px;
   padding: 10px 14px;
   border-bottom: 1px solid rgba(64, 103, 79, .12);
   background: rgba(255, 255, 255, .6);
+}
+
+/* Việc (v0.23.25): overlay cài đặt (Giọng đọc/Thay thế) — mở bằng nút ⚙
+   cạnh nút Đọc, để vùng "Nội dung" có nhiều chỗ hiển thị văn bản hơn. */
+.reader-settings-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(15, 30, 20, .38);
+}
+
+.reader-settings-sheet {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-height: 82%;
+  border-radius: 20px 20px 0 0;
+  background: var(--panel, #fff);
+  box-shadow: 0 -12px 32px rgba(15, 30, 20, .22);
+  overflow: hidden;
+}
+
+.reader-settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(64, 103, 79, .12);
+  font-size: 15px;
+}
+
+.reader-settings-head button {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(49, 77, 61, .07);
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.reader-settings-scroll {
+  flex: 1;
+  overflow: auto;
+  padding: 14px;
+  scrollbar-width: thin;
 }
 
 .reader-tabs button {
@@ -5088,7 +5138,8 @@ html[data-theme="comfort"] .offline-security-grid article {
 
 .reader-playback-buttons {
   display: grid;
-  grid-template-columns: 38px 1fr 1fr 38px 38px;
+  /* Việc (v0.23.25): ⚙ cài đặt, ‹ câu trước, nút gộp Đọc/Tạm dừng, › câu sau. */
+  grid-template-columns: 38px 38px 1fr 38px;
   gap: 7px;
 }
 
@@ -5124,7 +5175,7 @@ html[data-theme="comfort"] .offline-security-grid article {
   .reader-tabs { gap: 4px; padding: 8px; }
   .reader-tabs button { font-size: 11px; }
   .reader-action-grid { grid-template-columns: 1fr; }
-  .reader-playback-buttons { grid-template-columns: 34px 1fr 1fr 34px 34px; }
+  .reader-playback-buttons { grid-template-columns: 34px 34px 1fr 34px; }
 }
 
 

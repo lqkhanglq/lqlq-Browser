@@ -1535,12 +1535,6 @@
         <button class="reader-close-btn" id="closeStoryReader" aria-label="Đóng">×</button>
       </header>
 
-      <nav class="reader-tabs" aria-label="Các phần của công cụ đọc truyện">
-        <button class="active" data-reader-tab="content">Nội dung</button>
-        <button data-reader-tab="voice">Giọng đọc</button>
-        <button data-reader-tab="replace">Thay thế</button>
-      </nav>
-
       <div class="reader-panel-scroll">
         <section class="reader-pane active" data-reader-pane="content">
           <div class="reader-source-card">
@@ -1582,92 +1576,110 @@
             </div>
           </div>
         </section>
+      </div>
 
-        <section class="reader-pane" data-reader-pane="voice">
-          <div class="reader-section-card">
-            <div class="reader-section-title">
-              <h3>Giọng đọc trên điện thoại</h3>
-              <small>Ưu tiên Google · Tiếng Việt</small>
-            </div>
+      <!-- Việc (v0.23.25): "Giọng đọc" + "Thay thế" chuyển vào overlay cài
+           đặt riêng (mở bằng nút ⚙ cạnh nút Đọc), để vùng "Nội dung" (văn
+           bản đang đọc) có nhiều chỗ hiển thị hơn thay vì chia 3 tab ngang. -->
+      <div class="reader-settings-overlay hidden" id="readerSettingsOverlay">
+        <div class="reader-settings-sheet">
+          <div class="reader-settings-head">
+            <b>Cài đặt đọc truyện</b>
+            <button id="readerSettingsCloseBtn" aria-label="Đóng cài đặt">✕</button>
+          </div>
+          <nav class="reader-tabs" aria-label="Các phần cài đặt">
+            <button class="active" data-reader-tab="voice">Giọng đọc</button>
+            <button data-reader-tab="replace">Thay thế</button>
+          </nav>
 
-            <div class="reader-tts-engine-card">
-              <span class="reader-tts-engine-icon" aria-hidden="true">◖</span>
-              <div class="reader-tts-engine-copy">
-                <b id="readerTtsEngineName">Nhận dạng và tổng hợp giọng nói của Google</b>
-                <small id="readerTtsEngineMeta">
-                  Khi chạy APK, lqlq Browser sẽ lấy danh sách giọng đã cài trong Android.
-                </small>
+          <div class="reader-settings-scroll">
+            <section class="reader-pane active" data-reader-pane="voice">
+              <div class="reader-section-card">
+                <div class="reader-section-title">
+                  <h3>Giọng đọc trên điện thoại</h3>
+                  <small>Ưu tiên Google · Tiếng Việt</small>
+                </div>
+
+                <div class="reader-tts-engine-card">
+                  <span class="reader-tts-engine-icon" aria-hidden="true">◖</span>
+                  <div class="reader-tts-engine-copy">
+                    <b id="readerTtsEngineName">Nhận dạng và tổng hợp giọng nói của Google</b>
+                    <small id="readerTtsEngineMeta">
+                      Khi chạy APK, lqlq Browser sẽ lấy danh sách giọng đã cài trong Android.
+                    </small>
+                  </div>
+                  <div class="reader-tts-engine-actions">
+                    <button id="readerRefreshVoicesBtn" type="button">Làm mới</button>
+                    <button id="readerOpenTtsSettingsBtn" type="button">Cài đặt</button>
+                  </div>
+                </div>
+
+                <div class="reader-field">
+                  <label for="readerVoiceSelect">Giọng tiếng Việt đã cài</label>
+                  <select class="reader-select" id="readerVoiceSelect"></select>
+                  <small class="reader-field-note" id="readerVoiceSourceNote">
+                    Bản HTML dùng giọng trình duyệt; bản APK ưu tiên Google Speech Services trên Android.
+                  </small>
+                </div>
+                <div class="reader-field">
+                  <div class="reader-field-head"><span>Tốc độ đọc</span><span class="reader-field-value" id="readerRateValue">100</span></div>
+                  <input class="reader-range" id="readerRate" type="range" min="0" max="300" step="1" value="100">
+                </div>
+                <div class="reader-field">
+                  <div class="reader-field-head"><span>Tông đọc</span><span class="reader-field-value" id="readerPitchValue">100</span></div>
+                  <input class="reader-range" id="readerPitch" type="range" min="0" max="300" step="1" value="100">
+                </div>
+                <div class="reader-field">
+                  <div class="reader-field-head"><span>Âm lượng</span><span class="reader-field-value" id="readerVolumeValue">100%</span></div>
+                  <input class="reader-range" id="readerVolume" type="range" min="0" max="100" step="1" value="100">
+                </div>
+                <div class="reader-field">
+                  <div class="reader-field-head"><span>Nghỉ giữa các câu</span><span class="reader-field-value" id="readerPauseMsValue">0 ms</span></div>
+                  <input class="reader-range" id="readerPauseMs" type="range" min="0" max="3000" step="50" value="0">
+                </div>
               </div>
-              <div class="reader-tts-engine-actions">
-                <button id="readerRefreshVoicesBtn" type="button">Làm mới</button>
-                <button id="readerOpenTtsSettingsBtn" type="button">Cài đặt</button>
+
+              <div class="reader-section-card">
+                <div class="reader-toggle-row">
+                  <div class="reader-toggle-copy"><b>Đọc từ vị trí con trỏ</b><small>Bắt đầu tại chỗ đang chọn trong văn bản</small></div>
+                  <input id="readerReadCursor" type="checkbox" checked>
+                </div>
+                <div class="reader-toggle-row">
+                  <div class="reader-toggle-copy"><b>Lặp lại toàn bộ</b><small>Đọc lại từ đầu khi kết thúc</small></div>
+                  <input id="readerRepeat" type="checkbox">
+                </div>
               </div>
-            </div>
+            </section>
 
-            <div class="reader-field">
-              <label for="readerVoiceSelect">Giọng tiếng Việt đã cài</label>
-              <select class="reader-select" id="readerVoiceSelect"></select>
-              <small class="reader-field-note" id="readerVoiceSourceNote">
-                Bản HTML dùng giọng trình duyệt; bản APK ưu tiên Google Speech Services trên Android.
-              </small>
-            </div>
-            <div class="reader-field">
-              <div class="reader-field-head"><span>Tốc độ đọc</span><span class="reader-field-value" id="readerRateValue">100</span></div>
-              <input class="reader-range" id="readerRate" type="range" min="0" max="300" step="1" value="100">
-            </div>
-            <div class="reader-field">
-              <div class="reader-field-head"><span>Tông đọc</span><span class="reader-field-value" id="readerPitchValue">100</span></div>
-              <input class="reader-range" id="readerPitch" type="range" min="0" max="300" step="1" value="100">
-            </div>
-            <div class="reader-field">
-              <div class="reader-field-head"><span>Âm lượng</span><span class="reader-field-value" id="readerVolumeValue">100%</span></div>
-              <input class="reader-range" id="readerVolume" type="range" min="0" max="100" step="1" value="100">
-            </div>
-            <div class="reader-field">
-              <div class="reader-field-head"><span>Nghỉ giữa các câu</span><span class="reader-field-value" id="readerPauseMsValue">0 ms</span></div>
-              <input class="reader-range" id="readerPauseMs" type="range" min="0" max="3000" step="50" value="0">
-            </div>
+            <section class="reader-pane" data-reader-pane="replace">
+              <div class="reader-section-card">
+                <div class="reader-section-title">
+                  <h3>Thay thế khi đọc</h3>
+                  <small>Không sửa văn bản gốc</small>
+                </div>
+                <div class="reader-field">
+                  <label for="readerReplacementRules">Mỗi dòng là một quy tắc</label>
+                  <textarea class="reader-rule-textarea" id="readerReplacementRules" placeholder="Tên cũ => Tên mới&#10;MLBB => Mobile Legends&#10;... =>"></textarea>
+                  <p class="reader-rule-example">Ví dụ: <code>Lâm Phàm =&gt; Lâm Phong</code>. Để trống phần sau mũi tên để bỏ từ đó khi đọc.</p>
+                </div>
+                <div class="reader-field">
+                  <label for="readerSkipWords">Từ/cụm từ bỏ qua</label>
+                  <textarea class="reader-rule-textarea" id="readerSkipWords" placeholder="Quảng cáo&#10;Nguồn truyện&#10;Hết chương"></textarea>
+                  <p class="reader-rule-example">Có thể nhập mỗi dòng một mục hoặc ngăn cách bằng dấu phẩy.</p>
+                </div>
+                <div class="reader-toggle-row">
+                  <div class="reader-toggle-copy"><b>Phân biệt chữ hoa/thường</b><small>Tắt để “Tên” và “tên” cùng được thay</small></div>
+                  <input id="readerCaseSensitive" type="checkbox">
+                </div>
+                <div class="reader-rule-actions">
+                  <button class="reader-secondary" id="readerPreviewRules">Kiểm tra quy tắc</button>
+                  <button class="reader-primary" id="readerApplyRules">Áp dụng vào văn bản</button>
+                </div>
+                <p class="reader-rules-status" id="readerRulesStatus">Quy tắc sẽ được áp dụng tự động trước khi từng câu được gửi tới TTS.</p>
+              </div>
+            </section>
           </div>
-
-          <div class="reader-section-card">
-            <div class="reader-toggle-row">
-              <div class="reader-toggle-copy"><b>Đọc từ vị trí con trỏ</b><small>Bắt đầu tại chỗ đang chọn trong văn bản</small></div>
-              <input id="readerReadCursor" type="checkbox" checked>
-            </div>
-            <div class="reader-toggle-row">
-              <div class="reader-toggle-copy"><b>Lặp lại toàn bộ</b><small>Đọc lại từ đầu khi kết thúc</small></div>
-              <input id="readerRepeat" type="checkbox">
-            </div>
-          </div>
-        </section>
-
-        <section class="reader-pane" data-reader-pane="replace">
-          <div class="reader-section-card">
-            <div class="reader-section-title">
-              <h3>Thay thế khi đọc</h3>
-              <small>Không sửa văn bản gốc</small>
-            </div>
-            <div class="reader-field">
-              <label for="readerReplacementRules">Mỗi dòng là một quy tắc</label>
-              <textarea class="reader-rule-textarea" id="readerReplacementRules" placeholder="Tên cũ => Tên mới&#10;MLBB => Mobile Legends&#10;... =>"></textarea>
-              <p class="reader-rule-example">Ví dụ: <code>Lâm Phàm =&gt; Lâm Phong</code>. Để trống phần sau mũi tên để bỏ từ đó khi đọc.</p>
-            </div>
-            <div class="reader-field">
-              <label for="readerSkipWords">Từ/cụm từ bỏ qua</label>
-              <textarea class="reader-rule-textarea" id="readerSkipWords" placeholder="Quảng cáo&#10;Nguồn truyện&#10;Hết chương"></textarea>
-              <p class="reader-rule-example">Có thể nhập mỗi dòng một mục hoặc ngăn cách bằng dấu phẩy.</p>
-            </div>
-            <div class="reader-toggle-row">
-              <div class="reader-toggle-copy"><b>Phân biệt chữ hoa/thường</b><small>Tắt để “Tên” và “tên” cùng được thay</small></div>
-              <input id="readerCaseSensitive" type="checkbox">
-            </div>
-            <div class="reader-rule-actions">
-              <button class="reader-secondary" id="readerPreviewRules">Kiểm tra quy tắc</button>
-              <button class="reader-primary" id="readerApplyRules">Áp dụng vào văn bản</button>
-            </div>
-            <p class="reader-rules-status" id="readerRulesStatus">Quy tắc sẽ được áp dụng tự động trước khi từng câu được gửi tới TTS.</p>
-          </div>
-        </section>
+        </div>
       </div>
 
       <footer class="reader-playback-dock">
@@ -1677,10 +1689,9 @@
         </div>
         <p class="reader-now-reading" id="readerNowReading">Chưa có câu đang đọc.</p>
         <div class="reader-playback-buttons">
+          <button id="readerSettingsBtn" title="Cài đặt">⚙</button>
           <button id="readerPrevBtn" title="Câu trước">‹</button>
-          <button class="play" id="readerPlayBtn">▶ Đọc</button>
-          <button id="readerPauseBtn">Tạm dừng</button>
-          <button class="stop" id="readerStopBtn" title="Dừng">■</button>
+          <button class="play" id="readerPlayPauseBtn">▶ Đọc</button>
           <button id="readerNextBtn" title="Câu sau">›</button>
         </div>
       </footer>

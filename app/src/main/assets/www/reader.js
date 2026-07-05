@@ -11,8 +11,11 @@
     panel: $("storyReaderPanel"),
     backdrop: $("storyReaderBackdrop"),
     close: $("closeStoryReader"),
-    tabs: Array.from(document.querySelectorAll("[data-reader-tab]")),
-    panes: Array.from(document.querySelectorAll("[data-reader-pane]")),
+    // Việc (v0.23.25): chỉ lấy tab/pane BÊN TRONG overlay cài đặt — pane
+    // "content" giờ nằm ngoài overlay, luôn hiện mặc định, không được để
+    // switchTab() (dùng cho tab Giọng đọc/Thay thế) vô tình ẩn nó đi.
+    tabs: Array.from(document.querySelectorAll("#readerSettingsOverlay [data-reader-tab]")),
+    panes: Array.from(document.querySelectorAll("#readerSettingsOverlay [data-reader-pane]")),
     sourceTitle: $("readerSourceTitle"),
     sourceMeta: $("readerSourceMeta"),
     text: $("readerText"),
@@ -26,9 +29,14 @@
     copyBtn: $("readerCopyBtn"),
     saveBtn: $("readerSaveTxtBtn"),
     clearBtn: $("readerClearBtn"),
-    playBtn: $("readerPlayBtn"),
-    pauseBtn: $("readerPauseBtn"),
-    stopBtn: $("readerStopBtn"),
+    // Việc (v0.23.25): gộp 3 nút Đọc/Tạm dừng/Dừng thành 1 nút duy nhất —
+    // nhãn/hành vi đổi theo trạng thái (▶ Đọc → ⏸ Tạm dừng → ▶ Tiếp tục).
+    // Nút "Dừng" riêng bị bỏ hẳn theo yêu cầu; muốn dừng hẳn thì tạm dừng
+    // rồi đóng bảng (đọc vẫn tiếp tục nền như trước nếu không tạm dừng).
+    playPauseBtn: $("readerPlayPauseBtn"),
+    settingsBtn: $("readerSettingsBtn"),
+    settingsCloseBtn: $("readerSettingsCloseBtn"),
+    settingsOverlay: $("readerSettingsOverlay"),
     prevBtn: $("readerPrevBtn"),
     nextBtn: $("readerNextBtn"),
     voice: $("readerVoiceSelect"),
@@ -716,6 +724,17 @@
     updateProgress();
   }
 
+  // Việc (v0.23.25): nhãn nút gộp phản ánh đúng 1 trong 3 trạng thái.
+  function updatePlayPauseLabel() {
+    if (!state.speaking) {
+      ui.playPauseBtn.textContent = "▶ Đọc";
+    } else if (state.paused) {
+      ui.playPauseBtn.textContent = "▶ Tiếp tục";
+    } else {
+      ui.playPauseBtn.textContent = "⏸ Tạm dừng";
+    }
+  }
+
   function finishSpeech() {
     state.speaking = false;
     state.paused = false;
@@ -723,7 +742,7 @@
     clearTimeout(state.timer);
     ui.status.textContent = "Đã đọc xong";
     ui.status.dataset.state = "done";
-    ui.pauseBtn.textContent = "Tạm dừng";
+    updatePlayPauseLabel();
     if (ui.repeat.checked && state.segments.length) {
       state.segmentIndex = 0;
       state.timer = setTimeout(speakCurrentSegment, Number(ui.pauseMs.value) || 0);
@@ -803,7 +822,7 @@
     if (state.segmentIndex < 0) state.segmentIndex = 0;
     state.speaking = true;
     state.paused = false;
-    ui.pauseBtn.textContent = "Tạm dừng";
+    updatePlayPauseLabel();
     speakCurrentSegment();
   }
 
@@ -820,7 +839,7 @@
       }
       ui.status.textContent = "Đã tạm dừng";
       ui.status.dataset.state = "paused";
-      ui.pauseBtn.textContent = "Tiếp tục";
+      updatePlayPauseLabel();
     } else {
       state.paused = false;
       if (bridge && typeof bridge.resumeTts === "function") {
@@ -832,8 +851,14 @@
       }
       ui.status.textContent = "Đang đọc";
       ui.status.dataset.state = "speaking";
-      ui.pauseBtn.textContent = "Tạm dừng";
+      updatePlayPauseLabel();
     }
+  }
+
+  // Nút gộp: chưa đọc → bắt đầu; đang đọc → tạm dừng; đang tạm dừng → tiếp tục.
+  function handlePlayPauseClick() {
+    if (!state.speaking) startSpeech();
+    else pauseOrResume();
   }
 
   function stopSpeech(resetProgress = true) {
@@ -848,7 +873,7 @@
     }
     ui.status.textContent = "Sẵn sàng";
     ui.status.dataset.state = "idle";
-    ui.pauseBtn.textContent = "Tạm dừng";
+    updatePlayPauseLabel();
     if (resetProgress) {
       state.segmentIndex = 0;
       updateProgress();
@@ -1242,9 +1267,12 @@
     updateTextStats();
     persistDraft();
   });
-  ui.playBtn.addEventListener("click", startSpeech);
-  ui.pauseBtn.addEventListener("click", pauseOrResume);
-  ui.stopBtn.addEventListener("click", () => stopSpeech());
+  ui.playPauseBtn.addEventListener("click", handlePlayPauseClick);
+  ui.settingsBtn?.addEventListener("click", () => ui.settingsOverlay?.classList.remove("hidden"));
+  ui.settingsCloseBtn?.addEventListener("click", () => ui.settingsOverlay?.classList.add("hidden"));
+  ui.settingsOverlay?.addEventListener("click", event => {
+    if (event.target === ui.settingsOverlay) ui.settingsOverlay.classList.add("hidden");
+  });
   ui.prevBtn.addEventListener("click", () => jumpSegment(-1));
   ui.nextBtn.addEventListener("click", () => jumpSegment(1));
   ui.previewRules.addEventListener("click", previewTransform);
