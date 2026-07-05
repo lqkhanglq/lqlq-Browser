@@ -1,0 +1,14 @@
+lqlq Browser v0.27.0 — YouTube PiP + folder playlists
+
+- Thêm Picture-in-Picture Android cho YouTube iframe chính thức.
+- Tự vào PiP khi video YouTube đang phát và người dùng bấm Home.
+- Thêm nút PiP thủ công và nút mở bằng ứng dụng YouTube.
+- Thêm lặp lại một bài cho Media3, URL trực tiếp và YouTube.
+- Lưu trạng thái repeat-one giữa các lần chạy.
+- Khi chọn file local, tạo playlist từ các file cùng loại trong thư mục chứa file.
+- Thêm chọn cả thư mục bằng ACTION_OPEN_DOCUMENT_TREE.
+- Tự chuyển bài, bài trước và bài tiếp theo bằng playlist Media3.
+- Hỗ trợ quyền READ_MEDIA_AUDIO/READ_MEDIA_VIDEO trên Android 13+.
+- Hỗ trợ truy vấn thư mục legacy trên Android 7–9.
+- Thêm hàng đợi playlist YouTube chính thức với listType=playlist.
+- Không trích xuất hoặc chuyển luồng YouTube sang ExoPlayer.

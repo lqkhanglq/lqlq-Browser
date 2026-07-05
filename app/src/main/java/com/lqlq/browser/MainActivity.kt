@@ -5,21 +5,27 @@ import android.annotation.SuppressLint
 import android.app.AlertDialog
 import android.app.DownloadManager
 import android.app.ActivityManager
+import android.app.PictureInPictureParams
+import android.content.ContentUris
 import android.content.ComponentName
 import android.content.Context
 import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.graphics.Color
+import android.graphics.Rect
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.provider.MediaStore
 import android.print.PrintAttributes
 import android.print.PrintManager
+import android.util.Rational
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.CookieManager
@@ -54,6 +60,8 @@ import org.json.JSONObject
 import java.io.File
 import java.io.FileInputStream
 import java.io.InputStream
+import java.text.Collator
+import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 
 class MainActivity : AppCompatActivity() {
@@ -203,6 +211,27 @@ class MainActivity : AppCompatActivity() {
     @Volatile
     private var lastNativeMediaStateJson = "{\"active\":false,\"playing\":false,\"backend\":\"native\"}"
 
+    private data class LocalMediaEntry(
+        val uri: Uri,
+        val title: String,
+        val mimeType: String
+    )
+
+    private data class PendingMediaSelection(
+        val uri: Uri,
+        val displayName: String,
+        val mimeType: String
+    )
+
+    private var pendingMediaSelection: PendingMediaSelection? = null
+
+    @Volatile
+    private var youtubePipActive = false
+    @Volatile
+    private var youtubePipPlaying = false
+    private var youtubePipUrl = ""
+    private var suppressNextYoutubePip = false
+
     private val nativeMediaListener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) {
             publishNativeMediaState(player)
@@ -280,7 +309,46 @@ class MainActivity : AppCompatActivity() {
             publishNativeMediaState(nativeMediaController)
             return@registerForActivityResult
         }
-        playNativeMedia(uri, displayName, mimeType, sourceKind = "file")
+        handleSelectedNativeMedia(uri, displayName, mimeType)
+    }
+
+    private val nativeMediaFolderLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val data = result.data
+        val treeUri = data?.data
+        if (result.resultCode != RESULT_OK || treeUri == null) {
+            publishNativeMediaState(nativeMediaController)
+            return@registerForActivityResult
+        }
+
+        val takeFlags = data.flags and (
+            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        )
+        try {
+            contentResolver.takePersistableUriPermission(
+                treeUri,
+                takeFlags and Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+        } catch (_: Exception) {
+            // Một số provider chỉ cấp quyền trong phiên hiện tại.
+        }
+
+        playNativeMediaFolder(treeUri)
+    }
+
+    private val mediaLibraryPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) {
+        val pending = pendingMediaSelection
+        pendingMediaSelection = null
+        if (pending != null) {
+            playSelectedMediaWithFolderPlaylist(
+                pending.uri,
+                pending.displayName,
+                pending.mimeType
+            )
+        }
     }
 
     private val permissionLauncher = registerForActivityResult(
@@ -505,6 +573,405 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    fun launchNativeMediaFolderPicker() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
+        }
+        try {
+            nativeMediaFolderLauncher.launch(intent)
+        } catch (_: Exception) {
+            Toast.makeText(this, "Không mở được trình chọn thư mục.", Toast.LENGTH_SHORT).show()
+            publishNativeMediaState(nativeMediaController)
+        }
+    }
+
+    private fun handleSelectedNativeMedia(
+        uri: Uri,
+        displayName: String,
+        mimeType: String
+    ) {
+        val permission = requiredMediaLibraryPermission(mimeType)
+        if (
+            permission != null &&
+            ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED
+        ) {
+            pendingMediaSelection = PendingMediaSelection(uri, displayName, mimeType)
+            mediaLibraryPermissionLauncher.launch(arrayOf(permission))
+            return
+        }
+        playSelectedMediaWithFolderPlaylist(uri, displayName, mimeType)
+    }
+
+    private fun requiredMediaLibraryPermission(mimeType: String): String? {
+        return when {
+            Build.VERSION.SDK_INT >= 33 && mimeType.startsWith("audio/") ->
+                Manifest.permission.READ_MEDIA_AUDIO
+            Build.VERSION.SDK_INT >= 33 && mimeType.startsWith("video/") ->
+                Manifest.permission.READ_MEDIA_VIDEO
+            Build.VERSION.SDK_INT in 23..32 -> Manifest.permission.READ_EXTERNAL_STORAGE
+            else -> null
+        }
+    }
+
+    private fun playSelectedMediaWithFolderPlaylist(
+        selectedUri: Uri,
+        displayName: String,
+        mimeType: String
+    ) {
+        val selected = LocalMediaEntry(selectedUri, displayName, mimeType)
+        val playlist = queryContainingFolderPlaylist(selected)
+            .ifEmpty { listOf(selected) }
+        val selectedIndex = playlist.indexOfFirst {
+            it.uri == selectedUri || it.title.equals(displayName, ignoreCase = true)
+        }.coerceAtLeast(0)
+
+        val subtitle = if (playlist.size > 1) {
+            "Thư mục hiện tại • ${playlist.size} tệp • tự chuyển bài"
+        } else {
+            "Tệp trong máy • phát nền Android"
+        }
+        playNativePlaylist(playlist, selectedIndex, subtitle)
+    }
+
+    private fun playNativeMediaFolder(treeUri: Uri) {
+        val playlist = queryTreeFolderPlaylist(treeUri)
+        if (playlist.isEmpty()) {
+            Toast.makeText(
+                this,
+                "Thư mục này không có tệp nhạc hoặc video được hỗ trợ.",
+                Toast.LENGTH_SHORT
+            ).show()
+            publishNativeMediaState(nativeMediaController)
+            return
+        }
+        playNativePlaylist(
+            playlist,
+            0,
+            "Thư mục đã chọn • ${playlist.size} tệp • tự chuyển bài"
+        )
+    }
+
+    private fun queryTreeFolderPlaylist(treeUri: Uri): List<LocalMediaEntry> {
+        val entries = mutableListOf<LocalMediaEntry>()
+        try {
+            val parentId = DocumentsContract.getTreeDocumentId(treeUri)
+            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(
+                treeUri,
+                parentId
+            )
+            val projection = arrayOf(
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_MIME_TYPE
+            )
+            contentResolver.query(childrenUri, projection, null, null, null)?.use { cursor ->
+                val idIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                val nameIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                val mimeIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
+                while (cursor.moveToNext()) {
+                    val documentId = if (idIndex >= 0) cursor.getString(idIndex).orEmpty() else ""
+                    val name = if (nameIndex >= 0) cursor.getString(nameIndex).orEmpty() else ""
+                    val rawMime = if (mimeIndex >= 0) cursor.getString(mimeIndex).orEmpty() else ""
+                    if (documentId.isBlank() || name.isBlank()) continue
+                    val mime = inferMediaMimeType(rawMime, name)
+                    if (!isSupportedMedia(mime, name)) continue
+                    val documentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId)
+                    entries += LocalMediaEntry(documentUri, name, mime)
+                }
+            }
+        } catch (_: Exception) {
+            return emptyList()
+        }
+        return sortLocalMedia(entries)
+    }
+
+    private fun queryContainingFolderPlaylist(selected: LocalMediaEntry): List<LocalMediaEntry> {
+        val entries = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            queryModernContainingFolderPlaylist(selected)
+        } else {
+            queryLegacyContainingFolderPlaylist(selected)
+        }.toMutableList()
+
+        // Một số document provider trả URI khác với URI MediaStore của cùng tệp.
+        // Bảo đảm bài người dùng vừa chọn luôn nằm trong hàng đợi, kể cả khi truy
+        // vấn thư mục chỉ trả về các tệp còn lại hoặc provider không ánh xạ URI.
+        if (entries.none {
+                it.uri == selected.uri ||
+                    it.title.equals(selected.title, ignoreCase = true)
+            }
+        ) {
+            entries += selected
+        }
+        return sortLocalMedia(entries)
+    }
+
+    private fun queryModernContainingFolderPlaylist(
+        selected: LocalMediaEntry
+    ): List<LocalMediaEntry> {
+        val location = resolveSelectedMediaLocation(selected) ?: return emptyList()
+        val filesUri = MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL)
+        val wantedMediaType = if (selected.mimeType.startsWith("video/")) {
+            MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO
+        } else {
+            MediaStore.Files.FileColumns.MEDIA_TYPE_AUDIO
+        }
+        val projection = arrayOf(
+            MediaStore.Files.FileColumns._ID,
+            MediaStore.Files.FileColumns.DISPLAY_NAME,
+            MediaStore.Files.FileColumns.MIME_TYPE
+        )
+        val selection = buildString {
+            append("${MediaStore.Files.FileColumns.RELATIVE_PATH}=?")
+            append(" AND ${MediaStore.Files.FileColumns.MEDIA_TYPE}=?")
+            append(" AND ${MediaStore.MediaColumns.IS_PENDING}=0")
+        }
+        val args = arrayOf(location, wantedMediaType.toString())
+        val entries = mutableListOf<LocalMediaEntry>()
+        try {
+            contentResolver.query(filesUri, projection, selection, args, null)?.use { cursor ->
+                val idIndex = cursor.getColumnIndex(MediaStore.Files.FileColumns._ID)
+                val nameIndex = cursor.getColumnIndex(MediaStore.Files.FileColumns.DISPLAY_NAME)
+                val mimeIndex = cursor.getColumnIndex(MediaStore.Files.FileColumns.MIME_TYPE)
+                while (cursor.moveToNext()) {
+                    if (idIndex < 0 || nameIndex < 0) continue
+                    val id = cursor.getLong(idIndex)
+                    val name = cursor.getString(nameIndex).orEmpty()
+                    val rawMime = if (mimeIndex >= 0) cursor.getString(mimeIndex).orEmpty() else ""
+                    val mime = inferMediaMimeType(rawMime, name)
+                    if (!isSupportedMedia(mime, name)) continue
+                    entries += LocalMediaEntry(
+                        ContentUris.withAppendedId(filesUri, id),
+                        name,
+                        mime
+                    )
+                }
+            }
+        } catch (_: SecurityException) {
+            return emptyList()
+        } catch (_: Exception) {
+            return emptyList()
+        }
+        return entries
+    }
+
+    @Suppress("DEPRECATION")
+    private fun queryLegacyContainingFolderPlaylist(
+        selected: LocalMediaEntry
+    ): List<LocalMediaEntry> {
+        val selectedPath = resolveLegacyMediaPath(selected.uri) ?: return emptyList()
+        val parentPath = File(selectedPath).parentFile?.absolutePath ?: return emptyList()
+        val collection = if (selected.mimeType.startsWith("video/")) {
+            MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+        } else {
+            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+        }
+        val projection = arrayOf(
+            MediaStore.MediaColumns._ID,
+            MediaStore.MediaColumns.DISPLAY_NAME,
+            MediaStore.MediaColumns.MIME_TYPE,
+            MediaStore.MediaColumns.DATA
+        )
+        val entries = mutableListOf<LocalMediaEntry>()
+        try {
+            contentResolver.query(
+                collection,
+                projection,
+                "${MediaStore.MediaColumns.DATA} LIKE ?",
+                arrayOf("$parentPath/%"),
+                null
+            )?.use { cursor ->
+                val idIndex = cursor.getColumnIndex(MediaStore.MediaColumns._ID)
+                val nameIndex = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+                val mimeIndex = cursor.getColumnIndex(MediaStore.MediaColumns.MIME_TYPE)
+                val pathIndex = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
+                while (cursor.moveToNext()) {
+                    if (idIndex < 0 || nameIndex < 0 || pathIndex < 0) continue
+                    val path = cursor.getString(pathIndex).orEmpty()
+                    if (File(path).parentFile?.absolutePath != parentPath) continue
+                    val id = cursor.getLong(idIndex)
+                    val name = cursor.getString(nameIndex).orEmpty()
+                    val rawMime = if (mimeIndex >= 0) cursor.getString(mimeIndex).orEmpty() else ""
+                    val mime = inferMediaMimeType(rawMime, name)
+                    if (!isSupportedMedia(mime, name)) continue
+                    entries += LocalMediaEntry(
+                        ContentUris.withAppendedId(collection, id),
+                        name,
+                        mime
+                    )
+                }
+            }
+        } catch (_: SecurityException) {
+            return emptyList()
+        } catch (_: Exception) {
+            return emptyList()
+        }
+        return entries
+    }
+
+    @Suppress("DEPRECATION")
+    private fun resolveLegacyMediaPath(uri: Uri): String? {
+        if (
+            DocumentsContract.isDocumentUri(this, uri) &&
+            uri.authority == "com.android.externalstorage.documents"
+        ) {
+            try {
+                val documentId = DocumentsContract.getDocumentId(uri)
+                val parts = documentId.split(":", limit = 2)
+                if (parts.firstOrNull().equals("primary", ignoreCase = true)) {
+                    val relative = parts.getOrNull(1).orEmpty()
+                    if (relative.isNotBlank()) {
+                        return File(Environment.getExternalStorageDirectory(), relative).absolutePath
+                    }
+                }
+            } catch (_: Exception) {
+            }
+        }
+
+        val candidates = mutableListOf(uri)
+        if (
+            DocumentsContract.isDocumentUri(this, uri) &&
+            uri.authority == "com.android.providers.media.documents"
+        ) {
+            try {
+                val parts = DocumentsContract.getDocumentId(uri).split(":", limit = 2)
+                val id = parts.getOrNull(1)?.toLongOrNull()
+                val collection = when (parts.firstOrNull()) {
+                    "audio" -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+                    "video" -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+                    else -> null
+                }
+                if (collection != null && id != null) {
+                    candidates += ContentUris.withAppendedId(collection, id)
+                }
+            } catch (_: Exception) {
+            }
+        }
+
+        for (candidate in candidates) {
+            try {
+                contentResolver.query(
+                    candidate,
+                    arrayOf(MediaStore.MediaColumns.DATA),
+                    null,
+                    null,
+                    null
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val index = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
+                        val path = if (index >= 0) cursor.getString(index).orEmpty() else ""
+                        if (path.isNotBlank()) return path
+                    }
+                }
+            } catch (_: Exception) {
+            }
+        }
+        return null
+    }
+
+    private fun resolveSelectedMediaLocation(selected: LocalMediaEntry): String? {
+        val directCandidates = mutableListOf(selected.uri)
+        if (
+            DocumentsContract.isDocumentUri(this, selected.uri) &&
+            selected.uri.authority == "com.android.providers.media.documents"
+        ) {
+            try {
+                val documentId = DocumentsContract.getDocumentId(selected.uri)
+                val parts = documentId.split(":", limit = 2)
+                val id = parts.getOrNull(1)?.toLongOrNull()
+                val collection = when (parts.firstOrNull()) {
+                    "audio" -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+                    "video" -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+                    else -> null
+                }
+                if (collection != null && id != null) {
+                    directCandidates += ContentUris.withAppendedId(collection, id)
+                }
+            } catch (_: Exception) {
+            }
+        }
+
+        val projection = arrayOf(MediaStore.MediaColumns.RELATIVE_PATH)
+        for (candidate in directCandidates) {
+            try {
+                contentResolver.query(candidate, projection, null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val index = cursor.getColumnIndex(MediaStore.MediaColumns.RELATIVE_PATH)
+                        val value = if (index >= 0) cursor.getString(index).orEmpty() else ""
+                        if (value.isNotBlank()) return value
+                    }
+                }
+            } catch (_: Exception) {
+            }
+        }
+
+        // ACTION_OPEN_DOCUMENT đôi khi trả URI của DownloadsProvider thay vì
+        // URI MediaStore. Khi đó đối chiếu tên + kích thước để tìm lại bản ghi
+        // MediaStore và lấy RELATIVE_PATH, tránh bắt người dùng chọn lại thư mục.
+        val collection = if (selected.mimeType.startsWith("video/")) {
+            MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+        } else {
+            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+        }
+        val selectedSize = queryOpenableSize(selected.uri)
+        val lookupProjection = arrayOf(MediaStore.MediaColumns.RELATIVE_PATH)
+        val lookupSelection: String
+        val lookupArgs: Array<String>
+        if (selectedSize > 0L) {
+            lookupSelection = "${MediaStore.MediaColumns.DISPLAY_NAME}=? AND ${MediaStore.MediaColumns.SIZE}=?"
+            lookupArgs = arrayOf(selected.title, selectedSize.toString())
+        } else {
+            lookupSelection = "${MediaStore.MediaColumns.DISPLAY_NAME}=?"
+            lookupArgs = arrayOf(selected.title)
+        }
+        try {
+            contentResolver.query(
+                collection,
+                lookupProjection,
+                lookupSelection,
+                lookupArgs,
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val index = cursor.getColumnIndex(MediaStore.MediaColumns.RELATIVE_PATH)
+                    val value = if (index >= 0) cursor.getString(index).orEmpty() else ""
+                    if (value.isNotBlank()) return value
+                }
+            }
+        } catch (_: Exception) {
+        }
+
+        if (
+            DocumentsContract.isDocumentUri(this, selected.uri) &&
+            selected.uri.authority == "com.android.externalstorage.documents"
+        ) {
+            try {
+                val documentId = DocumentsContract.getDocumentId(selected.uri)
+                val relative = documentId.substringAfter(':', "")
+                val folder = relative.substringBeforeLast('/', "")
+                if (folder.isNotBlank()) return "$folder/"
+            } catch (_: Exception) {
+            }
+        }
+        return null
+    }
+
+    private fun sortLocalMedia(entries: List<LocalMediaEntry>): List<LocalMediaEntry> {
+        val collator = Collator.getInstance(Locale("vi", "VN")).apply {
+            strength = Collator.PRIMARY
+        }
+        return entries.distinctBy { it.uri.toString() }
+            .sortedWith { first, second -> collator.compare(first.title, second.title) }
+    }
+
+    private fun isSupportedMedia(mimeType: String, name: String): Boolean {
+        if (mimeType.startsWith("audio/") || mimeType.startsWith("video/")) return true
+        return name.substringBeforeLast('?').substringBeforeLast('#')
+            .lowercase(Locale.ROOT)
+            .matches(Regex(".*\\.(mp3|m4a|m4b|aac|ogg|oga|wav|flac|mp4|m4v|webm|mov|mkv|3gp)$"))
+    }
+
     fun playNativeMediaUrl(url: String, title: String, mimeType: String) {
         val uri = try { Uri.parse(url.trim()) } catch (_: Exception) { null }
         if (uri == null || (uri.scheme != "http" && uri.scheme != "https")) {
@@ -529,25 +996,44 @@ class MainActivity : AppCompatActivity() {
         mimeType: String,
         sourceKind: String
     ) {
+        val subtitle = if (sourceKind == "file") {
+            "Tệp trong máy • phát nền Android"
+        } else {
+            "Liên kết media trực tiếp • phát nền Android"
+        }
+        playNativePlaylist(
+            listOf(LocalMediaEntry(uri, title, mimeType)),
+            0,
+            subtitle
+        )
+    }
+
+    private fun playNativePlaylist(
+        entries: List<LocalMediaEntry>,
+        startIndex: Int,
+        subtitle: String
+    ) {
+        if (entries.isEmpty()) return
         lastNativeMediaError = ""
         withNativeMediaController { controller ->
-            val subtitle = if (sourceKind == "file") {
-                "Tệp trong máy • phát nền Android"
-            } else {
-                "Liên kết media trực tiếp • phát nền Android"
+            val items = entries.map { entry ->
+                val metadata = MediaMetadata.Builder()
+                    .setTitle(entry.title.ifBlank { "Nội dung đang phát" })
+                    .setArtist("lqlq Browser")
+                    .setAlbumTitle(subtitle)
+                    .build()
+                val itemBuilder = MediaItem.Builder()
+                    .setMediaId(entry.uri.toString())
+                    .setUri(entry.uri)
+                    .setMediaMetadata(metadata)
+                if (entry.mimeType.isNotBlank()) itemBuilder.setMimeType(entry.mimeType)
+                itemBuilder.build()
             }
-            val metadata = MediaMetadata.Builder()
-                .setTitle(title.ifBlank { "Nội dung đang phát" })
-                .setArtist("lqlq Browser")
-                .setAlbumTitle(subtitle)
-                .build()
-            val itemBuilder = MediaItem.Builder()
-                .setMediaId(uri.toString())
-                .setUri(uri)
-                .setMediaMetadata(metadata)
-            if (mimeType.isNotBlank()) itemBuilder.setMimeType(mimeType)
-
-            controller.setMediaItem(itemBuilder.build())
+            controller.setMediaItems(
+                items,
+                startIndex.coerceIn(0, items.lastIndex),
+                0L
+            )
             controller.prepare()
             controller.play()
             publishNativeMediaState(controller)
@@ -560,6 +1046,12 @@ class MainActivity : AppCompatActivity() {
                 "play" -> controller.play()
                 "pause" -> controller.pause()
                 "toggle" -> if (controller.isPlaying) controller.pause() else controller.play()
+                "next" -> if (controller.hasNextMediaItem()) controller.seekToNextMediaItem()
+                "previous" -> if (controller.hasPreviousMediaItem()) {
+                    controller.seekToPreviousMediaItem()
+                } else {
+                    controller.seekTo(0L)
+                }
                 "stop" -> {
                     controller.stop()
                     controller.clearMediaItems()
@@ -567,6 +1059,21 @@ class MainActivity : AppCompatActivity() {
                 }
                 "seekback" -> controller.seekBack()
                 "seekforward" -> controller.seekForward()
+            }
+            publishNativeMediaState(controller)
+        }
+    }
+
+    fun setNativeMediaRepeatOne(enabled: Boolean) {
+        getSharedPreferences("native_media_settings", MODE_PRIVATE)
+            .edit()
+            .putBoolean("repeat_one", enabled)
+            .apply()
+        withNativeMediaController { controller ->
+            controller.repeatMode = if (enabled) {
+                Player.REPEAT_MODE_ONE
+            } else {
+                Player.REPEAT_MODE_OFF
             }
             publishNativeMediaState(controller)
         }
@@ -619,8 +1126,121 @@ class MainActivity : AppCompatActivity() {
             .put("volume", player?.volume?.toDouble() ?: 1.0)
             .put("positionMs", player?.currentPosition ?: 0L)
             .put("durationMs", duration)
+            .put("repeatOne", player?.repeatMode == Player.REPEAT_MODE_ONE)
+            .put("autoNext", true)
+            .put("hasNext", active && player?.hasNextMediaItem() == true)
+            .put("hasPrevious", active && player?.hasPreviousMediaItem() == true)
+            .put("itemIndex", if (active) player?.currentMediaItemIndex ?: 0 else -1)
+            .put("itemCount", player?.mediaItemCount ?: 0)
             .put("error", lastNativeMediaError)
             .toString()
+    }
+
+    // ------------------------------------------------------------------
+    // YouTube Picture-in-Picture: giữ nguyên iframe chính thức trong Activity
+    // ------------------------------------------------------------------
+
+    fun setYoutubePlaybackState(active: Boolean, playing: Boolean, url: String) {
+        youtubePipActive = active
+        youtubePipPlaying = active && playing
+        youtubePipUrl = if (active) url else ""
+        updateYoutubePictureInPictureParams()
+    }
+
+    fun enterYoutubePictureInPicture() {
+        if (!youtubePipActive) {
+            Toast.makeText(this, "Chưa có video YouTube đang mở.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            Toast.makeText(this, "Thiết bị cần Android 8.0 trở lên để dùng PiP.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        prepareYoutubePipSurface(enterAfterPrepare = true)
+    }
+
+    fun openYoutubeExternally(url: String) {
+        val target = url.ifBlank { youtubePipUrl }
+        val uri = try { Uri.parse(target) } catch (_: Exception) { null }
+        if (uri == null || (uri.scheme != "http" && uri.scheme != "https")) {
+            Toast.makeText(this, "Liên kết YouTube không hợp lệ.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val youtubeIntent = Intent(Intent.ACTION_VIEW, uri).apply {
+            setPackage("com.google.android.youtube")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        // Mở app YouTube là một thao tác điều hướng có chủ ý, không phải bấm Home.
+        // Chặn đúng lần onUserLeaveHint kế tiếp để không tạo thêm cửa sổ PiP trùng.
+        suppressNextYoutubePip = true
+        if (::shellWebView.isInitialized) {
+            shellWebView.postDelayed({ suppressNextYoutubePip = false }, 2_000L)
+        }
+        try {
+            startActivity(youtubeIntent)
+        } catch (_: Exception) {
+            try {
+                startActivity(
+                    Intent(Intent.ACTION_VIEW, uri)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            } catch (_: Exception) {
+                suppressNextYoutubePip = false
+                Toast.makeText(this, "Không mở được YouTube.", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun updateYoutubePictureInPictureParams() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val builder = PictureInPictureParams.Builder()
+            .setAspectRatio(Rational(16, 9))
+        if (::shellWebView.isInitialized) {
+            val sourceRect = Rect()
+            if (shellWebView.getGlobalVisibleRect(sourceRect) && !sourceRect.isEmpty) {
+                builder.setSourceRectHint(sourceRect)
+            }
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            builder.setAutoEnterEnabled(youtubePipActive && youtubePipPlaying)
+            builder.setSeamlessResizeEnabled(true)
+        }
+        try {
+            setPictureInPictureParams(builder.build())
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun prepareYoutubePipSurface(enterAfterPrepare: Boolean) {
+        if (!youtubePipActive || !::shellWebView.isInitialized || isDestroyed) return
+        overlayOpen = true
+        updatePageVisibility()
+        if (::mediaBubble.isInitialized) mediaBubble.visibility = View.GONE
+        shellWebView.evaluateJavascript(
+            "window.ShieldMedia && window.ShieldMedia.prepareForPip && window.ShieldMedia.prepareForPip();"
+        ) {
+            if (enterAfterPrepare) enterYoutubePipNow()
+        }
+    }
+
+    private fun enterYoutubePipNow() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || isDestroyed) return
+        if (isInPictureInPictureMode) return
+        updateYoutubePictureInPictureParams()
+        try {
+            enterPictureInPictureMode(pictureInPictureParams)
+        } catch (_: Exception) {
+            Toast.makeText(this, "Không thể mở Picture-in-Picture.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun notifyShellPipMode(inPip: Boolean) {
+        if (!shellReady || !::shellWebView.isInitialized || isDestroyed) return
+        shellWebView.evaluateJavascript(
+            "window.ShieldMedia && window.ShieldMedia.onPipModeChanged && " +
+                "window.ShieldMedia.onPipModeChanged(${inPip});",
+            null
+        )
     }
 
     private fun queryOpenableDisplayName(uri: Uri): String {
@@ -638,6 +1258,25 @@ class MainActivity : AppCompatActivity() {
             }.orEmpty()
         } catch (_: Exception) {
             ""
+        }
+    }
+
+
+    private fun queryOpenableSize(uri: Uri): Long {
+        return try {
+            contentResolver.query(
+                uri,
+                arrayOf(OpenableColumns.SIZE),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                if (!cursor.moveToFirst()) return@use -1L
+                val index = cursor.getColumnIndex(OpenableColumns.SIZE)
+                if (index >= 0 && !cursor.isNull(index)) cursor.getLong(index) else -1L
+            } ?: -1L
+        } catch (_: Exception) {
+            -1L
         }
     }
 
@@ -2062,6 +2701,34 @@ $js
         connectNativeMediaController()
     }
 
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (suppressNextYoutubePip) {
+            suppressNextYoutubePip = false
+            return
+        }
+        if (!youtubePipActive || !youtubePipPlaying) return
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+
+        // Chuẩn bị bề mặt video trước rồi chủ động vào PiP. autoEnterEnabled
+        // trên Android 12+ vẫn được giữ làm lưới an toàn cho thao tác vuốt Home.
+        prepareYoutubePipSurface(enterAfterPrepare = true)
+    }
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: Configuration
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        notifyShellPipMode(isInPictureInPictureMode)
+        if (!isInPictureInPictureMode) {
+            if (::mediaBubble.isInitialized) {
+                mediaBubble.visibility = if (youtubePipActive) View.VISIBLE else mediaBubble.visibility
+            }
+            updateYoutubePictureInPictureParams()
+        }
+    }
+
     override fun onStop() {
         releaseNativeMediaController()
         super.onStop()
@@ -2076,6 +2743,9 @@ $js
     override fun onResume() {
         super.onResume()
         shellWebView.resumeTimers()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !isInPictureInPictureMode) {
+            notifyShellPipMode(false)
+        }
     }
 
     override fun onTrimMemory(level: Int) {

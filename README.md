@@ -1,6 +1,6 @@
-# lqlq Browser — Android APK (v0.26.0)
+# lqlq Browser — Android APK (v0.27.0)
 
-Project Android của lqlq Browser. Bản v0.26.0 giữ toàn bộ thay đổi của v0.25 và làm lại **Nhạc và video nền** bằng trình phát Android native.
+Project Android của lqlq Browser. Bản v0.27.0 giữ toàn bộ hệ thẻ native, Trang đã lưu và trình phát Media3 của v0.26, đồng thời bổ sung **YouTube Picture-in-Picture**, **lặp lại một bài** và **playlist tự động theo thư mục**.
 
 ## Cách build bằng GitHub Actions
 
@@ -8,51 +8,60 @@ Project Android của lqlq Browser. Bản v0.26.0 giữ toàn bộ thay đổi c
 2. Mở **Actions** → **Build lqlq Browser APK** → **Run workflow**.
 3. Tải artifact `lqlq-browser-apk` sau khi build xong.
 4. Gói artifact chứa:
-   - `lqlq-browser-v0.26.0-debug.apk`
-   - `lqlq-browser-v0.26.0-release.apk`
+   - `lqlq-browser-v0.27.0-debug.apk`
+   - `lqlq-browser-v0.27.0-release.apk`
 
-Bản release vẫn dùng keystore ổn định của project nên có thể cài đè lên bản cũ cùng chữ ký.
+Bản release tiếp tục dùng keystore ổn định của project, vì vậy có thể cài đè lên bản cũ có cùng chữ ký.
 
-## Nhạc và video nền v0.26.0
+## YouTube Picture-in-Picture
 
-### Nguồn phát native
+- Dán link video hoặc playlist YouTube và phát như bình thường.
+- Khi video đang phát, bấm Home hoặc vuốt về màn hình chính: ứng dụng chuyển sang cửa sổ video nổi 16:9.
+- Có nút **Picture-in-Picture** để mở thủ công.
+- Có nút **Mở bằng YouTube** để chuyển sang ứng dụng YouTube chính thức.
+- PiP chỉ tự mở khi nội dung YouTube thật sự đang phát; video đã tạm dừng không tự bật PiP.
+- YouTube vẫn chạy bằng iframe chính thức, không trích xuất luồng âm thanh/video.
 
-- File trong máy: MP3, M4A, AAC, OGG, WAV, FLAC, MP4, WEBM, MKV, MOV và 3GP.
-- URL media trực tiếp: các liên kết `.mp3`, `.mp4`, `.webm` và định dạng tương ứng.
-- Tệp được chọn qua Android Storage Access Framework; ứng dụng không cần quyền đọc toàn bộ kho ảnh/nhạc/video.
-- MP4 và các file video được dùng như nguồn âm thanh nền khi ứng dụng bị thu nhỏ hoặc màn hình bị khóa.
+## Playlist và tự chuyển bài
 
-### Chạy ngoài nền
+### File trong máy
 
-- Player và `MediaSession` sống trong `NativeMediaPlaybackService`, không nằm trong WebView hay `MainActivity`.
-- Khi bấm Home, chuyển ứng dụng, tắt màn hình hoặc vuốt Activity khỏi màn hình gần đây trong lúc đang phát, service tiếp tục sở hữu player.
-- Android tự hiện thông báo MediaStyle với tiêu đề, nút phát/tạm dừng, tua và dừng; nút tai nghe/Bluetooth và màn hình khóa điều khiển cùng MediaSession.
-- Khi mở lại ứng dụng, giao diện nối lại MediaController và khôi phục đúng trạng thái đang phát mà không mở lại tệp.
-- Nút **Dừng** xóa playlist, nhờ đó notification native được gỡ đúng cách.
+- Khi chọn một file MP3/MP4, ứng dụng cố tìm toàn bộ file media cùng loại trong thư mục chứa file đó.
+- Danh sách được sắp theo tên và đưa vào Media3; hết bài hiện tại sẽ tự chuyển sang bài kế tiếp.
+- Trên Android 13+, ứng dụng chỉ xin `READ_MEDIA_AUDIO` hoặc `READ_MEDIA_VIDEO` đúng lúc cần tạo playlist thư mục.
+- Trên Android 7–12, ứng dụng dùng quyền đọc media cũ khi cần.
+- Nếu nhà cung cấp file không cho xác định thư mục hoặc người dùng từ chối quyền, file đã chọn vẫn phát bình thường như một bài đơn.
+- Nút **Chọn thư mục** dùng Storage Access Framework, không cần quyền đọc toàn bộ thư viện và tạo playlist từ các file trực tiếp trong thư mục đã chọn.
 
 ### YouTube
 
-YouTube tiếp tục dùng iframe nhúng chính thức. Bản này không trích xuất luồng âm thanh/video từ YouTube, nên không cam kết phát YouTube khi Activity bị hệ thống tạm dừng. Phát nền ổn định áp dụng cho file local và URL media trực tiếp do Media3 xử lý.
+- Link playlist hoặc link video có tham số `list=` dùng hàng đợi chính thức của YouTube và tự chuyển video tiếp theo.
+- Nút **Bài trước/Bài tiếp theo** gửi lệnh trực tiếp tới YouTube IFrame Player.
+- Với link video đơn không có playlist, bài tiếp theo phụ thuộc hàng đợi/đề xuất mà trình nhúng YouTube cung cấp; ứng dụng không tự thu thập hay trích xuất video liên quan.
+
+## Lặp lại một bài
+
+- Nút **Lặp lại một bài** hoạt động với file local, URL media trực tiếp, playlist local và YouTube.
+- Trạng thái được lưu lại giữa các lần mở ứng dụng.
+- Với Media3, chế độ lặp được đặt ở `Player.REPEAT_MODE_ONE`; tắt lặp sẽ quay lại tự chuyển bài trong playlist.
+
+## Chạy ngoài nền
+
+- File local và URL media trực tiếp vẫn chạy trong `NativeMediaPlaybackService` (`MediaSessionService` + ExoPlayer).
+- Bấm Home, chuyển ứng dụng hoặc khóa màn hình vẫn phát; Android cung cấp notification, màn hình khóa và điều khiển tai nghe/Bluetooth.
+- YouTube tiếp tục bằng PiP, không biến thành luồng âm thanh ẩn.
 
 ## Kiến trúc chính
 
-- `NativeMediaPlaybackService.kt`: `MediaSessionService` + `ExoPlayer`.
-- `MainActivity.kt`: kết nối bằng `MediaController`, mở `ACTION_OPEN_DOCUMENT`, chuyển lệnh từ UI tới service và gửi state về shell.
-- `ShellBridge.kt`: API JavaScript riêng cho mở file, phát URL, play/pause/stop và volume; ngăn `PlaybackService` cũ tạo notification media trùng.
-- `v13-media.js`: phân tách rõ backend `native` và `web`; Android không còn dùng `URL.createObjectURL()` cho `content://`.
-- `PlaybackService.kt`: vẫn giữ nguyên cho Đọc truyện TXT và fallback media WebView/YouTube.
-
-## Các phần từ v0.25 vẫn được giữ
-
-- Hệ thống thẻ native với `BrowserTabStore` là nguồn dữ liệu duy nhất.
-- Cache tối đa 2 WebView trên máy RAM thấp và 4 WebView trên máy thường.
-- Dấu trang/Trang đã lưu đã tách khỏi shortcut mặc định.
-- Favicon cache cục bộ, không tải hàng loạt khi mở thẻ mới.
-- Lưu trang ngoại tuyến bằng MHT, ghi stream thẳng vào Downloads.
-- Safe Browsing, cache WebView mặc định và quyền tệp theo Storage Access Framework.
+- `NativeMediaPlaybackService.kt`: ExoPlayer, MediaSession, khôi phục repeat-one.
+- `MainActivity.kt`: playlist MediaStore/SAF, điều khiển MediaController, PiP Activity và mở YouTube ngoài ứng dụng.
+- `ShellBridge.kt`: cầu nối JavaScript cho chọn file/thư mục, next/previous/repeat và PiP.
+- `v13-media.js`: điều phối backend native/YouTube, YouTube IFrame API, repeat-one và trạng thái playlist.
+- `AndroidManifest.xml`: khai báo PiP và quyền media theo phiên bản Android.
 
 ## Yêu cầu
 
 - `minSdk 24`, `targetSdk 35`, Java 17.
 - AndroidX Media3 `1.10.1`.
-- Quyền thông báo cần được cho phép trên Android 13+ để thấy thanh điều khiển trong notification.
+- Android 8.0 trở lên để dùng Picture-in-Picture.
+- Android 13+ cần cho phép thông báo để thấy thanh điều khiển media native.

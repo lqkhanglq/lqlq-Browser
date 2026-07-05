@@ -1,12 +1,10 @@
 (() => {
   /**
-   * v0.26.0 — hai backend rõ ràng:
-   * - native: MP3/MP4 trong máy và URL media trực tiếp, do Media3 service sở hữu.
-   * - web: YouTube iframe chính thức và fallback HTMLMediaElement ngoài Android.
+   * v0.27.0 — Media native + playlist thư mục + YouTube PiP.
    *
-   * Trạng thái native chỉ được nhận từ Android. WebView không còn cố mở
-   * content:// bằng URL.createObjectURL(), nguyên nhân khiến file local lúc
-   * chạy lúc không và tắt ngay khi Activity ra nền.
+   * - File/URL media trực tiếp: Media3 service, notification Android, playlist native.
+   * - YouTube: iframe chính thức, Picture-in-Picture ở cấp Activity.
+   * - Không trích xuất luồng YouTube và không chuyển YouTube sang ExoPlayer.
    */
   const refs = {
     toolbarBtn: document.getElementById("mediaToolbarBtn"),
@@ -17,6 +15,7 @@
     urlInput: document.getElementById("mediaUrlInput"),
     openUrl: document.getElementById("mediaOpenUrlBtn"),
     chooseFile: document.getElementById("mediaChooseFileBtn"),
+    chooseFolder: document.getElementById("mediaChooseFolderBtn"),
     fileInput: document.getElementById("mediaFileInput"),
     sourceBadge: document.getElementById("mediaSourceBadge"),
     stage: document.getElementById("mediaStage"),
@@ -30,6 +29,10 @@
     minimizeMode: document.getElementById("mediaMiniModeBtn"),
     audioMode: document.getElementById("mediaAudioModeBtn"),
     pip: document.getElementById("mediaPipBtn"),
+    previous: document.getElementById("mediaPreviousBtn"),
+    next: document.getElementById("mediaNextBtn"),
+    repeatOne: document.getElementById("mediaRepeatOneBtn"),
+    openYoutube: document.getElementById("mediaOpenYoutubeBtn"),
     stop: document.getElementById("mediaStopBtn"),
     volume: document.getElementById("mediaVolumeRange"),
     volumeLabel: document.getElementById("mediaVolumeLabel")
@@ -38,6 +41,7 @@
   const emptyIcon = refs.empty?.querySelector("span");
   const emptyTitle = refs.empty?.querySelector("b");
   const emptyText = refs.empty?.querySelector("small");
+  const REPEAT_KEY = "lqlqMediaRepeatOneV1";
 
   const state = {
     backend: "none", // none | native | web
@@ -46,15 +50,27 @@
     subtitle: "",
     source: "",
     youtubeId: "",
+    youtubePlaylistId: "",
+    youtubeIndex: 0,
+    youtubeUrl: "",
     objectUrl: "",
     audioOnly: false,
     isPlaying: false,
     isLoading: false,
     volume: 1,
-    toolEnabled: false
+    toolEnabled: false,
+    repeatOne: localStorage.getItem(REPEAT_KEY) === "1",
+    autoNext: true,
+    itemCount: 0,
+    itemIndex: -1,
+    hasNext: false,
+    hasPrevious: false,
+    pipMode: false
   };
 
   let lastNativeError = "";
+  let youtubeListenTimer = 0;
+  let youtubeEndedTimer = 0;
 
   function show(element) {
     element?.classList.remove("hidden");
@@ -72,6 +88,17 @@
     return window.LqlqAndroid || null;
   }
 
+  function callNative(name, ...args) {
+    try {
+      const bridge = nativeBridge();
+      const fn = bridge?.[name];
+      if (typeof fn === "function") return fn.apply(bridge, args);
+    } catch (error) {
+      console.warn(`Native media call failed: ${name}`, error);
+    }
+    return undefined;
+  }
+
   function hasNativePlayer() {
     const bridge = nativeBridge();
     return Boolean(
@@ -82,45 +109,72 @@
     );
   }
 
-  function callNative(name, ...args) {
-    try {
-      const fn = nativeBridge()?.[name];
-      if (typeof fn === "function") return fn.apply(nativeBridge(), args);
-    } catch (error) {
-      console.warn(`Native media call failed: ${name}`, error);
-    }
-    return undefined;
-  }
-
-  function youtubeIdFromUrl(value) {
+  function parseYoutubeSource(value) {
     const raw = String(value || "").trim();
-    if (/^[\w-]{11}$/.test(raw)) return raw;
+    if (/^[\w-]{11}$/.test(raw)) {
+      return {
+        id: raw,
+        playlistId: "",
+        index: 0,
+        url: `https://www.youtube.com/watch?v=${encodeURIComponent(raw)}`
+      };
+    }
 
     try {
       const url = new URL(raw);
-      const host = url.hostname.replace(/^www\./, "");
-      if (host === "youtu.be") {
-        return url.pathname.split("/").filter(Boolean)[0] || "";
+      const host = url.hostname.replace(/^www\./, "").toLowerCase();
+      if (!["youtu.be", "youtube.com", "m.youtube.com", "music.youtube.com", "youtube-nocookie.com"].includes(host)) {
+        return null;
       }
-      if (["youtube.com", "m.youtube.com", "music.youtube.com"].includes(host)) {
-        if (url.pathname === "/watch") return url.searchParams.get("v") || "";
+
+      let id = "";
+      const playlistId = url.searchParams.get("list") || "";
+      const parsedIndex = Number.parseInt(url.searchParams.get("index") || "0", 10);
+      const index = Number.isFinite(parsedIndex) ? Math.max(0, parsedIndex - 1) : 0;
+
+      if (host === "youtu.be") {
+        id = url.pathname.split("/").filter(Boolean)[0] || "";
+      } else if (url.pathname === "/watch") {
+        id = url.searchParams.get("v") || "";
+      } else {
         const parts = url.pathname.split("/").filter(Boolean);
         const marker = parts.findIndex(part => ["embed", "shorts", "live"].includes(part));
-        if (marker >= 0) return parts[marker + 1] || "";
+        if (marker >= 0 && parts[marker + 1] && parts[marker + 1] !== "videoseries") {
+          id = parts[marker + 1];
+        }
       }
-    } catch {}
-    return "";
+
+      if (!id && !playlistId) return null;
+      return { id, playlistId, index, url: raw };
+    } catch {
+      return null;
+    }
   }
 
-  function youtubeEmbedUrl(id, autoplay = true) {
+  function youtubeEmbedUrl(source) {
     const params = new URLSearchParams({
-      autoplay: autoplay ? "1" : "0",
+      autoplay: "1",
       playsinline: "1",
       enablejsapi: "1",
       rel: "0",
-      modestbranding: "1"
+      modestbranding: "1",
+      origin: window.location.origin
     });
-    return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?${params}`;
+
+    if (source.playlistId) {
+      params.set("listType", "playlist");
+      params.set("list", source.playlistId);
+      if (source.index > 0) params.set("index", String(source.index));
+    }
+    if (state.repeatOne && source.id && !source.playlistId) {
+      params.set("loop", "1");
+      params.set("playlist", source.id);
+    }
+
+    const path = source.id
+      ? `/embed/${encodeURIComponent(source.id)}`
+      : "/embed/videoseries";
+    return `https://www.youtube-nocookie.com${path}?${params}`;
   }
 
   function isDirectMediaUrl(value) {
@@ -174,14 +228,26 @@
     }
   }
 
+  function notifyNativeYoutubeState() {
+    callNative(
+      "setYoutubePlaybackState",
+      state.type === "youtube",
+      state.type === "youtube" && state.isPlaying,
+      state.youtubeUrl || state.source || ""
+    );
+  }
+
   function setPlaying(playing) {
     state.isPlaying = Boolean(playing);
     const active = state.type !== "none";
-    refs.playingPill.classList.toggle("hidden", !active);
-    refs.liveIndicator.classList.toggle("hidden", !active);
-    refs.playingPill.textContent = state.isLoading
-      ? "Đang tải"
-      : state.isPlaying ? "Đang phát" : "Đã tạm dừng";
+    refs.playingPill?.classList.toggle("hidden", !active);
+    refs.liveIndicator?.classList.toggle("hidden", !active);
+    if (refs.playingPill) {
+      refs.playingPill.textContent = state.isLoading
+        ? "Đang tải"
+        : state.isPlaying ? "Đang phát" : "Đã tạm dừng";
+    }
+    if (state.type === "youtube") notifyNativeYoutubeState();
   }
 
   function setEmptyCopy(icon, title, text) {
@@ -190,12 +256,67 @@
     if (emptyText) emptyText.textContent = text;
   }
 
-  function clearWebFrames() {
+  function stopYoutubeListener() {
+    if (youtubeListenTimer) clearInterval(youtubeListenTimer);
+    youtubeListenTimer = 0;
+    if (youtubeEndedTimer) clearTimeout(youtubeEndedTimer);
+    youtubeEndedTimer = 0;
+  }
+
+  function sendYoutubeCommand(func, args = []) {
     try {
-      refs.youtube.src = "";
-      refs.htmlPlayer.pause();
-      refs.htmlPlayer.removeAttribute("src");
-      refs.htmlPlayer.load();
+      refs.youtube?.contentWindow?.postMessage(
+        JSON.stringify({ event: "command", func, args }),
+        "*"
+      );
+    } catch {}
+  }
+
+  function registerYoutubeListener() {
+    stopYoutubeListener();
+    let attempts = 0;
+    const send = () => {
+      try {
+        refs.youtube?.contentWindow?.postMessage(
+          JSON.stringify({ event: "listening", id: "mediaYoutubeFrame" }),
+          "*"
+        );
+      } catch {}
+      attempts += 1;
+      if (attempts >= 16 && youtubeListenTimer) {
+        clearInterval(youtubeListenTimer);
+        youtubeListenTimer = 0;
+      }
+    };
+    send();
+    youtubeListenTimer = setInterval(send, 500);
+  }
+
+  function forceYoutubeUnmute() {
+    let attempts = 0;
+    let timer = 0;
+    const send = () => {
+      sendYoutubeCommand("unMute");
+      sendYoutubeCommand("setVolume", [Math.round(state.volume * 100)]);
+      attempts += 1;
+      if (attempts >= 8 && timer) {
+        clearInterval(timer);
+        timer = 0;
+      }
+    };
+    send();
+    timer = setInterval(send, 350);
+  }
+
+  function clearWebFrames({ reportYoutube = true } = {}) {
+    const wasYoutube = state.type === "youtube";
+    stopYoutubeListener();
+    try {
+      if (wasYoutube) sendYoutubeCommand("stopVideo");
+      if (refs.youtube) refs.youtube.src = "";
+      refs.htmlPlayer?.pause();
+      refs.htmlPlayer?.removeAttribute("src");
+      refs.htmlPlayer?.load();
     } catch {}
 
     hide(refs.youtube);
@@ -205,6 +326,9 @@
       try { URL.revokeObjectURL(state.objectUrl); } catch {}
       state.objectUrl = "";
     }
+    if (wasYoutube && reportYoutube) {
+      callNative("setYoutubePlaybackState", false, false, "");
+    }
   }
 
   function syncVolume(value, reportNative = false) {
@@ -213,99 +337,133 @@
 
     if (state.backend !== "native") {
       try { refs.htmlPlayer.volume = state.volume; } catch {}
+      if (state.type === "youtube") {
+        sendYoutubeCommand("setVolume", [Math.round(state.volume * 100)]);
+      }
     }
 
-    refs.volume.value = String(Math.round(state.volume * 100));
-    refs.volumeLabel.textContent = `${Math.round(state.volume * 100)}%`;
+    if (refs.volume) refs.volume.value = String(Math.round(state.volume * 100));
+    if (refs.volumeLabel) refs.volumeLabel.textContent = `${Math.round(state.volume * 100)}%`;
 
     if (reportNative && state.backend === "native") {
       callNative("setNativeMediaVolume", state.volume);
     }
   }
 
+  function setRepeatUi() {
+    refs.repeatOne?.classList.toggle("is-active", state.repeatOne);
+    refs.repeatOne?.setAttribute("aria-pressed", state.repeatOne ? "true" : "false");
+    const copy = refs.repeatOne?.querySelector("small");
+    if (copy) {
+      copy.textContent = state.repeatOne
+        ? "Đang bật — bài hiện tại sẽ phát lại"
+        : "Phát lại đúng nội dung hiện tại";
+    }
+  }
+
+  function setNavigationUi() {
+    const youtube = state.type === "youtube";
+    const native = state.backend === "native";
+    refs.previous.disabled = state.type === "none";
+    refs.next.disabled = state.type === "none" || (native && !state.hasNext);
+    refs.openYoutube?.classList.toggle("hidden", !youtube);
+    refs.pip.disabled = state.type !== "youtube" && state.type !== "video";
+  }
+
   function resetUi({ hidePanel = false } = {}) {
     clearWebFrames();
+    state.pipMode = false;
+    document.documentElement.classList.remove("lqlq-youtube-pip");
     state.backend = "none";
     state.type = "none";
     state.title = "";
     state.subtitle = "";
     state.source = "";
     state.youtubeId = "";
+    state.youtubePlaylistId = "";
+    state.youtubeIndex = 0;
+    state.youtubeUrl = "";
     state.audioOnly = false;
     state.isPlaying = false;
     state.isLoading = false;
+    state.itemCount = 0;
+    state.itemIndex = -1;
+    state.hasNext = false;
+    state.hasPrevious = false;
 
-    refs.stage.classList.remove("audio-only");
+    refs.stage?.classList.remove("audio-only");
     show(refs.empty);
     hide(refs.playingPill);
     hide(refs.liveIndicator);
+    hide(refs.openYoutube);
     if (hidePanel) hide(refs.overlay);
 
-    refs.sourceBadge.textContent = "Chưa có nguồn";
-    refs.nowTitle.textContent = "Chưa phát nội dung";
-    refs.nowSubtitle.textContent = "MP3/MP4 có thể tiếp tục phát khi tắt màn hình hoặc chuyển ứng dụng.";
-    refs.nowIcon.textContent = "♫";
+    if (refs.sourceBadge) refs.sourceBadge.textContent = "Chưa có nguồn";
+    if (refs.nowTitle) refs.nowTitle.textContent = "Chưa phát nội dung";
+    if (refs.nowSubtitle) {
+      refs.nowSubtitle.textContent = "MP3/MP4 phát nền Android; YouTube tiếp tục bằng Picture-in-Picture.";
+    }
+    if (refs.nowIcon) refs.nowIcon.textContent = "♫";
     setEmptyCopy(
       "♫",
       "Chưa có nội dung đang phát",
-      "File trong máy và liên kết media trực tiếp dùng trình phát Android; YouTube dùng trình nhúng chính thức."
+      "Chọn file/thư mục để tạo playlist local hoặc dán link YouTube/playlist."
     );
     clearBrowserMediaSession();
+    setNavigationUi();
+    setRepeatUi();
+    callNative("setYoutubePlaybackState", false, false, "");
   }
 
   function stopNativeSilently() {
     if (hasNativePlayer()) callNative("nativeMediaCommand", "stop");
   }
 
-  // YouTube iframe đôi khi tự câm do autoplay policy. Thử unmute sau khi nạp.
-  function forceYoutubeUnmute() {
-    let attempts = 0;
-    const send = () => {
-      try {
-        refs.youtube.contentWindow?.postMessage(
-          JSON.stringify({ event: "command", func: "unMute", args: [] }),
-          "*"
-        );
-        refs.youtube.contentWindow?.postMessage(
-          JSON.stringify({ event: "command", func: "setVolume", args: [100] }),
-          "*"
-        );
-      } catch {}
-    };
-    send();
-    const timer = setInterval(() => {
-      send();
-      attempts += 1;
-      if (attempts >= 8) clearInterval(timer);
-    }, 350);
-  }
-
-  function loadYoutube(id) {
-    if (!id) {
+  function loadYoutube(source) {
+    if (!source || (!source.id && !source.playlistId)) {
       notify("Không nhận diện được liên kết YouTube.");
       return;
     }
 
     stopNativeSilently();
     clearWebFrames();
+    if (!state.toolEnabled) setToolEnabled(true);
     state.backend = "web";
     state.type = "youtube";
-    state.youtubeId = id;
-    state.source = id;
+    state.youtubeId = source.id || "";
+    state.youtubePlaylistId = source.playlistId || "";
+    state.youtubeIndex = source.index || 0;
+    state.youtubeUrl = source.url || "";
+    state.source = state.youtubeUrl || state.youtubeId || state.youtubePlaylistId;
     state.audioOnly = false;
-    state.isLoading = false;
+    state.isLoading = true;
+    state.itemCount = source.playlistId ? 2 : 1;
+    state.itemIndex = source.index || 0;
+    state.hasNext = true;
+    state.hasPrevious = Boolean(source.playlistId || source.index > 0);
 
-    refs.youtube.src = youtubeEmbedUrl(id, true);
-    forceYoutubeUnmute();
+    refs.youtube.src = youtubeEmbedUrl(source);
     show(refs.youtube);
     hide(refs.empty);
-    refs.stage.classList.remove("audio-only");
-    refs.sourceBadge.textContent = "YouTube";
-    setMetadata(`YouTube · ${id}`, "Phát bằng trình nhúng chính thức", "▶", true);
+    hide(refs.htmlPlayer);
+    refs.stage?.classList.remove("audio-only");
+    refs.sourceBadge.textContent = source.playlistId ? "Playlist YouTube" : "YouTube";
+    setMetadata(
+      source.playlistId ? "Playlist YouTube" : `YouTube · ${source.id}`,
+      source.playlistId
+        ? "Tự chuyển video tiếp theo trong playlist"
+        : "Phát bằng trình nhúng chính thức · bấm Home để mở PiP",
+      "▶",
+      true
+    );
+    setNavigationUi();
+    setRepeatUi();
     setPlaying(true);
+    forceYoutubeUnmute();
+    registerYoutubeListener();
   }
 
-  /** Fallback dành cho trình duyệt desktop; Android ưu tiên Media3 native. */
+  /** Fallback dành cho desktop; Android ưu tiên Media3 native. */
   function loadDirectSource(source, title, mime = "") {
     stopNativeSilently();
     clearWebFrames();
@@ -315,15 +473,22 @@
     state.type = kind;
     state.source = source;
     state.youtubeId = "";
+    state.youtubePlaylistId = "";
+    state.youtubeUrl = "";
     state.audioOnly = kind === "audio";
     state.isLoading = true;
+    state.itemCount = 1;
+    state.itemIndex = 0;
+    state.hasNext = false;
+    state.hasPrevious = false;
 
     refs.htmlPlayer.src = source;
     refs.htmlPlayer.muted = false;
+    refs.htmlPlayer.loop = state.repeatOne;
     syncVolume(state.volume);
     show(refs.htmlPlayer);
     hide(refs.empty);
-    refs.stage.classList.toggle("audio-only", state.audioOnly);
+    refs.stage?.classList.toggle("audio-only", state.audioOnly);
     refs.sourceBadge.textContent = kind === "audio" ? "Âm thanh" : "Video";
 
     setMetadata(
@@ -332,6 +497,8 @@
       kind === "audio" ? "♫" : "▶",
       true
     );
+    setNavigationUi();
+    setRepeatUi();
     setPlaying(false);
 
     const startPlayback = () => {
@@ -352,17 +519,23 @@
     state.type = kind || "audio";
     state.source = source || "";
     state.youtubeId = "";
+    state.youtubePlaylistId = "";
+    state.youtubeUrl = "";
     state.audioOnly = true;
     state.isLoading = true;
     state.isPlaying = false;
+    state.itemCount = 1;
+    state.itemIndex = 0;
+    state.hasNext = false;
+    state.hasPrevious = false;
 
     show(refs.empty);
-    refs.stage.classList.add("audio-only");
+    refs.stage?.classList.add("audio-only");
     refs.sourceBadge.textContent = sourceKind === "file" ? "Tệp trong máy" : "Media trực tiếp";
     setEmptyCopy(
       kind === "video" ? "▶" : "♫",
       "Đang mở bằng trình phát Android…",
-      "Bạn có thể chuyển ứng dụng hoặc khóa màn hình sau khi nội dung bắt đầu phát."
+      "Playlist sẽ tự chuyển bài và tiếp tục khi khóa màn hình."
     );
     setMetadata(
       title || "Đang mở media",
@@ -370,6 +543,8 @@
       kind === "video" ? "▶" : "♫",
       false
     );
+    setNavigationUi();
+    setRepeatUi();
     setPlaying(false);
   }
 
@@ -380,9 +555,9 @@
       return;
     }
 
-    const youtubeId = youtubeIdFromUrl(value);
-    if (youtubeId) {
-      loadYoutube(youtubeId);
+    const youtube = parseYoutubeSource(value);
+    if (youtube) {
+      loadYoutube(youtube);
       return;
     }
 
@@ -397,6 +572,7 @@
     const kind = directMediaKind(value, mime);
 
     if (hasNativePlayer()) {
+      callNative("setNativeMediaRepeatOne", state.repeatOne);
       showNativePending(name, value, kind, "url");
       callNative("playNativeMediaUrl", value, name, mime);
     } else {
@@ -427,9 +603,17 @@
   }
 
   function requestNativeFile() {
-    // Chỉ mở picker; giữ nguyên nguồn đang phát cho tới khi người dùng thật sự
-    // chọn tệp mới. Hủy picker không làm mất YouTube/bài đang nghe.
+    callNative("setNativeMediaRepeatOne", state.repeatOne);
     callNative("openNativeMediaFile");
+  }
+
+  function requestNativeFolder() {
+    if (typeof nativeBridge()?.openNativeMediaFolder !== "function") {
+      notify("Bản Android này chưa hỗ trợ chọn thư mục.");
+      return;
+    }
+    callNative("setNativeMediaRepeatOne", state.repeatOne);
+    callNative("openNativeMediaFolder");
   }
 
   function refreshNativeState() {
@@ -441,12 +625,13 @@
   }
 
   function openCenter() {
-    closeMenus?.();
+    if (typeof closeMenus === "function") closeMenus();
     show(refs.overlay);
     refreshNativeState();
   }
 
   function closeCenter() {
+    if (state.pipMode) return;
     hide(refs.overlay);
   }
 
@@ -456,16 +641,16 @@
       return;
     }
     if (state.backend === "native") {
-      notify("Trình phát Android đang dùng chế độ âm thanh nền. MP4 vẫn phát phần âm thanh khi khóa màn hình.");
+      notify("Trình phát Android tự tiếp tục phần âm thanh khi ứng dụng ra nền.");
       return;
     }
     if (state.type === "youtube") {
-      notify("YouTube phải giữ khung video chính thức.");
+      notify("YouTube phải giữ khung video chính thức; hãy dùng Picture-in-Picture.");
       return;
     }
 
     state.audioOnly = !state.audioOnly;
-    refs.stage.classList.toggle("audio-only", state.audioOnly);
+    refs.stage?.classList.toggle("audio-only", state.audioOnly);
     refs.nowSubtitle.textContent = state.audioOnly ? "Chế độ chỉ âm thanh" : "Video trực tiếp trong ứng dụng";
     notify(state.audioOnly ? "Đã chuyển sang chỉ âm thanh." : "Đã hiện lại video.");
   }
@@ -475,12 +660,16 @@
       notify("Chưa có video đang phát.");
       return;
     }
-    if (state.backend === "native") {
-      notify("Media native hiện phát nền bằng âm thanh; Picture-in-Picture chưa áp dụng cho nguồn này.");
+    if (state.type === "youtube") {
+      if (typeof nativeBridge()?.enterYoutubePictureInPicture === "function") {
+        callNative("enterYoutubePictureInPicture");
+      } else {
+        notify("Picture-in-Picture YouTube chỉ có trong bản Android.");
+      }
       return;
     }
-    if (state.type === "youtube") {
-      notify("PiP hệ thống không điều khiển được khung YouTube này.");
+    if (state.backend === "native") {
+      notify("Media native đã phát ngoài nền và có điều khiển trên thông báo.");
       return;
     }
     if (state.type === "audio") {
@@ -501,8 +690,64 @@
     }
   }
 
+  function toggleRepeatOne() {
+    state.repeatOne = !state.repeatOne;
+    localStorage.setItem(REPEAT_KEY, state.repeatOne ? "1" : "0");
+    setRepeatUi();
+
+    if (state.backend === "native") {
+      callNative("setNativeMediaRepeatOne", state.repeatOne);
+    } else if (state.type === "audio" || state.type === "video") {
+      refs.htmlPlayer.loop = state.repeatOne;
+    }
+
+    notify(state.repeatOne ? "Đã bật lặp lại một bài." : "Đã tắt lặp lại một bài.");
+  }
+
+  function previousTrack() {
+    if (state.backend === "native") {
+      callNative("nativeMediaCommand", "previous");
+      return;
+    }
+    if (state.type === "youtube") {
+      sendYoutubeCommand("previousVideo");
+      sendYoutubeCommand("playVideo");
+      return;
+    }
+    if (state.type === "audio" || state.type === "video") {
+      refs.htmlPlayer.currentTime = 0;
+      refs.htmlPlayer.play().catch(() => {});
+    }
+  }
+
+  function nextTrack() {
+    if (state.backend === "native") {
+      callNative("nativeMediaCommand", "next");
+      return;
+    }
+    if (state.type === "youtube") {
+      sendYoutubeCommand("nextVideo");
+      sendYoutubeCommand("playVideo");
+      return;
+    }
+    notify("Nguồn này không có bài tiếp theo.");
+  }
+
+  function openYoutubeExternally() {
+    if (state.type !== "youtube") {
+      notify("Nội dung hiện tại không phải YouTube.");
+      return;
+    }
+    if (typeof nativeBridge()?.openYoutubeExternally === "function") {
+      callNative("openYoutubeExternally", state.youtubeUrl || state.source || "");
+    } else {
+      window.open(state.youtubeUrl || state.source || "https://www.youtube.com", "_blank", "noopener");
+    }
+  }
+
   function stopAll({ silent = false } = {}) {
     if (state.backend === "native") callNative("nativeMediaCommand", "stop");
+    if (state.type === "youtube") sendYoutubeCommand("stopVideo");
     resetUi({ hidePanel: true });
     if (!silent) notify("Đã dừng trình phát nền.");
   }
@@ -512,13 +757,17 @@
     try {
       navigator.mediaSession.setActionHandler("play", async () => {
         if (state.backend === "native") callNative("nativeMediaCommand", "play");
+        else if (state.type === "youtube") sendYoutubeCommand("playVideo");
         else if (state.type === "audio" || state.type === "video") await refs.htmlPlayer.play();
       });
       navigator.mediaSession.setActionHandler("pause", () => {
         if (state.backend === "native") callNative("nativeMediaCommand", "pause");
+        else if (state.type === "youtube") sendYoutubeCommand("pauseVideo");
         else if (state.type === "audio" || state.type === "video") refs.htmlPlayer.pause();
       });
       navigator.mediaSession.setActionHandler("stop", () => stopAll());
+      navigator.mediaSession.setActionHandler("previoustrack", previousTrack);
+      navigator.mediaSession.setActionHandler("nexttrack", nextTrack);
     } catch {}
   }
 
@@ -565,29 +814,183 @@
     state.subtitle = String(data.text || "Phát nền Android");
     state.source = String(data.source || "");
     state.youtubeId = "";
+    state.youtubePlaylistId = "";
+    state.youtubeUrl = "";
     state.audioOnly = true;
     state.isLoading = Boolean(data.loading);
     state.isPlaying = Boolean(data.playing);
+    state.repeatOne = Boolean(data.repeatOne);
+    state.itemCount = Number(data.itemCount || 0);
+    state.itemIndex = Number(data.itemIndex ?? -1);
+    state.hasNext = Boolean(data.hasNext);
+    state.hasPrevious = Boolean(data.hasPrevious);
 
     const isLocal = state.source.startsWith("content://") || state.source.startsWith("file://");
-    refs.sourceBadge.textContent = isLocal ? "Tệp trong máy" : "Media trực tiếp";
-    refs.stage.classList.add("audio-only");
+    refs.sourceBadge.textContent = isLocal
+      ? state.itemCount > 1 ? `Thư mục · ${state.itemCount} bài` : "Tệp trong máy"
+      : "Media trực tiếp";
+    refs.stage?.classList.add("audio-only");
     show(refs.empty);
     hide(refs.youtube);
     hide(refs.htmlPlayer);
     setEmptyCopy(
       state.type === "video" ? "▶" : "♫",
       state.isLoading ? "Đang tải bằng Android…" : "Đang phát ngoài nền điện thoại",
-      state.type === "video"
-        ? "MP4 đang phát phần âm thanh nền; có thể chuyển ứng dụng hoặc khóa màn hình."
+      state.itemCount > 1
+        ? `Bài ${state.itemIndex + 1}/${state.itemCount} · tự chuyển bài tiếp theo trong thư mục.`
         : "Bạn có thể chuyển ứng dụng, khóa màn hình và điều khiển từ thông báo."
     );
-    setMetadata(state.title, state.subtitle, state.type === "video" ? "▶" : "♫", false);
+    setMetadata(
+      state.title,
+      state.itemCount > 1
+        ? `${state.subtitle} · bài ${state.itemIndex + 1}/${state.itemCount}`
+        : state.subtitle,
+      state.type === "video" ? "▶" : "♫",
+      false
+    );
     syncVolume(Number(data.volume ?? state.volume), false);
+    setRepeatUi();
+    setNavigationUi();
     setPlaying(state.isPlaying);
 
     if (!state.toolEnabled) setToolEnabled(true);
   }
+
+  function prepareForPip() {
+    if (state.type !== "youtube") return false;
+    state.pipMode = true;
+    show(refs.overlay);
+    show(refs.youtube);
+    hide(refs.empty);
+    document.documentElement.classList.add("lqlq-youtube-pip");
+    return true;
+  }
+
+  function onPipModeChanged(inPip) {
+    state.pipMode = Boolean(inPip);
+    document.documentElement.classList.toggle("lqlq-youtube-pip", state.pipMode);
+    if (state.pipMode && state.type === "youtube") {
+      show(refs.overlay);
+      show(refs.youtube);
+      hide(refs.empty);
+    }
+  }
+
+  function handleYoutubeInfo(info) {
+    if (!info || state.type !== "youtube") return;
+
+    const videoData = info.videoData && typeof info.videoData === "object"
+      ? info.videoData
+      : null;
+    if (videoData) {
+      const currentId = String(videoData.video_id || videoData.videoId || "").trim();
+      const currentTitle = String(videoData.title || "").trim();
+      const author = String(videoData.author || "").trim();
+      const changed = (
+        (currentId && currentId !== state.youtubeId) ||
+        (currentTitle && currentTitle !== state.title)
+      );
+
+      if (currentId) {
+        state.youtubeId = currentId;
+        const query = new URLSearchParams({ v: currentId });
+        if (state.youtubePlaylistId) query.set("list", state.youtubePlaylistId);
+        state.youtubeUrl = `https://www.youtube.com/watch?${query}`;
+        state.source = state.youtubeUrl;
+      }
+      if (changed) {
+        setMetadata(
+          currentTitle || `YouTube · ${state.youtubeId}`,
+          author
+            ? `${author} · ${state.youtubePlaylistId ? "Playlist YouTube" : "YouTube"}`
+            : state.youtubePlaylistId
+              ? "Tự chuyển video tiếp theo trong playlist"
+              : "Phát bằng trình nhúng chính thức · bấm Home để mở PiP",
+          "▶",
+          true
+        );
+        notifyNativeYoutubeState();
+      }
+    }
+
+    const playlist = Array.isArray(info.playlist) ? info.playlist : null;
+    if (playlist && playlist.length) {
+      state.itemCount = playlist.length;
+    }
+    const rawIndex = info.playlistIndex ?? info.currentIndex;
+    const playlistIndex = Number(rawIndex);
+    if (Number.isFinite(playlistIndex) && playlistIndex >= 0) {
+      state.itemIndex = playlistIndex;
+    }
+    if (state.itemCount > 1) {
+      state.hasPrevious = state.itemIndex > 0;
+      state.hasNext = state.itemIndex < state.itemCount - 1;
+    }
+    setNavigationUi();
+  }
+
+  function handleYoutubeState(playerState) {
+    if (state.type !== "youtube") return;
+    const code = Number(playerState);
+    if (code === 1) {
+      state.isLoading = false;
+      setPlaying(true);
+      return;
+    }
+    if (code === 2 || code === -1 || code === 5) {
+      state.isLoading = false;
+      setPlaying(false);
+      return;
+    }
+    if (code === 3) {
+      state.isLoading = true;
+      setPlaying(false);
+      return;
+    }
+    if (code !== 0) return;
+
+    state.isLoading = false;
+    setPlaying(false);
+    if (state.repeatOne) {
+      sendYoutubeCommand("seekTo", [0, true]);
+      sendYoutubeCommand("playVideo");
+      return;
+    }
+    if (!state.autoNext) return;
+
+    // Playlist chính thức thường tự chuyển. Chờ một nhịp; chỉ gọi nextVideo
+    // khi iframe vẫn chưa bắt đầu video mới để tránh bỏ qua một mục.
+    youtubeEndedTimer = setTimeout(() => {
+      if (state.type !== "youtube" || state.isPlaying || state.isLoading || state.repeatOne) return;
+      sendYoutubeCommand("nextVideo");
+      sendYoutubeCommand("playVideo");
+    }, state.youtubePlaylistId ? 900 : 250);
+  }
+
+  window.addEventListener("message", event => {
+    const origin = String(event.origin || "");
+    if (!/youtube(?:-nocookie)?\.com$/i.test(origin.replace(/^https?:\/\//, ""))) return;
+    let data = event.data;
+    if (typeof data === "string") {
+      try { data = JSON.parse(data); } catch { return; }
+    }
+    if (!data || state.type !== "youtube") return;
+
+    if (data.event === "onStateChange") {
+      handleYoutubeState(data.info);
+      return;
+    }
+    if (data.event === "infoDelivery" && data.info) {
+      handleYoutubeInfo(data.info);
+      if (data.info.playerState != null) handleYoutubeState(data.info.playerState);
+    }
+  });
+
+  refs.youtube?.addEventListener("load", () => {
+    if (state.type !== "youtube" || !refs.youtube.src) return;
+    registerYoutubeListener();
+    forceYoutubeUnmute();
+  });
 
   const originalHandleAction = handleAction;
   handleAction = function handleMediaAction(action) {
@@ -614,10 +1017,10 @@
 
   refs.chooseFile?.addEventListener("click", event => {
     if (!hasNativePlayer()) return;
-    // Ngăn label kích hoạt input WebView lần thứ hai.
     event.preventDefault();
     requestNativeFile();
   });
+  refs.chooseFolder?.addEventListener("click", requestNativeFolder);
 
   refs.fileInput?.addEventListener("change", () => {
     openFileFallback(refs.fileInput.files?.[0]);
@@ -627,7 +1030,7 @@
   document.querySelectorAll("[data-media-example]").forEach(button => {
     button.addEventListener("click", () => {
       const type = button.dataset.mediaExample;
-      if (type === "youtube") refs.urlInput.placeholder = "Ví dụ: https://www.youtube.com/watch?v=...";
+      if (type === "youtube") refs.urlInput.placeholder = "Ví dụ: https://www.youtube.com/watch?v=... hoặc playlist";
       else if (type === "audio") refs.urlInput.placeholder = "Ví dụ: https://example.com/music.mp3";
       else refs.urlInput.placeholder = "Ví dụ: https://example.com/video.mp4";
       refs.urlInput.focus();
@@ -637,6 +1040,10 @@
   refs.minimizeMode?.addEventListener("click", closeCenter);
   refs.audioMode?.addEventListener("click", toggleAudioOnly);
   refs.pip?.addEventListener("click", openPictureInPicture);
+  refs.previous?.addEventListener("click", previousTrack);
+  refs.next?.addEventListener("click", nextTrack);
+  refs.repeatOne?.addEventListener("click", toggleRepeatOne);
+  refs.openYoutube?.addEventListener("click", openYoutubeExternally);
   refs.stop?.addEventListener("click", () => stopAll());
 
   refs.volume?.addEventListener("input", () => {
@@ -655,7 +1062,9 @@
   refs.htmlPlayer?.addEventListener("volumechange", () => {
     if (state.backend !== "native") syncVolume(refs.htmlPlayer.volume, false);
   });
-  refs.htmlPlayer?.addEventListener("ended", () => setPlaying(false));
+  refs.htmlPlayer?.addEventListener("ended", () => {
+    if (!state.repeatOne) setPlaying(false);
+  });
   refs.htmlPlayer?.addEventListener("error", () => {
     if (state.backend === "web") notify("Không phát được nguồn media này.");
   });
@@ -669,6 +1078,8 @@
   });
 
   syncVolume(1);
+  setRepeatUi();
+  setNavigationUi();
   installMediaSession();
   resetUi();
 
@@ -677,16 +1088,10 @@
     minimize: closeCenter,
     stop: stopAll,
     pause: () => {
-      // Media native phải tiếp tục chạy khi người dùng mở một trang web khác.
       if (state.backend === "native") return;
       if (state.type === "youtube") {
-        try {
-          refs.youtube.contentWindow?.postMessage(
-            JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
-            "*"
-          );
-          setPlaying(false);
-        } catch {}
+        sendYoutubeCommand("pauseVideo");
+        setPlaying(false);
         return;
       }
       try { refs.htmlPlayer.pause(); } catch {}
@@ -697,13 +1102,7 @@
         return;
       }
       if (state.type === "youtube") {
-        const cmd = state.isPlaying ? "pauseVideo" : "playVideo";
-        try {
-          refs.youtube.contentWindow?.postMessage(
-            JSON.stringify({ event: "command", func: cmd, args: [] }),
-            "*"
-          );
-        } catch {}
+        sendYoutubeCommand(state.isPlaying ? "pauseVideo" : "playVideo");
         setPlaying(!state.isPlaying);
         return;
       }
@@ -712,9 +1111,14 @@
         else refs.htmlPlayer.pause();
       }
     },
-    loadYoutube,
+    previous: previousTrack,
+    next: nextTrack,
+    toggleRepeatOne,
+    loadYoutube: value => loadYoutube(typeof value === "string" ? parseYoutubeSource(value) : value),
     loadDirectSource,
     onNativeState,
+    prepareForPip,
+    onPipModeChanged,
     state
   };
 

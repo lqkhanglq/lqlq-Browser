@@ -78,3 +78,11 @@ CLAUDE_BUILD_HANDOFF.md
 Icon đã được nối vào HTML dưới dạng favicon, Apple touch icon và PWA icon.
 Bộ kích thước launcher Android cũng đã được tạo sẵn để Claude chuyển prototype
 thành project build APK.
+
+## v0.27 — YouTube PiP và playlist media
+
+- YouTube đang phát tự chuyển sang Picture-in-Picture khi bấm Home (Android 8+).
+- File MP3/MP4 có thể tạo playlist theo thư mục và tự chuyển bài.
+- Có Bài trước, Bài tiếp theo và Lặp lại một bài.
+- Có nút chọn cả thư mục bằng trình chọn tài liệu Android.
+- Playlist YouTube dùng hàng đợi chính thức của trình nhúng YouTube.

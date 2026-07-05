@@ -207,6 +207,12 @@ class ShellBridge(private val activity: MainActivity) {
         activity.runOnUiThread { activity.launchNativeMediaFilePicker() }
     }
 
+    /** Chọn một thư mục để tạo playlist ổn định từ toàn bộ MP3/MP4 bên trong. */
+    @JavascriptInterface
+    fun openNativeMediaFolder() {
+        activity.runOnUiThread { activity.launchNativeMediaFolderPicker() }
+    }
+
     /** Phát URL media trực tiếp bằng Media3 thay vì thẻ video trong WebView. */
     @JavascriptInterface
     fun playNativeMediaUrl(url: String, title: String, mimeType: String) {
@@ -221,6 +227,27 @@ class ShellBridge(private val activity: MainActivity) {
     @JavascriptInterface
     fun setNativeMediaVolume(value: Float) {
         activity.runOnUiThread { activity.setNativeMediaVolume(value) }
+    }
+
+    @JavascriptInterface
+    fun setNativeMediaRepeatOne(enabled: Boolean) {
+        activity.runOnUiThread { activity.setNativeMediaRepeatOne(enabled) }
+    }
+
+    /** Đồng bộ trạng thái YouTube iframe để Activity tự vào PiP khi bấm Home. */
+    @JavascriptInterface
+    fun setYoutubePlaybackState(active: Boolean, playing: Boolean, url: String) {
+        activity.runOnUiThread { activity.setYoutubePlaybackState(active, playing, url) }
+    }
+
+    @JavascriptInterface
+    fun enterYoutubePictureInPicture() {
+        activity.runOnUiThread { activity.enterYoutubePictureInPicture() }
+    }
+
+    @JavascriptInterface
+    fun openYoutubeExternally(url: String) {
+        activity.runOnUiThread { activity.openYoutubeExternally(url) }
     }
 
     @JavascriptInterface

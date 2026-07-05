@@ -4,6 +4,7 @@ import android.app.PendingIntent
 import android.content.Intent
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
@@ -32,6 +33,14 @@ class NativeMediaPlaybackService : MediaSessionService() {
             )
             setHandleAudioBecomingNoisy(true)
             setWakeMode(C.WAKE_MODE_NETWORK)
+            repeatMode = if (
+                getSharedPreferences("native_media_settings", MODE_PRIVATE)
+                    .getBoolean("repeat_one", false)
+            ) {
+                Player.REPEAT_MODE_ONE
+            } else {
+                Player.REPEAT_MODE_OFF
+            }
         }
 
         val openAppIntent = Intent(this, MainActivity::class.java).apply {

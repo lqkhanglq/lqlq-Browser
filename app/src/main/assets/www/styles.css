@@ -5350,7 +5350,7 @@ html[data-theme="comfort"] .offline-security-grid article {
 
 .media-source-input-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
   gap: 8px;
 }
 
@@ -5394,6 +5394,10 @@ html[data-theme="comfort"] .offline-security-grid article {
   border: 1px solid #d8e3db;
   background: #f7faf8;
   color: #4c5b52;
+}
+
+button.media-file-button {
+  font-family: inherit;
 }
 
 .media-source-examples {
@@ -5584,6 +5588,22 @@ html[data-theme="comfort"] .offline-security-grid article {
 .media-mode-grid button:hover {
   border-color: rgba(var(--accent-rgb), .32);
   background: rgba(var(--accent-rgb), .055);
+}
+
+.media-mode-grid button.is-active {
+  border-color: rgba(var(--accent-rgb), .46);
+  background: rgba(var(--accent-rgb), .105);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), .07);
+}
+
+.media-mode-grid button.is-active > span {
+  background: rgba(var(--accent-rgb), .18);
+  color: var(--accent-700);
+}
+
+.media-mode-grid button:disabled {
+  cursor: default;
+  opacity: .46;
 }
 
 .media-mode-grid button > span {
@@ -5860,7 +5880,7 @@ html[data-theme="comfort"] .global-media-mini {
   }
 
   .media-source-input-row {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .media-source-input-row input {
@@ -5880,6 +5900,70 @@ html[data-theme="comfort"] .global-media-mini {
     right: 10px;
     bottom: 10px;
   }
+}
+
+/* =====================================================================
+   v0.27.0 — Android Picture-in-Picture cho YouTube iframe chính thức.
+   Trong PiP chỉ giữ bề mặt video; toàn bộ thanh công cụ/panel khác được ẩn
+   để cửa sổ nổi hiển thị đúng tỉ lệ 16:9 và không lộ giao diện trình duyệt.
+   ===================================================================== */
+html.lqlq-youtube-pip,
+html.lqlq-youtube-pip body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden !important;
+  background: #000 !important;
+}
+
+html.lqlq-youtube-pip #app > *:not(#mediaCenterOverlay) {
+  display: none !important;
+}
+
+html.lqlq-youtube-pip #mediaCenterOverlay {
+  display: flex !important;
+  visibility: visible !important;
+  inset: 0;
+  z-index: 9999;
+  align-items: stretch;
+  justify-content: stretch;
+  padding: 0;
+  background: #000;
+  backdrop-filter: none;
+}
+
+html.lqlq-youtube-pip .media-center-shell,
+html.lqlq-youtube-pip .media-center-body,
+html.lqlq-youtube-pip .media-layout,
+html.lqlq-youtube-pip .media-stage-card,
+html.lqlq-youtube-pip .media-stage {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: #000;
+  box-shadow: none;
+}
+
+html.lqlq-youtube-pip .media-center-header,
+html.lqlq-youtube-pip .media-source-card,
+html.lqlq-youtube-pip .media-controls-card,
+html.lqlq-youtube-pip .media-now-playing,
+html.lqlq-youtube-pip .media-empty-state {
+  display: none !important;
+}
+
+html.lqlq-youtube-pip .media-youtube-frame {
+  display: block !important;
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  border: 0;
 }
 
 @media (max-width: 480px) {

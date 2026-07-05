@@ -459,7 +459,7 @@
             <div>
               <span class="section-kicker">TRÌNH PHÁT TOÀN CỤC</span>
               <h2>Nhạc và video nền</h2>
-              <p>MP3/MP4 trong máy và link media trực tiếp phát bằng Android, tiếp tục khi khóa màn hình.</p>
+              <p>MP3/MP4 phát nền Android; YouTube tự chuyển sang cửa sổ PiP khi bấm Home.</p>
             </div>
           </div>
 
@@ -495,6 +495,9 @@
                   hidden
                 />
               </label>
+              <button class="media-file-button" id="mediaChooseFolderBtn" type="button">
+                Chọn thư mục
+              </button>
             </div>
 
             <div class="media-source-examples">
@@ -563,7 +566,23 @@
                 </button>
                 <button id="mediaPipBtn">
                   <span>▣</span>
-                  <div><b>Picture-in-Picture</b><small>Chỉ áp dụng cho video WebView hỗ trợ PiP</small></div>
+                  <div><b>Picture-in-Picture</b><small>YouTube tiếp tục phát trong cửa sổ nổi khi bấm Home</small></div>
+                </button>
+                <button id="mediaPreviousBtn">
+                  <span>‹</span>
+                  <div><b>Bài trước</b><small>Thư mục local hoặc playlist YouTube</small></div>
+                </button>
+                <button id="mediaNextBtn">
+                  <span>›</span>
+                  <div><b>Bài tiếp theo</b><small>Tự động chuyển khi bài hiện tại kết thúc</small></div>
+                </button>
+                <button id="mediaRepeatOneBtn" aria-pressed="false">
+                  <span>↻1</span>
+                  <div><b>Lặp lại một bài</b><small>Phát lại đúng nội dung hiện tại</small></div>
+                </button>
+                <button id="mediaOpenYoutubeBtn" class="hidden">
+                  <span>▶</span>
+                  <div><b>Mở bằng YouTube</b><small>Chuyển sang ứng dụng YouTube chính thức</small></div>
                 </button>
                 <button id="mediaStopBtn">
                   <span>■</span>
@@ -584,14 +603,14 @@
                 <div>
                   <b>Phát ngoài nền Android</b>
                   <small>
-                    File local và link media trực tiếp tiếp tục khi chuyển ứng dụng hoặc khóa màn hình.
+                    File local tiếp tục phát khi khóa màn hình; YouTube dùng PiP khi chuyển ứng dụng.
                   </small>
                 </div>
               </div>
 
               <p class="media-limit-note">
-                YouTube vẫn dùng trình nhúng chính thức và không được trích xuất luồng.
-                Phát nền ổn định áp dụng cho file trong máy và URL media trực tiếp.
+                Link playlist YouTube tự chuyển video tiếp theo. Link video đơn phụ thuộc hàng đợi
+                mà trình nhúng YouTube cung cấp; ứng dụng không trích xuất luồng âm thanh/video.
               </p>
             </aside>
           </div>
