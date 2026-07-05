@@ -48,6 +48,25 @@
   safeCall(() => native.setAdblockDomEnabled?.(window.lqlqGetAdblockDomEnabled()));
 
   // ==================================================================
+  // 0c. Đồng bộ chủ đề (v09-theme.js) sang bộ chuyển thẻ native, để màu
+  //     lưới thẻ luôn khớp với chế độ sáng/tối + màu chủ đạo người dùng
+  //     đã chọn trong Cài đặt, thay vì cố định một bảng màu.
+  // ==================================================================
+
+  function reportAppearance() {
+    safeCall(() => {
+      if (typeof native.setAppearance !== "function") return;
+      const root = document.documentElement;
+      const theme = root.dataset.theme === "dark" ? "dark" : "light";
+      const accent = root.dataset.accent || "emerald";
+      native.setAppearance(theme, accent);
+    });
+  }
+
+  document.addEventListener("shield:appearance-change", reportAppearance);
+  reportAppearance();
+
+  // ==================================================================
   // 1. Hệ thống thẻ native — Android là nguồn dữ liệu duy nhất
   // ==================================================================
 

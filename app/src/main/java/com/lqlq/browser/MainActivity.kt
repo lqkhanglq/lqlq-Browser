@@ -809,6 +809,21 @@ $js
         updatePageVisibility()
     }
 
+    fun applyNativeAppearance(theme: String, accent: String) {
+        val dark = theme == "dark"
+        val accentColor = when (accent) {
+            "ocean" -> Color.rgb(0x25, 0x85, 0xc7)
+            "amber" -> Color.rgb(0xd9, 0x87, 0x20)
+            "violet" -> Color.rgb(0x7a, 0x5a, 0xc8)
+            "rose" -> Color.rgb(0xc4, 0x54, 0x76)
+            "graphite" -> Color.rgb(0x56, 0x63, 0x6b)
+            else -> Color.rgb(0x18, 0xa6, 0x4a) // emerald (mặc định)
+        }
+        if (::nativeTabSwitcher.isInitialized) {
+            nativeTabSwitcher.applyTheme(dark, accentColor)
+        }
+    }
+
     private fun updatePageVisibility() {
         pageContainer.visibility = if (pageVisible) View.VISIBLE else View.GONE
 

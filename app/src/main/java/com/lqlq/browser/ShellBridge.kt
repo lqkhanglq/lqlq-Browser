@@ -100,6 +100,11 @@ class ShellBridge(private val activity: MainActivity) {
     }
 
     @JavascriptInterface
+    fun setAppearance(theme: String, accent: String) {
+        activity.runOnUiThread { activity.applyNativeAppearance(theme, accent) }
+    }
+
+    @JavascriptInterface
     fun openHtmlFile() {
         activity.runOnUiThread { activity.launchOpenHtmlFile() }
     }

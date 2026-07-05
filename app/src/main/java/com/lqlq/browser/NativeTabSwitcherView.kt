@@ -25,7 +25,9 @@ import java.util.Locale
 /**
  * Bộ chuyển thẻ native, không phụ thuộc DOM/JavaScript/z-index của shell WebView.
  * Giao diện lấy cảm hứng từ lưới thẻ Chrome nhưng chỉ dùng placeholder nhẹ,
- * không chụp bitmap WebView trên UI thread.
+ * không chụp bitmap WebView trên UI thread. Màu sắc đi theo chủ đề đang chọn
+ * trong phần Cài đặt (v09-theme.js: chế độ sáng/tối + màu chủ đạo) thông qua
+ * applyTheme(), do MainActivity gọi khi nhận setAppearance() từ ShellBridge.
  */
 class NativeTabSwitcherView(
     context: Context,
@@ -41,9 +43,45 @@ class NativeTabSwitcherView(
         fun onDismiss()
     }
 
+    private data class Palette(
+        val bg: Int,
+        val panel: Int,
+        val text: Int,
+        val muted: Int,
+        val line: Int,
+        val accent: Int,
+        val isDark: Boolean
+    )
+
+    private fun lightPalette(accent: Int) = Palette(
+        bg = Color.rgb(238, 243, 248),
+        panel = Color.WHITE,
+        text = Color.rgb(32, 33, 36),
+        muted = Color.rgb(95, 99, 104),
+        line = Color.rgb(217, 224, 232),
+        accent = accent,
+        isDark = false
+    )
+
+    private fun darkPalette(accent: Int) = Palette(
+        bg = Color.rgb(0x0d, 0x15, 0x10),
+        panel = Color.rgb(0x18, 0x25, 0x1d),
+        text = Color.rgb(0xee, 0xf6, 0xf0),
+        muted = Color.rgb(0x9f, 0xb0, 0xa5),
+        line = Color.rgb(0x30, 0x44, 0x38),
+        accent = accent,
+        isDark = true
+    )
+
+    private var palette: Palette = lightPalette(Color.rgb(24, 166, 74))
+
     private val countText: TextView
     private val searchInput: EditText
     private val recyclerView: RecyclerView
+    private val newTabButton: TextView
+    private val modeChip: LinearLayout
+    private val gridGlyph: TextView
+    private val menuButton: TextView
     private val adapter = TabAdapter(
         onSelect = callbacks::onSelectTab,
         onClose = callbacks::onCloseTab
@@ -54,7 +92,6 @@ class NativeTabSwitcherView(
 
     init {
         visibility = View.GONE
-        setBackgroundColor(Color.rgb(238, 243, 248))
         isClickable = true
         isFocusable = true
         elevation = dp(24).toFloat()
@@ -74,26 +111,24 @@ class NativeTabSwitcherView(
             LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(70))
         )
 
-        val newTab = TextView(context).apply {
+        newTabButton = TextView(context).apply {
             text = "+"
             textSize = 42f
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
-            background = rounded(Color.rgb(24, 166, 74), dp(20))
             contentDescription = "Mở thẻ mới"
             setOnClickListener { callbacks.onNewTab() }
         }
-        header.addView(newTab, LinearLayout.LayoutParams(dp(56), dp(56)))
+        header.addView(newTabButton, LinearLayout.LayoutParams(dp(56), dp(56)))
 
         val centerSpacerLeft = View(context)
         header.addView(centerSpacerLeft, LinearLayout.LayoutParams(0, 1, 1f))
 
-        val modeChip = LinearLayout(context).apply {
+        modeChip = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
             setPadding(dp(8), dp(5), dp(8), dp(5))
-            background = rounded(Color.rgb(217, 224, 232), dp(22))
         }
         header.addView(modeChip, LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, dp(52)))
 
@@ -101,17 +136,14 @@ class NativeTabSwitcherView(
             text = "1"
             textSize = 18f
             gravity = Gravity.CENTER
-            setTextColor(Color.rgb(32, 33, 36))
             typeface = Typeface.DEFAULT_BOLD
-            background = rounded(Color.WHITE, dp(17), Color.rgb(217, 224, 232), dp(1))
         }
         modeChip.addView(countText, LinearLayout.LayoutParams(dp(42), dp(42)))
 
-        val gridGlyph = TextView(context).apply {
+        gridGlyph = TextView(context).apply {
             text = "▦"
             textSize = 29f
             gravity = Gravity.CENTER
-            setTextColor(Color.rgb(95, 99, 104))
             contentDescription = "Chế độ lưới"
         }
         modeChip.addView(gridGlyph, LinearLayout.LayoutParams(dp(46), dp(42)))
@@ -119,24 +151,20 @@ class NativeTabSwitcherView(
         val centerSpacerRight = View(context)
         header.addView(centerSpacerRight, LinearLayout.LayoutParams(0, 1, 1f))
 
-        val menu = TextView(context).apply {
+        menuButton = TextView(context).apply {
             text = "⋮"
             textSize = 34f
             gravity = Gravity.CENTER
-            setTextColor(Color.rgb(32, 33, 36))
             contentDescription = "Tùy chọn thẻ"
             setOnClickListener { showMenu(this) }
         }
-        header.addView(menu, LinearLayout.LayoutParams(dp(48), dp(56)))
+        header.addView(menuButton, LinearLayout.LayoutParams(dp(48), dp(56)))
 
         searchInput = EditText(context).apply {
             hint = "Tìm thẻ của bạn"
             textSize = 18f
             isSingleLine = true
-            setTextColor(Color.rgb(32, 33, 36))
-            setHintTextColor(Color.rgb(95, 99, 104))
             setPadding(dp(20), 0, dp(20), 0)
-            background = rounded(Color.rgb(217, 224, 232), dp(28))
             addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
@@ -165,6 +193,27 @@ class NativeTabSwitcherView(
             recyclerView,
             LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f)
         )
+
+        refreshChrome()
+    }
+
+    fun applyTheme(dark: Boolean, accentColor: Int) {
+        palette = if (dark) darkPalette(accentColor) else lightPalette(accentColor)
+        refreshChrome()
+        adapter.notifyDataSetChanged()
+    }
+
+    private fun refreshChrome() {
+        setBackgroundColor(palette.bg)
+        newTabButton.background = rounded(palette.accent, dp(20))
+        modeChip.background = rounded(palette.line, dp(22))
+        countText.setTextColor(palette.text)
+        countText.background = rounded(palette.panel, dp(17), palette.line, dp(1))
+        gridGlyph.setTextColor(palette.muted)
+        menuButton.setTextColor(palette.text)
+        searchInput.setTextColor(palette.text)
+        searchInput.setHintTextColor(palette.muted)
+        searchInput.background = rounded(palette.line, dp(28))
     }
 
     fun show(tabs: List<BrowserTab>, activeTabId: String) {
@@ -292,9 +341,12 @@ class NativeTabSwitcherView(
         }
 
         inner class TabViewHolder(private val card: LinearLayout) : RecyclerView.ViewHolder(card) {
+            private val icon: TextView
             private val title: TextView
             private val close: TextView
+            private val preview: FrameLayout
             private val previewLetter: TextView
+            private val bottomCopy: LinearLayout
             private val previewDomain: TextView
             private val previewUrl: TextView
 
@@ -306,17 +358,15 @@ class NativeTabSwitcherView(
                 }
                 card.addView(header, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(52)))
 
-                val icon = TextView(context).apply {
+                icon = TextView(context).apply {
                     text = "●"
                     textSize = 13f
                     gravity = Gravity.CENTER
-                    setTextColor(Color.rgb(24, 166, 74))
                 }
                 header.addView(icon, LinearLayout.LayoutParams(dp(28), dp(36)))
 
                 title = TextView(context).apply {
                     textSize = 16f
-                    setTextColor(Color.rgb(32, 33, 36))
                     maxLines = 1
                     ellipsize = android.text.TextUtils.TruncateAt.END
                     typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
@@ -329,14 +379,12 @@ class NativeTabSwitcherView(
                     text = "×"
                     textSize = 31f
                     gravity = Gravity.CENTER
-                    setTextColor(Color.rgb(95, 99, 104))
                     contentDescription = "Đóng thẻ"
                 }
                 header.addView(close, LinearLayout.LayoutParams(dp(42), dp(42)))
 
-                val preview = FrameLayout(context).apply {
+                preview = FrameLayout(context).apply {
                     setPadding(dp(10), dp(10), dp(10), dp(10))
-                    background = rounded(Color.WHITE, dp(14))
                 }
                 card.addView(preview, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f).apply {
                     setMargins(dp(7), 0, dp(7), dp(8))
@@ -345,7 +393,6 @@ class NativeTabSwitcherView(
                 previewLetter = TextView(context).apply {
                     textSize = 54f
                     gravity = Gravity.CENTER
-                    setTextColor(Color.rgb(24, 166, 74))
                     typeface = Typeface.DEFAULT_BOLD
                 }
                 preview.addView(
@@ -353,10 +400,9 @@ class NativeTabSwitcherView(
                     FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
                 )
 
-                val bottomCopy = LinearLayout(context).apply {
+                bottomCopy = LinearLayout(context).apply {
                     orientation = LinearLayout.VERTICAL
                     setPadding(dp(9), dp(7), dp(9), dp(7))
-                    background = rounded(Color.argb(230, 247, 250, 253), dp(10))
                 }
                 preview.addView(
                     bottomCopy,
@@ -365,7 +411,6 @@ class NativeTabSwitcherView(
 
                 previewDomain = TextView(context).apply {
                     textSize = 13f
-                    setTextColor(Color.rgb(32, 33, 36))
                     typeface = Typeface.DEFAULT_BOLD
                     maxLines = 1
                     ellipsize = android.text.TextUtils.TruncateAt.END
@@ -374,7 +419,6 @@ class NativeTabSwitcherView(
 
                 previewUrl = TextView(context).apply {
                     textSize = 10f
-                    setTextColor(Color.rgb(95, 99, 104))
                     maxLines = 2
                     ellipsize = android.text.TextUtils.TruncateAt.END
                 }
@@ -382,14 +426,30 @@ class NativeTabSwitcherView(
             }
 
             fun bind(tab: BrowserTab, active: Boolean) {
+                val palette = this@NativeTabSwitcherView.palette
+
                 title.text = tab.title.ifBlank { "Thẻ mới" }
                 previewLetter.text = title.text.toString().trim().firstOrNull()?.uppercase() ?: "T"
                 previewDomain.text = domainOf(tab.url).ifBlank { "Trang chủ lqlq" }
                 previewUrl.text = tab.url.ifBlank { "Nhấn để nhập địa chỉ hoặc tìm kiếm" }
 
+                icon.setTextColor(palette.accent)
+                title.setTextColor(palette.text)
+                close.setTextColor(palette.muted)
+                preview.background = rounded(palette.panel, dp(14))
+                previewLetter.setTextColor(palette.accent)
+                bottomCopy.background = rounded(
+                    Color.argb(230, Color.red(palette.panel), Color.green(palette.panel), Color.blue(palette.panel)),
+                    dp(10)
+                )
+                previewDomain.setTextColor(palette.text)
+                previewUrl.setTextColor(palette.muted)
+
                 val hue = positiveHash(tab.url.ifBlank { tab.title }) % 360
-                val fill = Color.HSVToColor(floatArrayOf(hue.toFloat(), 0.06f, 0.98f))
-                val stroke = if (active) Color.rgb(24, 166, 74) else Color.rgb(217, 224, 232)
+                val saturation = if (palette.isDark) 0.16f else 0.06f
+                val value = if (palette.isDark) 0.22f else 0.98f
+                val fill = Color.HSVToColor(floatArrayOf(hue.toFloat(), saturation, value))
+                val stroke = if (active) palette.accent else palette.line
                 card.background = rounded(fill, dp(22), stroke, dp(if (active) 4 else 1))
 
                 card.setOnClickListener { onSelect(tab.id) }
