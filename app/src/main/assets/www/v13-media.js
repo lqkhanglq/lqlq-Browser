@@ -47,7 +47,14 @@
     objectUrl: "",
     audioOnly: false,
     isPlaying: false,
-    volume: 1
+    volume: 1,
+    // Việc (v0.23.21): "Nhạc và video nền" giờ hoạt động như 1 công cụ tiện
+    // ích kiểu Chapter Clipper — bật/tắt bằng nút trong menu ☰, KHÁC với
+    // việc đang phát hay không. Khi bật: nút bọt nổi hiện trên MỌI trang
+    // (giống Chapter Clipper). Đóng bảng thêm nhạc (nút X) chỉ ẩn giao diện,
+    // KHÔNG tắt công cụ, nhạc vẫn chạy. Chỉ khi bấm lại nút menu để TẮT công
+    // cụ thì mới thật sự dừng phát + ẩn nút bọt.
+    toolEnabled: false
   };
 
   function show(element) {
@@ -560,10 +567,42 @@
     dragState = null;
   }
 
+  // Việc (v0.23.21): báo cho native biết công cụ đang bật/tắt để hiện/ẩn
+  // nút bọt nổi trên MỌI trang (độc lập với việc có đang phát hay không —
+  // khác setPlaying()/sendMediaState() vốn chỉ phản ánh trạng thái phát).
+  function setToolEnabled(enabled) {
+    state.toolEnabled = Boolean(enabled);
+    try {
+      if (typeof window.LqlqAndroid?.setMediaToolEnabled === "function") {
+        window.LqlqAndroid.setMediaToolEnabled(state.toolEnabled);
+      }
+    } catch {}
+
+    const menuBtn = document.querySelector(".media-menu-entry");
+    if (menuBtn) {
+      menuBtn.classList.toggle("media-tool-active", state.toolEnabled);
+      const label = menuBtn.querySelector(".menu-copy b");
+      if (label) {
+        label.textContent = state.toolEnabled
+          ? "Nhạc và video nền (đang bật)"
+          : "Nhạc và video nền";
+      }
+    }
+  }
+
   const originalHandleAction = handleAction;
   handleAction = function handleMediaAction(action) {
     if (action === "background-media") {
-      openCenter();
+      // Toggle giống hệt Chapter Clipper: bấm lần 1 BẬT công cụ (hiện bọt
+      // nổi + mở bảng thêm nhạc), bấm lần 2 TẮT hẳn (dừng phát, đóng bảng,
+      // ẩn bọt nổi).
+      if (state.toolEnabled) {
+        stopAll();
+        setToolEnabled(false);
+      } else {
+        setToolEnabled(true);
+        openCenter();
+      }
       return;
     }
 

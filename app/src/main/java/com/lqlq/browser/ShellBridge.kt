@@ -107,6 +107,19 @@ class ShellBridge(private val activity: MainActivity) {
         handleState("media", json)
     }
 
+    /**
+     * Việc (v0.23.21): "Nhạc và video nền" giờ là công cụ tiện ích kiểu
+     * Chapter Clipper — bật/tắt bằng nút menu ☰, KHÁC với tín hiệu
+     * active/playing của onMediaState() (vốn chỉ phản ánh có đang phát hay
+     * không). Nút bọt nổi hiện theo đúng trạng thái BẬT/TẮT công cụ này,
+     * không còn theo trạng thái phát nữa — khớp yêu cầu: đóng bảng thêm
+     * nhạc (X) không tắt bọt nổi, chỉ tắt hẳn qua menu mới ẩn bọt.
+     */
+    @JavascriptInterface
+    fun setMediaToolEnabled(enabled: Boolean) {
+        activity.runOnUiThread { activity.setMediaBubbleVisible(enabled) }
+    }
+
     private fun handleState(kind: String, json: String) {
         val data = try {
             JSONObject(json)
@@ -115,12 +128,6 @@ class ShellBridge(private val activity: MainActivity) {
         }
         val active = data.optBoolean("active", false)
         Log.d("lqlqPlayback", "handleState kind=$kind active=$active playing=${data.optBoolean("playing", false)} json=$json")
-
-        // Nút bọt nhạc nổi (v0.23.17): cùng tín hiệu "active" đang dùng cho
-        // thông báo nền, chỉ áp dụng cho kind="media" (không phải Đọc TXT).
-        if (kind == "media") {
-            activity.runOnUiThread { activity.setMediaBubbleVisible(active) }
-        }
 
         if (!active) {
             PlaybackService.stopKind(activity, kind)
