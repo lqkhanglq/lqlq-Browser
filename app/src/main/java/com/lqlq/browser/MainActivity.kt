@@ -320,6 +320,12 @@ class MainActivity : AppCompatActivity() {
         activeTabId = tabId
         val webView = pageWebViews.getOrPut(tabId) { createPageWebView(tabId) }
         bringPageToFront(webView)
+        // Việc (v0.23.13): openPage() là điểm vào "đáng tin" duy nhất cho điều
+        // hướng CHỦ ĐỘNG của người dùng (gõ địa chỉ, bấm liên kết nhanh ở
+        // trang chủ...) — đánh dấu NGAY domain đích là domain gốc hợp lệ của
+        // tab, để không bị chính lớp chặn cross-domain của chúng ta chặn
+        // nhầm khi người dùng cố tình chuyển sang 1 trang web khác hẳn.
+        Uri.parse(url).host?.let { tabRootDomain[tabId] = it }
         webView.loadUrl(url)
         setPageVisible(true)
     }
@@ -572,56 +578,45 @@ $js
                     return true
                 }
 
-                // Việc B (v0.23.6): chặn nhảy trang tự động (redirect quảng
-                // cáo/độc hại) mà KHÔNG kèm thao tác thật của người dùng.
-                // Chỉ chặn khi: (1) không có gesture (JS tự set location.href,
-                // timer, redirect ngầm...) VÀ (2) domain đích khác hẳn domain
-                // gốc hiện tại (bỏ qua www./m. để không chặn nhầm site tự
-                // chuẩn hoá domain của chính nó, ví dụ example.com -> www.example.com).
-                // Có gesture (người dùng bấm/gõ thật) → LUÔN cho đi, dù khác domain.
-                val hasGesture = try {
-                    request.hasGesture()
-                } catch (_: Exception) {
-                    true // an toàn: nếu không xác định được thì không chặn
-                }
-                if (!hasGesture) {
-                    val currentHost = view.url?.let { Uri.parse(it).host } ?: ""
-                    val targetHost = request.url.host ?: ""
-                    if (currentHost.isNotEmpty() && targetHost.isNotEmpty() &&
-                        !isSameRootDomain(currentHost, targetHost)
-                    ) {
-                        Toast.makeText(
-                            this@MainActivity,
-                            "Đã chặn chuyển hướng quảng cáo: $targetHost",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                        return true
-                    }
+                // Việc (v0.23.13): chặn TUYỆT ĐỐI mọi điều hướng sang domain
+                // khác domain gốc hiện tại của TAB, KHÔNG xét gesture nữa —
+                // giống hệt cách metruyenchu_clipper_android_project chỉ
+                // whitelist 1 domain và chặn mọi thứ khác vô điều kiện. Lý do
+                // bỏ ngoại lệ gesture: quảng cáo hay dùng lớp phủ vô hình để
+                // "đánh cắp" đúng cú chạm thật của người dùng, nên hasGesture
+                // = true không còn đáng tin để phân biệt bấm thật hay bị lừa.
+                // Điều hướng CHỦ ĐỘNG sang domain khác (gõ địa chỉ mới, bấm
+                // liên kết nhanh ở trang chủ) vẫn luôn được vì đi qua
+                // openPage() — nơi đã tự cập nhật tabRootDomain thành domain
+                // mới TRƯỚC khi gọi loadUrl(), nên không bị chặn nhầm ở đây.
+                val safeHost = tabRootDomain[tabId]
+                val targetHost = request.url.host
+                if (!safeHost.isNullOrEmpty() && !targetHost.isNullOrEmpty() &&
+                    !isSameRootDomain(safeHost, targetHost)
+                ) {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Đã chặn chuyển hướng lạ: $targetHost",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    return true
                 }
                 return false
             }
 
-            // Việc (v0.23.11 + v0.23.12): shouldOverrideUrlLoading() KHÔNG
-            // được gọi lại cho từng bước của 1 chuỗi redirect HTTP phía
-            // server (Location header) — WebView tự âm thầm theo, nên quảng
-            // cáo dùng redirect server-side vẫn lọt qua chặn ở trên.
-            // shouldInterceptRequest() được gọi lại cho MỌI request kể cả
-            // từng chặng redirect và mọi tài nguyên con (iframe/script quảng
-            // cáo), nên chặn ở đây chặn được TRƯỚC KHI có bất kỳ nội dung
-            // nào tải/hiện ra — trang giữ nguyên hoàn toàn, không đổi/nhảy.
+            // Việc (v0.23.13): shouldOverrideUrlLoading() KHÔNG được gọi lại
+            // cho từng bước của 1 chuỗi redirect HTTP phía server (Location
+            // header) — WebView tự âm thầm theo. shouldInterceptRequest()
+            // được gọi lại cho MỌI request kể cả từng chặng redirect và mọi
+            // tài nguyên con (iframe/script quảng cáo), nên chặn ở đây chặn
+            // được TRƯỚC KHI có bất kỳ nội dung nào tải/hiện ra.
             //
-            // Chặn theo 2 lớp:
-            // 1) Danh sách domain quảng cáo/redirect ĐÃ BIẾT (isBlockedAdHost)
-            //    — áp dụng cho MỌI tài nguyên (kể cả sub-frame/script/ảnh),
-            //    kể cả khi có gesture, vì đây chắc chắn không phải nơi người
-            //    dùng chủ động muốn tới.
-            // 2) Domain gốc "lạ" so với domain của tab (tabRootDomain) VÀ
-            //    không kèm gesture thật — bắt được cả domain rác đổi liên
-            //    tục kiểu "scouplayen.qp" mà không danh sách tĩnh nào biết
-            //    trước được, giống hệt cách metruyenchu_clipper_android_project
-            //    chỉ whitelist 1 domain và chặn mọi thứ khác — chỉ khác là ở
-            //    đây whitelist là "domain hiện tại của tab" thay vì cố định
-            //    1 site, để không phá duyệt web bình thường.
+            // Chặn theo 2 lớp, cả 2 đều KHÔNG xét gesture (xem giải thích ở
+            // shouldOverrideUrlLoading phía trên — gesture không còn đáng tin
+            // vì lớp phủ quảng cáo vô hình có thể "đánh cắp" cú chạm thật):
+            // 1) Danh sách domain quảng cáo/redirect ĐÃ BIẾT (isBlockedAdHost).
+            // 2) Domain gốc khác domain hiện tại của tab (tabRootDomain) —
+            //    bắt được cả domain rác đổi liên tục kiểu "scouplayen.qp".
             override fun shouldInterceptRequest(
                 view: WebView,
                 request: WebResourceRequest
@@ -632,14 +627,8 @@ $js
                 var blockedByRootDomainGuard = false
 
                 if (!blockedByList && request.isForMainFrame) {
-                    val hasGesture = try {
-                        request.hasGesture()
-                    } catch (_: Exception) {
-                        true
-                    }
                     val safeHost = tabRootDomain[tabId]
-                    if (!hasGesture && !safeHost.isNullOrEmpty() &&
-                        !targetHost.isNullOrEmpty() &&
+                    if (!safeHost.isNullOrEmpty() && !targetHost.isNullOrEmpty() &&
                         !isSameRootDomain(safeHost, targetHost)
                     ) {
                         blockedByRootDomainGuard = true
