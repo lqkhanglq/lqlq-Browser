@@ -220,6 +220,7 @@ class MainActivity : AppCompatActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
         )
+        setupMediaBubble()
         setContentView(root)
 
         assetLoader = WebViewAssetLoader.Builder()
@@ -578,7 +579,58 @@ $js
                 root.bringChildToFront(shellWebView)
             }
         }
+        // Nút bọt nhạc nổi (v0.23.17) phải luôn nổi trên cùng bất kể shell
+        // hay trang web thật đang ở trên — bringChildToFront() ở trên đưa
+        // 1 trong 2 cái đó lên vị trí cuối, cần tự đưa bọt nhạc lên sau chót.
+        if (::mediaBubble.isInitialized) {
+            root.bringChildToFront(mediaBubble)
+        }
         root.invalidate()
+    }
+
+    /**
+     * Nút bọt nhạc nổi native (v0.23.17) — khác với menu/panel (chiếm toàn
+     * màn hình bằng z-order shellWebView), đây là 1 View nhỏ độc lập chỉ
+     * chiếm đúng góc màn hình, để KHÔNG chặn bấm/cuộn phần còn lại của trang
+     * web thật đang mở. Nhờ vậy nhạc/video nền vẫn "nổi" được trên MỌI trang,
+     * không cần mở menu ☰, mà trang web vẫn tương tác bình thường xung quanh.
+     */
+    private lateinit var mediaBubble: android.widget.TextView
+
+    private fun setupMediaBubble() {
+        val density = resources.displayMetrics.density
+        val sizePx = (52 * density).toInt()
+        mediaBubble = android.widget.TextView(this).apply {
+            text = "♫"
+            textSize = 22f
+            gravity = android.view.Gravity.CENTER
+            setTextColor(Color.WHITE)
+            background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.OVAL
+                setColor(Color.parseColor("#1DA64A"))
+            }
+            elevation = 8f * density
+            visibility = View.GONE
+            setOnClickListener {
+                shellWebView.evaluateJavascript(
+                    "window.ShieldMedia && window.ShieldMedia.open();",
+                    null
+                )
+            }
+        }
+        val params = FrameLayout.LayoutParams(sizePx, sizePx).apply {
+            gravity = android.view.Gravity.BOTTOM or android.view.Gravity.END
+            marginEnd = (16 * density).toInt()
+            bottomMargin = (16 * density).toInt()
+        }
+        root.addView(mediaBubble, params)
+    }
+
+    /** Gọi từ ShellBridge.onMediaState() — cùng tín hiệu đang dùng cho thông báo. */
+    fun setMediaBubbleVisible(visible: Boolean) {
+        if (!::mediaBubble.isInitialized) return
+        mediaBubble.visibility = if (visible) View.VISIBLE else View.GONE
+        if (visible) root.bringChildToFront(mediaBubble)
     }
 
     private fun setPageVisible(visible: Boolean) {

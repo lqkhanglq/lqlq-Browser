@@ -115,6 +115,13 @@ class ShellBridge(private val activity: MainActivity) {
         }
         val active = data.optBoolean("active", false)
         Log.d("lqlqPlayback", "handleState kind=$kind active=$active playing=${data.optBoolean("playing", false)} json=$json")
+
+        // Nút bọt nhạc nổi (v0.23.17): cùng tín hiệu "active" đang dùng cho
+        // thông báo nền, chỉ áp dụng cho kind="media" (không phải Đọc TXT).
+        if (kind == "media") {
+            activity.runOnUiThread { activity.setMediaBubbleVisible(active) }
+        }
+
         if (!active) {
             PlaybackService.stopKind(activity, kind)
             return
