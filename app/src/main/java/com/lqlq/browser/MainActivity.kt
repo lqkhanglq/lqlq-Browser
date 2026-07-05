@@ -97,6 +97,18 @@ class MainActivity : AppCompatActivity() {
      */
     private val chapterClipperEnabledTabs = mutableSetOf<String>()
 
+    /**
+     * Domain gốc "hợp lệ" của từng tab (v0.23.12) — ghi lại mỗi khi 1 trang
+     * THẬT SỰ tải xong (onPageFinished), không phải đoán từ view.url() giữa
+     * chừng 1 redirect (không đáng tin trong shouldInterceptRequest). Đây là
+     * cơ sở để chặn TUYỆT ĐỐI mọi điều hướng không do người dùng bấm thật
+     * sang domain khác — giống hệt cách metruyenchu_clipper_android_project
+     * chỉ whitelist 1 domain và chặn mọi thứ khác, thay vì đoán theo danh
+     * sách domain quảng cáo đã biết (danh sách tĩnh không theo kịp domain
+     * rác đổi liên tục kiểu "scouplayen.qp").
+     */
+    private val tabRootDomain = mutableMapOf<String, String>()
+
     /** Lớp phủ của giao diện (menu, panel...) đang mở → phải nổi trên trang web. */
     @Volatile
     private var overlayOpen = false
@@ -330,6 +342,7 @@ class MainActivity : AppCompatActivity() {
         webView.stopLoading()
         webView.destroy()
         chapterClipperEnabledTabs.remove(tabId)
+        tabRootDomain.remove(tabId)
         if (activeTabId == tabId) {
             setPageVisible(false)
         }
@@ -588,28 +601,60 @@ $js
                 return false
             }
 
-            // Việc (v0.23.11): shouldOverrideUrlLoading() KHÔNG được gọi lại
-            // cho từng bước của 1 chuỗi redirect HTTP phía server (Location
-            // header) — WebView tự âm thầm theo, nên quảng cáo dùng redirect
-            // server-side vẫn lọt qua chặn ở trên và từng gây màn hình trắng
-            // (đã vá tạm bằng onReceivedError/goBack, nhưng trang vẫn "nhảy"
-            // trong chốc lát). shouldInterceptRequest() được gọi lại cho MỌI
-            // request kể cả từng chặng redirect và mọi tài nguyên con
-            // (iframe/script quảng cáo), nên chặn domain đã biết ở đây chặn
-            // được TRƯỚC KHI có bất kỳ nội dung nào tải/hiện ra — trang giữ
-            // nguyên hoàn toàn, không đổi/nhảy, giống hệt cách
-            // metruyenchu_clipper_android_project chặn bằng rules.json.
+            // Việc (v0.23.11 + v0.23.12): shouldOverrideUrlLoading() KHÔNG
+            // được gọi lại cho từng bước của 1 chuỗi redirect HTTP phía
+            // server (Location header) — WebView tự âm thầm theo, nên quảng
+            // cáo dùng redirect server-side vẫn lọt qua chặn ở trên.
+            // shouldInterceptRequest() được gọi lại cho MỌI request kể cả
+            // từng chặng redirect và mọi tài nguyên con (iframe/script quảng
+            // cáo), nên chặn ở đây chặn được TRƯỚC KHI có bất kỳ nội dung
+            // nào tải/hiện ra — trang giữ nguyên hoàn toàn, không đổi/nhảy.
+            //
+            // Chặn theo 2 lớp:
+            // 1) Danh sách domain quảng cáo/redirect ĐÃ BIẾT (isBlockedAdHost)
+            //    — áp dụng cho MỌI tài nguyên (kể cả sub-frame/script/ảnh),
+            //    kể cả khi có gesture, vì đây chắc chắn không phải nơi người
+            //    dùng chủ động muốn tới.
+            // 2) Domain gốc "lạ" so với domain của tab (tabRootDomain) VÀ
+            //    không kèm gesture thật — bắt được cả domain rác đổi liên
+            //    tục kiểu "scouplayen.qp" mà không danh sách tĩnh nào biết
+            //    trước được, giống hệt cách metruyenchu_clipper_android_project
+            //    chỉ whitelist 1 domain và chặn mọi thứ khác — chỉ khác là ở
+            //    đây whitelist là "domain hiện tại của tab" thay vì cố định
+            //    1 site, để không phá duyệt web bình thường.
             override fun shouldInterceptRequest(
                 view: WebView,
                 request: WebResourceRequest
             ): WebResourceResponse? {
-                if (isBlockedAdHost(request.url.host)) {
+                val targetHost = request.url.host
+
+                val blockedByList = isBlockedAdHost(targetHost)
+                var blockedByRootDomainGuard = false
+
+                if (!blockedByList && request.isForMainFrame) {
+                    val hasGesture = try {
+                        request.hasGesture()
+                    } catch (_: Exception) {
+                        true
+                    }
+                    val safeHost = tabRootDomain[tabId]
+                    if (!hasGesture && !safeHost.isNullOrEmpty() &&
+                        !targetHost.isNullOrEmpty() &&
+                        !isSameRootDomain(safeHost, targetHost)
+                    ) {
+                        blockedByRootDomainGuard = true
+                    }
+                }
+
+                if (blockedByList || blockedByRootDomainGuard) {
                     if (request.isForMainFrame) {
-                        // Chặn ngay cả bước điều hướng chính (redirect server-
-                        // side tới domain quảng cáo) — dừng tải để KHÔNG bao
-                        // giờ hiện trang trắng/hỏng của domain đó ra màn hình.
                         runOnUiThread {
                             try { view.stopLoading() } catch (_: Exception) {}
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Đã chặn quảng cáo/chuyển hướng lạ: $targetHost",
+                                Toast.LENGTH_SHORT
+                            ).show()
                         }
                     }
                     return WebResourceResponse(
@@ -633,6 +678,11 @@ $js
 
             override fun onPageFinished(view: WebView, url: String) {
                 notifyShellPage(tabId, url, view.title ?: "", loading = false)
+
+                // Việc (v0.23.12): ghi lại domain gốc "hợp lệ" của tab này —
+                // chỉ khi 1 trang THẬT SỰ tải xong (không phải bị chặn giữa
+                // chừng), làm cơ sở để chặn tuyệt đối điều hướng lạ sau này.
+                Uri.parse(url).host?.let { tabRootDomain[tabId] = it }
 
                 // Việc C (v0.23.6): ẩn quảng cáo DOM LUÔN BẬT cho MỌI trang,
                 // độc lập với Chapter Clipper (không đi qua chapterClipperEnabledTabs).
