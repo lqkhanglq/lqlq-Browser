@@ -505,8 +505,14 @@ $js
      * Việc C (v0.23.6): tiêm script ẩn quảng cáo DOM riêng biệt, LUÔN chạy
      * cho MỌI trang web thật (gọi từ onPageFinished của createPageWebView()),
      * không phụ thuộc Chapter Clipper bật/tắt theo tab.
+     *
+     * Việc (v0.23.20): người dùng yêu cầu MỌI hình thức chặn quảng cáo phải
+     * KHÔNG có tác dụng gì trên trang tìm kiếm/AI (Google, ChatGPT, Claude...)
+     * — không tiêm script này vào các trang đó, thay vì chỉ tắt 1 phần bên
+     * trong JS như trước.
      */
     private fun injectAdblock(webView: WebView) {
+        if (isSearchOrAiToolHost(webView.url?.let { Uri.parse(it).host })) return
         try {
             val js = readAssetText("www/tools/adblock-content.js")
             webView.evaluateJavascript(js, null)
@@ -677,11 +683,16 @@ $js
                     return true
                 }
 
-                // Việc (v0.23.11): chặn TUYỆT ĐỐI domain quảng cáo/redirect đã
-                // biết, không cần xét gesture — giống hệt cách
-                // metruyenchu_clipper_android_project chặn cứng bằng danh sách
-                // domain (rules.json), nên trang web không hề bị đổi/nhảy.
-                if (isBlockedAdHost(request.url.host)) {
+                // Việc (v0.23.11 + v0.23.20): chặn TUYỆT ĐỐI domain quảng
+                // cáo/redirect đã biết, không cần xét gesture — giống hệt
+                // cách metruyenchu_clipper_android_project chặn cứng bằng
+                // danh sách domain (rules.json), nên trang web không hề bị
+                // đổi/nhảy. TRỪ KHI đang ở trang tìm kiếm/AI (Google có thể
+                // tự dùng doubleclick.net cho quảng cáo tìm kiếm CHÍNH THỐNG
+                // của nó — không nên chặn, tránh phá chức năng thật).
+                if (!isSearchOrAiToolHost(tabRootDomain[tabId]) &&
+                    isBlockedAdHost(request.url.host)
+                ) {
                     Toast.makeText(
                         this@MainActivity,
                         "Đã chặn quảng cáo: ${request.url.host}",
@@ -749,6 +760,12 @@ $js
                 request: WebResourceRequest
             ): WebResourceResponse? {
                 val targetHost = request.url.host
+
+                // v0.23.20: không chặn gì cả (kể cả danh sách domain quảng
+                // cáo đã biết) khi đang ở trang tìm kiếm/AI — trang đó có
+                // thể tự dùng hạ tầng quảng cáo của chính nó cho chức năng
+                // thật (vd kết quả quảng cáo tìm kiếm của Google).
+                if (isSearchOrAiToolHost(tabRootDomain[tabId])) return null
 
                 val blockedByList = isBlockedAdHost(targetHost)
                 var blockedByRootDomainGuard = false
