@@ -175,6 +175,35 @@
     refs.volumeLabel.textContent = `${Math.round(state.volume * 100)}%`;
   }
 
+  // YouTube (và nhiều trình duyệt/WebView nói chung) tự ép CÂM TIẾNG khi
+  // autoplay=1 nếu không coi thao tác của người dùng với app là đủ "gắn
+  // kết" trực tiếp với chính khung iframe đó (autoplay policy) — kể cả khi
+  // ta không hề yêu cầu câm tiếng. Phải chủ động gửi lệnh "unMute" qua
+  // IFrame Player API (postMessage) NGAY SAU KHI player sẵn sàng để đảm bảo
+  // luôn có tiếng, gửi lặp lại vài lần vì player cần chút thời gian khởi tạo
+  // trước khi chịu nhận lệnh.
+  function forceYoutubeUnmute() {
+    let attempts = 0;
+    const send = () => {
+      try {
+        refs.youtube.contentWindow?.postMessage(
+          JSON.stringify({ event: "command", func: "unMute", args: [] }),
+          "*"
+        );
+        refs.youtube.contentWindow?.postMessage(
+          JSON.stringify({ event: "command", func: "setVolume", args: [100] }),
+          "*"
+        );
+      } catch {}
+    };
+    send();
+    const timer = setInterval(() => {
+      send();
+      attempts++;
+      if (attempts >= 8) clearInterval(timer);
+    }, 350);
+  }
+
   function loadYoutube(id) {
     if (!id) {
       notify("Không nhận diện được liên kết YouTube.");
@@ -188,6 +217,7 @@
     state.audioOnly = false;
 
     refs.youtube.src = youtubeEmbedUrl(id, true);
+    forceYoutubeUnmute();
 
     show(refs.youtube);
     hide(refs.empty);
