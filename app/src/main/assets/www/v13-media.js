@@ -1,4 +1,12 @@
 (() => {
+  // Việc (v0.23.22): GỘP LẠI còn 1 cơ chế nổi duy nhất cho nhạc/video nền —
+  // trước đây có 2 thứ trùng chức năng: (1) khung "trình phát thu nhỏ" nổi
+  // kéo được của chính JS này (kèm 1 <video>/<iframe YouTube> MIRROR riêng
+  // để hiển thị, phải khoá tiếng vĩnh viễn để tránh chồng tiếng với bản
+  // chính), và (2) nút bọt native mới thêm ở MainActivity.kt. Giờ CHỈ còn
+  // nút bọt native làm điểm nổi trên mọi trang; panel đầy đủ (#mediaCenterOverlay)
+  // chỉ có ĐÚNG 1 <video> (refs.htmlPlayer) và ĐÚNG 1 iframe YouTube
+  // (refs.youtube) — không còn bản mirror nào để phải khoá tiếng giả tạo nữa.
   const refs = {
     toolbarBtn: document.getElementById("mediaToolbarBtn"),
     liveIndicator: document.getElementById("mediaLiveIndicator"),
@@ -17,25 +25,12 @@
     nowTitle: document.getElementById("mediaNowTitle"),
     nowSubtitle: document.getElementById("mediaNowSubtitle"),
     playingPill: document.getElementById("mediaPlayingPill"),
-    miniMode: document.getElementById("mediaMiniModeBtn"),
+    minimizeMode: document.getElementById("mediaMiniModeBtn"),
     audioMode: document.getElementById("mediaAudioModeBtn"),
     pip: document.getElementById("mediaPipBtn"),
     stop: document.getElementById("mediaStopBtn"),
     volume: document.getElementById("mediaVolumeRange"),
-    volumeLabel: document.getElementById("mediaVolumeLabel"),
-    mini: document.getElementById("globalMediaMini"),
-    miniDrag: document.getElementById("globalMediaDrag"),
-    miniSourceIcon: document.getElementById("globalMediaSourceIcon"),
-    miniTitle: document.getElementById("globalMediaMiniTitle"),
-    miniSubtitle: document.getElementById("globalMediaMiniSubtitle"),
-    miniRestore: document.getElementById("globalMediaRestoreBtn"),
-    miniHide: document.getElementById("globalMediaHideBtn"),
-    miniStop: document.getElementById("globalMediaStopBtn"),
-    miniPreview: document.getElementById("globalMediaPreview"),
-    miniYoutube: document.getElementById("globalMiniYoutubeFrame"),
-    miniVideo: document.getElementById("globalMiniVideo"),
-    collapsed: document.getElementById("globalMediaCollapsed"),
-    collapsedRestore: document.getElementById("globalMediaCollapsedRestore")
+    volumeLabel: document.getElementById("mediaVolumeLabel")
   };
 
   const state = {
@@ -48,12 +43,12 @@
     audioOnly: false,
     isPlaying: false,
     volume: 1,
-    // Việc (v0.23.21): "Nhạc và video nền" giờ hoạt động như 1 công cụ tiện
-    // ích kiểu Chapter Clipper — bật/tắt bằng nút trong menu ☰, KHÁC với
-    // việc đang phát hay không. Khi bật: nút bọt nổi hiện trên MỌI trang
-    // (giống Chapter Clipper). Đóng bảng thêm nhạc (nút X) chỉ ẩn giao diện,
-    // KHÔNG tắt công cụ, nhạc vẫn chạy. Chỉ khi bấm lại nút menu để TẮT công
-    // cụ thì mới thật sự dừng phát + ẩn nút bọt.
+    // Việc (v0.23.21): "Nhạc và video nền" hoạt động như 1 công cụ tiện ích
+    // kiểu Chapter Clipper — bật/tắt bằng nút trong menu ☰, KHÁC với việc
+    // đang phát hay không. Khi bật: nút bọt nổi (native) hiện trên MỌI
+    // trang. Đóng bảng thêm nhạc (nút X/Thu nhỏ) chỉ ẩn giao diện, KHÔNG
+    // tắt công cụ, nhạc vẫn chạy. Chỉ khi bấm lại nút menu để TẮT công cụ
+    // thì mới thật sự dừng phát + ẩn nút bọt.
     toolEnabled: false
   };
 
@@ -139,9 +134,6 @@
     refs.nowTitle.textContent = state.title;
     refs.nowSubtitle.textContent = state.subtitle;
     refs.nowIcon.textContent = icon;
-    refs.miniTitle.textContent = state.title;
-    refs.miniSubtitle.textContent = state.subtitle;
-    refs.miniSourceIcon.textContent = icon;
 
     if ("mediaSession" in navigator) {
       try {
@@ -163,19 +155,12 @@
 
   function clearFrames() {
     refs.youtube.src = "";
-    refs.miniYoutube.src = "";
     refs.htmlPlayer.pause();
-    refs.miniVideo.pause();
-
     refs.htmlPlayer.removeAttribute("src");
-    refs.miniVideo.removeAttribute("src");
     refs.htmlPlayer.load();
-    refs.miniVideo.load();
 
     hide(refs.youtube);
-    hide(refs.miniYoutube);
     hide(refs.htmlPlayer);
-    hide(refs.miniVideo);
 
     if (state.objectUrl) {
       URL.revokeObjectURL(state.objectUrl);
@@ -186,51 +171,8 @@
   function syncVolume(value) {
     state.volume = Math.max(0, Math.min(1, Number(value)));
     refs.htmlPlayer.volume = state.volume;
-    // KHÔNG bao giờ đồng bộ volume của mini theo state.volume — mini phải
-    // luôn câm hẳn (volume=0 + muted=true), nếu không sẽ vô tình chồng tiếng
-    // dù .muted đã bật (đây là lỗi thật gây phát 2 lần từng bị báo trước đó).
-    refs.miniVideo.volume = 0;
-    refs.miniVideo.muted = true;
     refs.volume.value = String(Math.round(state.volume * 100));
     refs.volumeLabel.textContent = `${Math.round(state.volume * 100)}%`;
-  }
-
-  // Cả 2 khung YouTube (chính + mini) trước đây cùng nhận src với
-  // autoplay=1 → CẢ HAI cùng phát có tiếng cùng lúc, nghe như 1 bài hát
-  // chồng lặp 2 lần (khác với video/audio trực tiếp dùng <video> tag, vốn
-  // xử lý bằng cách tắt tiếng bản mini). YouTube iframe không cho JS ngoài
-  // đọc/ghi thuộc tính muted trực tiếp — phải dùng IFrame Player API qua
-  // postMessage (enablejsapi=1 đã bật sẵn ở youtubeEmbedUrl()).
-  function postYoutubeCommand(iframe, func) {
-    try {
-      iframe?.contentWindow?.postMessage(
-        JSON.stringify({ event: "command", func, args: [] }),
-        "*"
-      );
-    } catch {}
-  }
-
-  function retryYoutubeCommand(iframe, func) {
-    // Player bên trong iframe cần một chút thời gian để sẵn sàng nhận lệnh
-    // postMessage sau khi vừa gán src — gửi lặp lại vài lần trong ~2.4s để
-    // không bị lỡ nếu gửi quá sớm.
-    let attempts = 0;
-    postYoutubeCommand(iframe, func);
-    const timer = setInterval(() => {
-      postYoutubeCommand(iframe, func);
-      attempts++;
-      if (attempts >= 6) clearInterval(timer);
-    }, 400);
-  }
-
-  // Chỉ ĐÚNG 1 trong 2 khung được phép phát tiếng tại một thời điểm — khung
-  // còn lại luôn bị mute qua postMessage, không bao giờ để cả 2 cùng có tiếng.
-  function focusYoutubeAudio(mini) {
-    if (state.type !== "youtube") return;
-    const audible = mini ? refs.miniYoutube : refs.youtube;
-    const silent = mini ? refs.youtube : refs.miniYoutube;
-    retryYoutubeCommand(silent, "mute");
-    retryYoutubeCommand(audible, "unMute");
   }
 
   function loadYoutube(id) {
@@ -245,19 +187,15 @@
     state.source = id;
     state.audioOnly = false;
 
-    const src = youtubeEmbedUrl(id, true);
-    refs.youtube.src = src;
-    refs.miniYoutube.src = src;
+    refs.youtube.src = youtubeEmbedUrl(id, true);
 
     show(refs.youtube);
-    show(refs.miniYoutube);
     hide(refs.empty);
     refs.stage.classList.remove("audio-only");
 
     refs.sourceBadge.textContent = "YouTube";
     setMetadata(`YouTube · ${id}`, "Phát bằng trình nhúng chính thức", "▶");
     setPlaying(true);
-    showMiniPlayer(false);
   }
 
   function loadDirectSource(source, title, mime = "") {
@@ -270,18 +208,10 @@
     state.audioOnly = kind === "audio";
 
     refs.htmlPlayer.src = source;
-    refs.miniVideo.src = source;
     refs.htmlPlayer.muted = false;
-    // Trình phát mini chỉ là hình ảnh phản chiếu — phải luôn tắt tiếng,
-    // nếu không âm thanh sẽ phát 2 lần chồng lên nhau. Đặt cả muted VÀ
-    // volume=0 (một số bản WebView không tôn trọng .muted đáng tin cậy cho
-    // phần tử video đang ẩn/không hiển thị).
-    refs.miniVideo.muted = true;
-    refs.miniVideo.volume = 0;
     syncVolume(state.volume);
 
     show(refs.htmlPlayer);
-    show(refs.miniVideo);
     hide(refs.empty);
 
     refs.stage.classList.toggle("audio-only", state.audioOnly);
@@ -309,7 +239,6 @@
     }
 
     setPlaying(true);
-    showMiniPlayer(false);
   }
 
   function openUrl() {
@@ -368,32 +297,10 @@
     show(refs.overlay);
   }
 
+  // Đóng bảng — CHỈ ẩn giao diện, nhạc/video vẫn tiếp tục phát nền. Nút bọt
+  // native (nếu công cụ đang bật) vẫn hiện trên mọi trang để mở lại bảng.
   function closeCenter() {
     hide(refs.overlay);
-
-    if (state.type !== "none") {
-      showMiniPlayer(false);
-    }
-  }
-
-  function showMiniPlayer(collapsed = false) {
-    if (state.type === "none") {
-      notify("Chưa có nhạc hoặc video đang phát.");
-      return;
-    }
-
-    show(refs.mini);
-    refs.mini.classList.toggle("collapsed", collapsed);
-    refs.collapsed.classList.toggle("hidden", !collapsed);
-    hide(refs.overlay);
-    focusYoutubeAudio(true);
-  }
-
-  function restoreCenter() {
-    refs.mini.classList.remove("collapsed");
-    hide(refs.mini);
-    show(refs.overlay);
-    focusYoutubeAudio(false);
   }
 
   function toggleAudioOnly() {
@@ -403,20 +310,17 @@
     }
 
     if (state.type === "youtube") {
-      notify("YouTube phải giữ khung video chính thức; hãy dùng trình phát thu nhỏ.");
-      showMiniPlayer(false);
+      notify("YouTube phải giữ khung video chính thức.");
       return;
     }
 
     state.audioOnly = !state.audioOnly;
     refs.stage.classList.toggle("audio-only", state.audioOnly);
-    refs.miniPreview.classList.toggle("hidden", state.audioOnly);
 
     refs.nowSubtitle.textContent = state.audioOnly
       ? "Chế độ chỉ âm thanh"
       : "Video tiếp tục khi chuyển thẻ";
 
-    refs.miniSubtitle.textContent = refs.nowSubtitle.textContent;
     notify(state.audioOnly ? "Đã chuyển sang chỉ âm thanh." : "Đã hiện lại video.");
   }
 
@@ -427,8 +331,7 @@
     }
 
     if (state.type === "youtube") {
-      notify("YouTube dùng trình phát thu nhỏ của Shield; PiP hệ thống không điều khiển được iframe.");
-      showMiniPlayer(false);
+      notify("PiP hệ thống không điều khiển được khung YouTube.");
       return;
     }
 
@@ -468,7 +371,6 @@
     show(refs.empty);
     hide(refs.playingPill);
     hide(refs.liveIndicator);
-    hide(refs.mini);
     hide(refs.overlay);
 
     refs.sourceBadge.textContent = "Chưa có nguồn";
@@ -485,30 +387,6 @@
     notify("Đã dừng trình phát nền.");
   }
 
-  function syncDirectPlayers(sourcePlayer) {
-    if (state.type !== "audio" && state.type !== "video") return;
-
-    const target = sourcePlayer === refs.htmlPlayer
-      ? refs.miniVideo
-      : refs.htmlPlayer;
-
-    if (!Number.isFinite(sourcePlayer.currentTime)) return;
-
-    if (Math.abs((target.currentTime || 0) - sourcePlayer.currentTime) > 1.2) {
-      try {
-        target.currentTime = sourcePlayer.currentTime;
-      } catch {}
-    }
-
-    // Mini phải luôn câm hẳn — không đồng bộ volume của nguồn sang mini.
-    if (target === refs.miniVideo) {
-      target.volume = 0;
-      target.muted = true;
-    } else {
-      target.volume = sourcePlayer.volume;
-    }
-  }
-
   function installMediaSession() {
     if (!("mediaSession" in navigator)) return;
 
@@ -516,55 +394,17 @@
       navigator.mediaSession.setActionHandler("play", async () => {
         if (state.type === "audio" || state.type === "video") {
           await refs.htmlPlayer.play();
-        } else {
-          showMiniPlayer(false);
         }
       });
 
       navigator.mediaSession.setActionHandler("pause", () => {
         if (state.type === "audio" || state.type === "video") {
           refs.htmlPlayer.pause();
-          refs.miniVideo.pause();
         }
       });
 
       navigator.mediaSession.setActionHandler("stop", stopAll);
     } catch {}
-  }
-
-  let dragState = null;
-
-  function startDrag(event) {
-    if (event.target.closest("button")) return;
-
-    const rect = refs.mini.getBoundingClientRect();
-    dragState = {
-      pointerId: event.pointerId,
-      offsetX: event.clientX - rect.left,
-      offsetY: event.clientY - rect.top
-    };
-
-    refs.mini.setPointerCapture?.(event.pointerId);
-  }
-
-  function moveDrag(event) {
-    if (!dragState || event.pointerId !== dragState.pointerId) return;
-
-    const maxLeft = window.innerWidth - refs.mini.offsetWidth - 6;
-    const maxTop = window.innerHeight - refs.mini.offsetHeight - 6;
-
-    const left = Math.max(6, Math.min(maxLeft, event.clientX - dragState.offsetX));
-    const top = Math.max(6, Math.min(maxTop, event.clientY - dragState.offsetY));
-
-    refs.mini.style.left = `${left}px`;
-    refs.mini.style.top = `${top}px`;
-    refs.mini.style.right = "auto";
-    refs.mini.style.bottom = "auto";
-  }
-
-  function endDrag(event) {
-    if (!dragState || event.pointerId !== dragState.pointerId) return;
-    dragState = null;
   }
 
   // Việc (v0.23.21): báo cho native biết công cụ đang bật/tắt để hiện/ẩn
@@ -609,18 +449,9 @@
     originalHandleAction(action);
   };
 
-  const originalSwitchTab = switchTab;
-  switchTab = function switchTabWithMedia(id) {
-    originalSwitchTab(id);
-
-    if (state.type !== "none" && !refs.overlay.classList.contains("hidden")) {
-      showMiniPlayer(false);
-    }
-  };
-
   refs.toolbarBtn.addEventListener("click", openCenter);
   refs.closePanel.addEventListener("click", closeCenter);
-  refs.minimize.addEventListener("click", () => showMiniPlayer(false));
+  refs.minimize.addEventListener("click", closeCenter);
   refs.openUrl.addEventListener("click", openUrl);
   refs.urlInput.addEventListener("keydown", event => {
     if (event.key === "Enter") openUrl();
@@ -648,7 +479,10 @@
     });
   });
 
-  refs.miniMode.addEventListener("click", () => showMiniPlayer(false));
+  // Nút "Trình phát thu nhỏ" cũ giờ chỉ còn ý nghĩa "ẩn bảng, giữ nút bọt
+  // nổi trên mọi trang" — hành vi y hệt đóng bảng (không còn khung mini
+  // riêng để mở rộng ra nữa, nút bọt native đã thay thế hoàn toàn).
+  refs.minimizeMode?.addEventListener("click", closeCenter);
   refs.audioMode.addEventListener("click", toggleAudioOnly);
   refs.pip.addEventListener("click", openPictureInPicture);
   refs.stop.addEventListener("click", stopAll);
@@ -657,72 +491,18 @@
     syncVolume(Number(refs.volume.value) / 100);
   });
 
-  refs.miniRestore.addEventListener("click", restoreCenter);
-  refs.miniHide.addEventListener("click", () => {
-    refs.mini.classList.add("collapsed");
-    show(refs.collapsed);
-  });
-  refs.miniStop.addEventListener("click", stopAll);
-  refs.collapsedRestore.addEventListener("click", () => {
-    refs.mini.classList.remove("collapsed");
-    hide(refs.collapsed);
-  });
-
   refs.overlay.addEventListener("click", event => {
     if (event.target === refs.overlay) {
       closeCenter();
     }
   });
 
-  refs.htmlPlayer.addEventListener("play", () => {
-    refs.miniVideo.play().catch(() => {});
-    setPlaying(true);
-  });
-
-  refs.htmlPlayer.addEventListener("pause", () => {
-    refs.miniVideo.pause();
-    setPlaying(false);
-  });
-
-  refs.htmlPlayer.addEventListener("timeupdate", () => {
-    syncDirectPlayers(refs.htmlPlayer);
-  });
-
+  refs.htmlPlayer.addEventListener("play", () => setPlaying(true));
+  refs.htmlPlayer.addEventListener("pause", () => setPlaying(false));
   refs.htmlPlayer.addEventListener("volumechange", () => {
     syncVolume(refs.htmlPlayer.volume);
   });
-
-  refs.htmlPlayer.addEventListener("ended", () => {
-    setPlaying(false);
-  });
-
-  refs.miniVideo.addEventListener("play", () => {
-    refs.htmlPlayer.play().catch(() => {});
-    setPlaying(true);
-  });
-
-  refs.miniVideo.addEventListener("pause", () => {
-    refs.htmlPlayer.pause();
-    setPlaying(false);
-  });
-
-  refs.miniVideo.addEventListener("timeupdate", () => {
-    syncDirectPlayers(refs.miniVideo);
-  });
-
-  // Chốt chặn cuối chống phát tiếng đôi: trình phát mini KHÔNG BAO GIỜ
-  // được phát tiếng, dù bất kỳ sự kiện/mã nào lỡ đổi muted thành false.
-  refs.miniVideo.addEventListener("volumechange", () => {
-    if (!refs.miniVideo.muted) refs.miniVideo.muted = true;
-  });
-  refs.miniVideo.addEventListener("play", () => {
-    if (!refs.miniVideo.muted) refs.miniVideo.muted = true;
-  });
-
-  refs.miniDrag.addEventListener("pointerdown", startDrag);
-  refs.miniDrag.addEventListener("pointermove", moveDrag);
-  refs.miniDrag.addEventListener("pointerup", endDrag);
-  refs.miniDrag.addEventListener("pointercancel", endDrag);
+  refs.htmlPlayer.addEventListener("ended", () => setPlaying(false));
 
   document.addEventListener("keydown", event => {
     if (
@@ -747,7 +527,7 @@
 
   window.ShieldMedia = {
     open: openCenter,
-    minimize: () => showMiniPlayer(false),
+    minimize: closeCenter,
     stop: stopAll,
     // Tạm dừng phát mà không xóa nguồn — dùng khi mở một trang web thật
     // (video của trang đó có thể tự phát) để tránh chồng tiếng với media
@@ -755,22 +535,21 @@
     pause: () => {
       try {
         refs.htmlPlayer.pause();
-        refs.miniVideo.pause();
         setPlaying(false);
       } catch {}
     },
     // Bấm phát/tạm dừng thống nhất cho CẢ YouTube lẫn media trực tiếp — dùng
-    // cho nút trên thanh thông báo nền. Trước đây thanh thông báo tự dò thẻ
-    // <audio>/<video> thật trong DOM, nhưng YouTube chỉ là iframe (không có
-    // thẻ này) nên nút không có tác dụng gì với YouTube.
+    // cho nút trên thanh thông báo nền. YouTube chỉ là iframe (không có thẻ
+    // <audio>/<video>) nên cần gửi lệnh qua IFrame Player API postMessage.
     toggle: () => {
       if (state.type === "youtube") {
-        // Gửi lệnh cho CẢ 2 khung — khung nào đang câm cũng vô hại vì luôn
-        // bị mute, chỉ khung đang audible mới thực sự nghe được. Không cần
-        // biết chính xác khung nào đang "audible" tại thời điểm gọi.
         const cmd = state.isPlaying ? "pauseVideo" : "playVideo";
-        retryYoutubeCommand(refs.youtube, cmd);
-        retryYoutubeCommand(refs.miniYoutube, cmd);
+        try {
+          refs.youtube.contentWindow?.postMessage(
+            JSON.stringify({ event: "command", func: cmd, args: [] }),
+            "*"
+          );
+        } catch {}
         setPlaying(!state.isPlaying);
         return;
       }

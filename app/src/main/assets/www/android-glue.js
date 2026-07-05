@@ -382,9 +382,6 @@
       event => {
         const el = event.target;
         if (!(el instanceof HTMLMediaElement)) return;
-        // Chốt chặn kép cho lỗi âm thanh phát 2 lần:
-        // trình phát mini luôn phải câm tiếng.
-        if (el.id === "globalMiniVideo") el.muted = true;
         sendMediaState();
         setTimeout(sendMediaState, 60);
       },

@@ -553,7 +553,7 @@
               <div class="media-mode-grid">
                 <button id="mediaMiniModeBtn">
                   <span>▱</span>
-                  <div><b>Trình phát thu nhỏ</b><small>Nổi trên góc khi làm việc ở thẻ khác</small></div>
+                  <div><b>Thu nhỏ xuống nút nổi</b><small>Ẩn bảng, nhạc vẫn phát — bấm nút nổi để mở lại</small></div>
                 </button>
                 <button id="mediaAudioModeBtn">
                   <span>♫</span>
@@ -597,40 +597,12 @@
       </section>
     </div>
 
-    <aside class="global-media-mini hidden" id="globalMediaMini">
-      <div class="global-media-drag" id="globalMediaDrag">
-        <span class="global-media-source-icon" id="globalMediaSourceIcon">♫</span>
-        <div class="global-media-mini-copy">
-          <b id="globalMediaMiniTitle">Chưa có nội dung</b>
-          <small id="globalMediaMiniSubtitle">Trình phát nền</small>
-        </div>
-        <button id="globalMediaRestoreBtn" title="Mở rộng">▣</button>
-        <button id="globalMediaHideBtn" title="Ẩn bảng">—</button>
-        <button id="globalMediaStopBtn" title="Dừng">×</button>
-      </div>
-
-      <div class="global-media-preview" id="globalMediaPreview">
-        <iframe
-          class="global-mini-youtube hidden"
-          id="globalMiniYoutubeFrame"
-          title="YouTube mini player"
-          allow="autoplay; encrypted-media; picture-in-picture"
-          referrerpolicy="strict-origin-when-cross-origin"
-        ></iframe>
-
-        <video
-          class="global-mini-video hidden"
-          id="globalMiniVideo"
-          controls
-          playsinline
-          preload="metadata"
-        ></video>
-      </div>
-
-      <div class="global-media-collapsed hidden" id="globalMediaCollapsed">
-        <button id="globalMediaCollapsedRestore">♫</button>
-      </div>
-    </aside>
+    <!-- Việc (v0.23.22): khung "trình phát thu nhỏ" nổi cũ (globalMediaMini)
+         đã bị xoá — trùng chức năng với nút bọt native (MainActivity.kt) vốn
+         mới thật sự nổi được trên MỌI trang web mà không chặn tương tác của
+         trang. Panel #mediaCenterOverlay giờ là giao diện duy nhất, chỉ có
+         1 <video>/<iframe YouTube> thật, không còn bản mirror cần khoá tiếng
+         giả tạo nữa. -->
 
 
     <div class="image-editor-backdrop hidden" id="imageEditorBackdrop"></div>
