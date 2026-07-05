@@ -165,6 +165,15 @@
     refs.overlay.classList.remove("hidden");
     document.body.classList.add("mobile-overlay-open");
 
+    // Việc "vẫn đơ khi đang xem web thật" (v0.23.37): KHÔNG chờ cơ chế dò
+    // MutationObserver chung (delay ~80ms qua click listener + interval
+    // 900ms) để native đưa shellWebView lên trước trang web thật — gọi
+    // THẲNG native.setOverlayOpen(true) NGAY LẬP TỨC, đồng bộ với đúng hành
+    // động mở khung này, loại bỏ mọi khả năng lệch thời điểm/timing.
+    try {
+      window.LqlqAndroid?.setOverlayOpen?.(true);
+    } catch {}
+
     try {
       renderTabSwitcherGrid();
     } catch (error) {
@@ -176,6 +185,9 @@
   function closeTabSwitcher() {
     refs.overlay.classList.add("hidden");
     document.body.classList.remove("mobile-overlay-open");
+    try {
+      window.LqlqAndroid?.setOverlayOpen?.(false);
+    } catch {}
   }
 
   function newMobileTab() {
