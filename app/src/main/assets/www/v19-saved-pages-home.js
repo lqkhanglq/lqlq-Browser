@@ -266,20 +266,35 @@
     }
   }
 
+  // Việc "Icon Trang đã lưu hiện chậm khi tạo thẻ mới" (v0.23.32): mỗi icon
+  // trước đây tải favicon.ico QUA MẠNG THẬT (kể cả cho các mục mặc định như
+  // Google/ChatGPT/Claude/Gemini/Grok/Perplexity) — với 6 icon cùng lúc, đây
+  // là 6 request mạng song song mỗi lần trang chủ/thẻ mới render, khiến icon
+  // "chờ rất lâu mới hiện ra" đúng như báo cáo. Với các mục mặc định ĐÃ có
+  // sẵn icon chữ/màu thương hiệu qua CSS (.saved-shortcut-icon.google, v.v.),
+  // bỏ hẳn việc tải ảnh — hiện ngay ký hiệu có sẵn, không cần mạng. Chỉ các
+  // trang người dùng tự lưu (không thuộc danh sách mặc định) mới tải favicon
+  // thật, vì không có sẵn icon cục bộ nào thay thế.
   function createShortcutIcon(item) {
     const icon = document.createElement("span");
     const kind = item.kind || knownKind(item.url);
 
     icon.className = `saved-shortcut-icon${kind ? ` ${kind}` : ""}`;
 
+    const fallback = document.createElement("span");
+    fallback.textContent = fallbackSymbol(item);
+
+    if (kind) {
+      // Mục mặc định đã có icon thương hiệu qua CSS — không cần tải mạng.
+      icon.append(fallback);
+      return icon;
+    }
+
     const image = document.createElement("img");
     image.alt = "";
     image.loading = "lazy";
     image.referrerPolicy = "no-referrer";
     image.src = faviconUrl(item);
-
-    const fallback = document.createElement("span");
-    fallback.textContent = fallbackSymbol(item);
 
     image.addEventListener("load", () => {
       fallback.classList.add("hidden");
@@ -333,22 +348,27 @@
     const icon = document.createElement("span");
     icon.className = "saved-page-row-icon";
 
-    const image = document.createElement("img");
-    image.alt = "";
-    image.loading = "lazy";
-    image.referrerPolicy = "no-referrer";
-    image.src = faviconUrl(item);
-
+    const kind = item.kind || knownKind(item.url);
     const fallback = document.createElement("span");
     fallback.textContent = fallbackSymbol(item);
 
-    image.addEventListener("load", () => fallback.classList.add("hidden"));
-    image.addEventListener("error", () => {
-      image.classList.add("hidden");
-      fallback.classList.remove("hidden");
-    });
+    if (kind) {
+      icon.append(fallback);
+    } else {
+      const image = document.createElement("img");
+      image.alt = "";
+      image.loading = "lazy";
+      image.referrerPolicy = "no-referrer";
+      image.src = faviconUrl(item);
 
-    icon.append(image, fallback);
+      image.addEventListener("load", () => fallback.classList.add("hidden"));
+      image.addEventListener("error", () => {
+        image.classList.add("hidden");
+        fallback.classList.remove("hidden");
+      });
+
+      icon.append(image, fallback);
+    }
 
     const copy = document.createElement("div");
     copy.className = "saved-page-row-copy";

@@ -155,21 +155,28 @@ class MainActivity : AppCompatActivity() {
      */
     private val tabThumbnails = mutableMapOf<String, Bitmap>()
 
+    /**
+     * Việc "Ảnh xem trước gây lag" (v0.23.32): bản trước vẽ WebView vào 1
+     * bitmap KÍCH THƯỚC ĐẦY ĐỦ MÀN HÌNH (ARGB_8888, ~9-10MB mỗi lần) rồi mới
+     * co nhỏ lại — toàn bộ việc này chạy TRÊN LUỒNG GIAO DIỆN CHÍNH (bắt
+     * buộc vì webView.draw() chỉ chạy được ở UI thread), và còn tệ hơn là
+     * chụp SAU MỖI LẦN TẢI TRANG (không chỉ khi chuyển tab) — quá tốn, đúng
+     * là nguyên nhân lag mới. Giờ vẽ THẲNG ở độ phân giải nhỏ (co bằng
+     * Canvas.scale() trước khi vẽ, không tạo bitmap to trung gian) và dùng
+     * RGB_565 (nhẹ bằng nửa ARGB_8888) — rẻ hơn nhiều lần.
+     */
     private fun captureTabThumbnail(tabId: String, webView: WebView) {
         try {
             if (webView.width <= 0 || webView.height <= 0) return
-            val full = Bitmap.createBitmap(webView.width, webView.height, Bitmap.Config.ARGB_8888)
-            webView.draw(Canvas(full))
-            val maxWidth = 480
-            val scaled = if (full.width > maxWidth) {
-                val ratio = maxWidth.toFloat() / full.width
-                Bitmap.createScaledBitmap(full, maxWidth, (full.height * ratio).toInt(), true).also {
-                    full.recycle()
-                }
-            } else {
-                full
-            }
-            tabThumbnails.put(tabId, scaled)?.recycle()
+            val maxWidth = 360
+            val scale = (maxWidth.toFloat() / webView.width).coerceAtMost(1f)
+            val targetWidth = (webView.width * scale).toInt().coerceAtLeast(1)
+            val targetHeight = (webView.height * scale).toInt().coerceAtLeast(1)
+            val bitmap = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.RGB_565)
+            val canvas = Canvas(bitmap)
+            canvas.scale(scale, scale)
+            webView.draw(canvas)
+            tabThumbnails.put(tabId, bitmap)?.recycle()
         } catch (_: Exception) {
             // Bỏ qua — ảnh xem trước chỉ là tiện ích phụ, không quan trọng
             // bằng việc trang vẫn hoạt động bình thường.
@@ -914,11 +921,14 @@ $js
                     injectChapterClipperInto(view)
                 }
 
-                // Việc "ảnh xem trước thẻ giống Chrome" (v0.23.31): chụp lại
-                // sau khi trang tải xong (trễ 1 nhịp để nội dung kịp vẽ xong),
-                // để lưới "Các thẻ đang mở" luôn có ảnh gần nhất, không chỉ
-                // chụp lúc rời tab.
-                view.postDelayed({ captureTabThumbnail(tabId, view) }, 350)
+                // Việc "ảnh xem trước gây lag" (v0.23.32): BỎ chụp tự động
+                // sau MỖI LẦN TẢI TRANG — quá thường xuyên (mỗi lần điều
+                // hướng/next-chapter đều chụp lại dù người dùng không hề mở
+                // lưới tab), cộng dồn với chi phí vẽ WebView trên UI thread
+                // gây lag rõ rệt. Giờ CHỈ chụp khi thực sự rời tab
+                // (captureOutgoingTabThumbnail trong switchPage()/openPage()),
+                // tần suất thấp hơn nhiều vì gắn với hành động chuyển tab thật
+                // của người dùng.
             }
 
             override fun doUpdateVisitedHistory(
