@@ -132,7 +132,7 @@ class NativeTabSwitcherView(
         searchInput = EditText(context).apply {
             hint = "Tìm thẻ của bạn"
             textSize = 18f
-            singleLine = true
+            isSingleLine = true
             setTextColor(Color.rgb(68, 51, 47))
             setHintTextColor(Color.rgb(105, 83, 78))
             setPadding(dp(20), 0, dp(20), 0)
@@ -233,7 +233,7 @@ class NativeTabSwitcherView(
     private inner class TabAdapter(
         private val onSelect: (String) -> Unit,
         private val onClose: (String) -> Unit
-    ) : RecyclerView.Adapter<TabViewHolder>() {
+    ) : RecyclerView.Adapter<TabAdapter.TabViewHolder>() {
 
         private var allTabs: List<BrowserTab> = emptyList()
         private var visibleTabs: List<BrowserTab> = emptyList()
@@ -269,11 +269,11 @@ class NativeTabSwitcherView(
 
         override fun getItemId(position: Int): Long = visibleTabs[position].id.hashCode().toLong()
 
-        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): TabViewHolder {
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): TabAdapter.TabViewHolder {
             return TabViewHolder(createCardView(parent.context))
         }
 
-        override fun onBindViewHolder(holder: TabViewHolder, position: Int) {
+        override fun onBindViewHolder(holder: TabAdapter.TabViewHolder, position: Int) {
             holder.bind(visibleTabs[position], visibleTabs[position].id == activeTabId)
         }
 
