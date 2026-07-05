@@ -73,6 +73,14 @@ class ShellBridge(private val activity: MainActivity) {
         activity.runOnUiThread { activity.injectChapterClipper() }
     }
 
+    /**
+     * Đồng bộ (không cần runOnUiThread callback riêng) vì WebView JS→Java
+     * hỗ trợ giá trị trả về ngay khi gọi cùng luồng UI; dùng để cập nhật
+     * trạng thái nút menu (bật/tắt) mỗi khi mở menu hoặc chuyển tab.
+     */
+    @JavascriptInterface
+    fun isChapterClipperEnabled(): Boolean = activity.isChapterClipperEnabled()
+
     @JavascriptInterface
     fun openExternal(url: String) {
         try {

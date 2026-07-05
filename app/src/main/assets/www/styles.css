@@ -7349,6 +7349,11 @@ html[data-theme="comfort"] .chapter-clipper-actions > button {
   background: rgba(var(--accent-rgb), .09) !important;
 }
 
+.chapter-clipper-menu-entry.chapter-clipper-active {
+  border-color: rgba(var(--accent-rgb), .6) !important;
+  background: rgba(var(--accent-rgb), .16) !important;
+}
+
 .menu-icon.chapter-clipper {
   width: 31px;
   min-width: 31px;

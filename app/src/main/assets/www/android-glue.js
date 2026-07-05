@@ -449,8 +449,37 @@
       closeAllMenus();
       if (typeof native.injectChapterClipper === "function") {
         safeCall(() => native.injectChapterClipper());
+        // Cập nhật trạng thái nút ngay sau khi bật/tắt (trễ 1 nhịp để native
+        // kịp cập nhật chapterClipperEnabledTabs trước khi ta đọc lại).
+        setTimeout(updateChapterClipperMenuBtnState, 50);
       } else {
         safeCall(() => native.showToast?.("Bản này chưa hỗ trợ Chapter Clipper."));
+      }
+    },
+    true
+  );
+
+  // Phản ánh trạng thái bật/tắt của tab hiện tại lên nút menu mỗi khi mở
+  // menu chính, để người dùng biết Chapter Clipper đang bật hay tắt.
+  function updateChapterClipperMenuBtnState() {
+    const btn = document.getElementById("chapterClipperMenuBtn");
+    if (!btn || typeof native.isChapterClipperEnabled !== "function") return;
+    let enabled = false;
+    try {
+      enabled = !!native.isChapterClipperEnabled();
+    } catch (e) {}
+    btn.classList.toggle("chapter-clipper-active", enabled);
+    const label = btn.querySelector(".menu-copy b");
+    if (label) {
+      label.textContent = enabled ? "Chapter Clipper (đang bật)" : "Chapter Clipper";
+    }
+  }
+
+  document.addEventListener(
+    "click",
+    event => {
+      if (event.target?.closest?.("#menuBtn")) {
+        setTimeout(updateChapterClipperMenuBtnState, 0);
       }
     },
     true

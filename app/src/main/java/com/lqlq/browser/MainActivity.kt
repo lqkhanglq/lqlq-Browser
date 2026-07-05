@@ -53,6 +53,13 @@ class MainActivity : AppCompatActivity() {
     private var activeTabId: String? = null
     private var pageVisible = false
 
+    /**
+     * Các tab đã bật Chapter Clipper (việc 1, v0.23.5): một khi người dùng
+     * bật cho tab này, script phải tự tiêm lại ở MỌI trang mới trong tab đó
+     * (kể cả sau khi next-chapter) cho đến khi người dùng bấm tắt hẳn.
+     */
+    private val chapterClipperEnabledTabs = mutableSetOf<String>()
+
     /** Lớp phủ của giao diện (menu, panel...) đang mở → phải nổi trên trang web. */
     @Volatile
     private var overlayOpen = false
@@ -285,6 +292,7 @@ class MainActivity : AppCompatActivity() {
         pageContainer.removeView(webView)
         webView.stopLoading()
         webView.destroy()
+        chapterClipperEnabledTabs.remove(tabId)
         if (activeTabId == tabId) {
             setPageVisible(false)
         }
@@ -307,9 +315,15 @@ class MainActivity : AppCompatActivity() {
     private fun readAssetText(path: String): String =
         assets.open(path).bufferedReader(Charsets.UTF_8).use { it.readText() }
 
+    /**
+     * Nút bấm trong menu: bật/tắt Chapter Clipper CHO CẢ TAB hiện tại (không
+     * chỉ tiêm 1 lần). Khi bật, tab được ghi nhớ trong chapterClipperEnabledTabs
+     * để onPageFinished() của WebView tự tiêm lại ở mọi trang kế tiếp.
+     */
     fun injectChapterClipper() {
+        val tabId = activeTabId
         val webView = currentPageWebView()
-        if (webView == null || !pageVisible) {
+        if (tabId == null || webView == null || !pageVisible) {
             Toast.makeText(
                 this,
                 "Hãy mở một trang web thật rồi bật Chapter Clipper.",
@@ -317,6 +331,38 @@ class MainActivity : AppCompatActivity() {
             ).show()
             return
         }
+
+        if (chapterClipperEnabledTabs.contains(tabId)) {
+            chapterClipperEnabledTabs.remove(tabId)
+            // Ẩn panel/nút nổi trên trang hiện tại ngay lập tức — không cần gỡ
+            // hẳn script khỏi DOM, chỉ cần nó không hiện ra nữa và không tự
+            // tiêm lại ở trang kế tiếp (đã xử lý ở createPageWebView()).
+            webView.evaluateJavascript(
+                """
+                (function () {
+                  try {
+                    var panel = document.getElementById('cc-panel');
+                    if (panel) panel.style.setProperty('display', 'none', 'important');
+                  } catch (e) {}
+                })();
+                """.trimIndent(),
+                null
+            )
+            Toast.makeText(this, "Đã tắt Chapter Clipper trên trang này.", Toast.LENGTH_SHORT).show()
+        } else {
+            chapterClipperEnabledTabs.add(tabId)
+            injectChapterClipperInto(webView)
+            Toast.makeText(this, "Đã bật Chapter Clipper trên trang này.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun isChapterClipperEnabled(): Boolean {
+        val tabId = activeTabId ?: return false
+        return chapterClipperEnabledTabs.contains(tabId)
+    }
+
+    /** Tiêm content-script + CSS của Chapter Clipper vào 1 WebView cụ thể. */
+    private fun injectChapterClipperInto(webView: WebView) {
         try {
             val css = readAssetText("www/tools/chapter-clipper-styles.css")
             val js = readAssetText("www/tools/chapter-clipper-content.js")
@@ -334,7 +380,6 @@ class MainActivity : AppCompatActivity() {
 $js
 """
             webView.evaluateJavascript(injected, null)
-            Toast.makeText(this, "Đã bật Chapter Clipper trên trang này.", Toast.LENGTH_SHORT).show()
         } catch (error: Exception) {
             Toast.makeText(this, "Không nạp được Chapter Clipper.", Toast.LENGTH_SHORT).show()
         }
@@ -431,6 +476,12 @@ $js
 
             override fun onPageFinished(view: WebView, url: String) {
                 notifyShellPage(tabId, url, view.title ?: "", loading = false)
+                // Việc 1 (v0.23.5): nếu người dùng đã bật Chapter Clipper cho
+                // tab này, tự tiêm lại ở MỌI trang mới (kể cả next-chapter tự
+                // động) — không bắt người dùng bấm lại nút mỗi lần chuyển trang.
+                if (chapterClipperEnabledTabs.contains(tabId)) {
+                    injectChapterClipperInto(view)
+                }
             }
 
             override fun doUpdateVisitedHistory(

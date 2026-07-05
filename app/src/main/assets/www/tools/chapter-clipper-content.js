@@ -942,6 +942,7 @@
   }
 
   injectPagePopupBlocker();
+  console.debug("[Chapter Clipper] Đã bật chặn quảng cáo/popup cho trang này.");
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", () => {
@@ -966,4 +967,22 @@
   setTimeout(() => {
     if (document.body) observer.observe(document.body, { childList: true, subtree: true });
   }, 1000);
+
+  // ------------------------------------------------------------------
+  // Hook dùng chung với reader.js (trySharedChapterExtraction() trong
+  // reader.js đã chủ động tìm window.LqlqChapterExtractor/LqlqChapterClipper/
+  // ShieldChapterClipper). Chỉ tái sử dụng logic trích xuất+dọn dẹp text đã
+  // có ở trên (extractCurrentChapter) — KHÔNG lưu file, KHÔNG đụng vào
+  // batch/autoRun hiện tại (không side-effect).
+  // ------------------------------------------------------------------
+  window.LqlqChapterClipper = window.LqlqChapterClipper || {};
+  window.LqlqChapterClipper.extractCurrentChapter = function () {
+    const ch = extractCurrentChapter();
+    return {
+      title: ch.storyTitle,
+      chapterTitle: ch.chapterTitle,
+      text: ch.body,
+      url: ch.url
+    };
+  };
 })();
