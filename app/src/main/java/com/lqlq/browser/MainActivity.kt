@@ -151,6 +151,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var assetLoader: WebViewAssetLoader
     private var ttsBridge: TtsBridge? = null
     private lateinit var shellBridge: ShellBridge
+    private lateinit var pageBridge: PageBridge
 
     private val htmlFileLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -291,12 +292,10 @@ class MainActivity : AppCompatActivity() {
 
         ttsBridge = TtsBridge(applicationContext)
         shellBridge = ShellBridge(this)
+        pageBridge = PageBridge { currentPageWebView() }
         shellWebView.addJavascriptInterface(shellBridge, "LqlqAndroid")
         shellWebView.addJavascriptInterface(ttsBridge!!, "LqlqTtsBridge")
-        shellWebView.addJavascriptInterface(
-            PageBridge { currentPageWebView() },
-            "LqlqPageBridge"
-        )
+        shellWebView.addJavascriptInterface(pageBridge, "LqlqPageBridge")
 
         shellWebView.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(
@@ -422,6 +421,22 @@ class MainActivity : AppCompatActivity() {
         currentPageWebView()?.reload()
     }
 
+    /**
+     * Việc "Lấy chương đang mở" (v0.23.28): gọi từ ShellBridge khi người
+     * dùng bấm nút trong Đọc TXT — chạy bất đồng bộ (không CountDownLatch
+     * chặn luồng), tránh treo/timeout âm thầm của bản @JavascriptInterface
+     * đồng bộ cũ. Kết quả trả về reader.js qua LqlqGlue.onChapterExtracted().
+     */
+    fun extractChapterForReader() {
+        pageBridge.extractCurrentChapterAsync { json ->
+            val safeJson = if (json.isBlank()) "null" else JSONObject.quote(json)
+            shellWebView.evaluateJavascript(
+                "window.LqlqGlue && LqlqGlue.onChapterExtracted($safeJson);",
+                null
+            )
+        }
+    }
+
     // ------------------------------------------------------------------
     // Việc 4 (v0.23.4): Chapter Clipper — content-script thật, tiêm trực
     // tiếp vào WebView của trang web đang mở (không round-trip qua
@@ -511,7 +526,17 @@ $js
      * — không tiêm script này vào các trang đó, thay vì chỉ tắt 1 phần bên
      * trong JS như trước.
      */
+    /**
+     * Việc (v0.23.28): lớp ẩn quảng cáo DOM (MutationObserver, tốn CPU trên
+     * trang nhiều quảng cáo động) giờ có thể tắt riêng, MẶC ĐỊNH TẮT — khác
+     * với lớp chặn domain/redirect ở shouldOverrideUrlLoading/shouldInterceptRequest
+     * (luôn bật, không đổi). Đặt bởi ShellBridge.setAdblockDomEnabled().
+     */
+    @Volatile
+    var adblockDomEnabled: Boolean = false
+
     private fun injectAdblock(webView: WebView) {
+        if (!adblockDomEnabled) return
         if (isSearchOrAiToolHost(webView.url?.let { Uri.parse(it).host })) return
         try {
             val js = readAssetText("www/tools/adblock-content.js")

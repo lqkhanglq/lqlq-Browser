@@ -67,6 +67,33 @@ class PageBridge(
     @JavascriptInterface
     fun extractCurrentChapter(): String = unquote(runOnPage(EXTRACTOR_JS))
 
+    /**
+     * Việc "Lấy chương đang mở chưa lấy đúng nội dung" (v0.23.28): bản
+     * @JavascriptInterface đồng bộ ở trên phải CHỜ (CountDownLatch, tối đa
+     * 8s) trên luồng JavaBridge — nếu evaluateJavascript() vì lý do gì đó
+     * (trang nặng, WebView bận) không kịp gọi callback trong 8s, hàm trả về
+     * rỗng ÂM THẦM (không có lỗi gì cả), khiến reader.js tưởng nhầm là
+     * "không lấy được nội dung" hoặc rơi xuống nhánh dự phòng yếu hơn. Bản
+     * KHÔNG chặn này chạy đúng script trích xuất y hệt (EXTRACTOR_JS, thuật
+     * toán y hệt Chapter Clipper) nhưng KHÔNG có giới hạn 8 giây — dùng cho
+     * MainActivity gọi trực tiếp rồi trả kết quả về reader.js qua callback,
+     * giống hệt cách injectChapterClipper() vẫn dùng cho content-script thật.
+     */
+    fun extractCurrentChapterAsync(onResult: (String) -> Unit) {
+        mainHandler.post {
+            val webView = activePageWebView()
+            if (webView == null) {
+                onResult("")
+                return@post
+            }
+            try {
+                webView.evaluateJavascript(EXTRACTOR_JS) { value -> onResult(unquote(value)) }
+            } catch (_: Exception) {
+                onResult("")
+            }
+        }
+    }
+
     @JavascriptInterface
     fun getCurrentChapter(): String = extractCurrentChapter()
 

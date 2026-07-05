@@ -355,16 +355,24 @@ function openDrawer(type) {
 
     if (type === "adblock") {
       els.drawerTitle.textContent = "Bộ lọc quảng cáo";
+      // Việc (v0.23.28): tách 2 lớp chặn khác nhau — (1) chặn domain quảng
+      // cáo/nhảy trang LUÔN BẬT, không tắt được (đây là phần chính, đủ dùng
+      // để chặn quảng cáo tự chuyển hướng) — và (2) ẩn quảng cáo hiển thị
+      // trong DOM bằng MutationObserver, có thể TỐN CPU trên trang nhiều
+      // quảng cáo động, nên cho bật/tắt riêng, MẶC ĐỊNH TẮT cho mượt hơn.
+      const domEnabled = window.lqlqGetAdblockDomEnabled?.() ?? false;
       els.drawerContent.innerHTML = `
         <div class="info-panel">
-          <h3>Bộ lọc đang bật</h3>
-          <p>Chặn popup, tab quảng cáo, chuyển hướng và các miền quảng cáo phổ biến.</p>
-          <p><b>Trạng thái:</b> luôn bật.</p>
-          <p><b>Android:</b> đã thêm xử lý touch/pointer và liên kết mở ứng dụng/tab mới.</p>
-          <p class="offline-save-note">
-            Bản HTML chỉ chặn được nội dung trong chính tài liệu đang chạy.
-            Khi thành APK WebView, bộ chặn Android sẽ có thêm quyền chặn request mạng trước khi tải.
-          </p>
+          <h3>Chặn quảng cáo/chuyển hướng — luôn bật</h3>
+          <p>Chặn tự động nhảy sang domain lạ, tab/cửa sổ quảng cáo tự mở, và các miền quảng cáo phổ biến. Đây là phần chính, luôn hoạt động, không tắt được.</p>
+        </div>
+        <div class="info-panel">
+          <h3>Ẩn quảng cáo hiển thị trong trang (DOM)</h3>
+          <p>Quét và ẩn phần tử quảng cáo trên trang — có thể làm trang hơi chậm hơn ở các trang có nhiều quảng cáo tự nạp lại liên tục. Tắt đi nếu thấy duyệt web bị giật.</p>
+          <label class="reader-toggle-row" style="cursor:pointer">
+            <span class="reader-toggle-copy"><b>Ẩn quảng cáo trong trang</b><small>Mặc định tắt để mượt hơn</small></span>
+            <input type="checkbox" id="adblockDomToggle" ${domEnabled ? "checked" : ""} onchange="window.lqlqSetAdblockDomEnabled(this.checked)">
+          </label>
         </div>
       `;
       return;

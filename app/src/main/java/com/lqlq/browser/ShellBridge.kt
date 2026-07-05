@@ -84,6 +84,21 @@ class ShellBridge(private val activity: MainActivity) {
         activity.runOnUiThread { activity.injectChapterClipper() }
     }
 
+    @JavascriptInterface
+    fun extractChapterForReader() {
+        activity.runOnUiThread { activity.extractChapterForReader() }
+    }
+
+    /**
+     * Việc (v0.23.28): bật/tắt lớp ẩn quảng cáo DOM — mặc định TẮT (đặt ở
+     * MainActivity.adblockDomEnabled, khởi tạo false). Lớp chặn domain/
+     * redirect (native, luôn bật) không bị ảnh hưởng bởi cờ này.
+     */
+    @JavascriptInterface
+    fun setAdblockDomEnabled(enabled: Boolean) {
+        activity.adblockDomEnabled = enabled
+    }
+
     /**
      * Đồng bộ (không cần runOnUiThread callback riêng) vì WebView JS→Java
      * hỗ trợ giá trị trả về ngay khi gọi cùng luồng UI; dùng để cập nhật

@@ -313,9 +313,64 @@
     }
   }
 
+  // Việc "Lấy chương đang mở chưa lấy đúng nội dung" (v0.23.28): đường
+  // native.extractCurrentChapter() cũ chờ ĐỒNG BỘ (CountDownLatch, tối đa
+  // 8s) trên luồng JavaBridge — nếu timeout, trả rỗng ÂM THẦM không có lỗi
+  // gì, khiến reader.js rơi xuống bộ lọc dự phòng yếu hơn hoặc báo không có
+  // nội dung, dù trang thực sự có chương. Đường mới gọi
+  // native.extractChapterForReader() (bất đồng bộ, không giới hạn 8s, chạy
+  // ĐÚNG thuật toán y hệt Chapter Clipper) rồi lắng nghe sự kiện
+  // "lqlq-chapter-extracted" mà android-glue.js phát ra khi có kết quả.
+  function extractCurrentWebPageAsync(nativeAndroid) {
+    ui.nativeHint.textContent = "Đang lấy nội dung chương…";
+    let done = false;
+    let timeoutId = 0;
+
+    const onEvent = event => {
+      if (done) return;
+      done = true;
+      window.removeEventListener("lqlq-chapter-extracted", onEvent);
+      clearTimeout(timeoutId);
+      const payload = event.detail ? parseNativePayload(event.detail) : null;
+      if (payload && setPayload(payload, "Chương đang mở")) {
+        state.nativeMode = true;
+        ui.nativeHint.textContent = "Đã lấy chương bằng cùng bộ máy với Chapter Clipper.";
+      } else {
+        ui.nativeHint.textContent = "Không lấy được nội dung chương từ trang này.";
+        notify("Không lấy được nội dung chương từ trang này.", "warning");
+      }
+    };
+
+    timeoutId = setTimeout(() => {
+      if (done) return;
+      done = true;
+      window.removeEventListener("lqlq-chapter-extracted", onEvent);
+      ui.nativeHint.textContent = "Lấy chương quá thời gian chờ — hãy thử lại.";
+      notify("Lấy chương quá thời gian chờ, hãy thử lại.", "warning");
+    }, 15000);
+
+    window.addEventListener("lqlq-chapter-extracted", onEvent);
+    try {
+      nativeAndroid.extractChapterForReader();
+    } catch (error) {
+      done = true;
+      clearTimeout(timeoutId);
+      window.removeEventListener("lqlq-chapter-extracted", onEvent);
+      notify("Không gọi được cầu nối lấy chương.", "error");
+    }
+  }
+
   function extractCurrentWebPage() {
     stopSpeech();
 
+    const nativeAndroid = window.LqlqAndroid;
+    if (nativeAndroid && typeof nativeAndroid.extractChapterForReader === "function") {
+      extractCurrentWebPageAsync(nativeAndroid);
+      return;
+    }
+
+    // Dự phòng khi không có cầu nối native (vd mở HTML trực tiếp bằng
+    // trình duyệt máy tính để xem trước giao diện).
     const sharedPayload = trySharedChapterExtraction();
 
     if (

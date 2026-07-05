@@ -18,6 +18,36 @@
   }
 
   // ==================================================================
+  // 0b. Bật/tắt lớp ẩn quảng cáo DOM (v0.23.28) — MẶC ĐỊNH TẮT cho mượt.
+  //     Lớp chặn domain/redirect (native, luôn bật) KHÔNG bị ảnh hưởng bởi
+  //     công tắc này — đây chỉ tắt phần quét/ẩn phần tử quảng cáo trong DOM
+  //     (MutationObserver), vốn có thể tốn CPU trên trang nhiều quảng cáo
+  //     động.
+  // ==================================================================
+  const ADBLOCK_DOM_KEY = "lqlqAdblockDomEnabledV1";
+
+  window.lqlqGetAdblockDomEnabled = () => {
+    try {
+      return localStorage.getItem(ADBLOCK_DOM_KEY) === "1";
+    } catch {
+      return false;
+    }
+  };
+
+  window.lqlqSetAdblockDomEnabled = enabled => {
+    safeCall(() => {
+      try {
+        localStorage.setItem(ADBLOCK_DOM_KEY, enabled ? "1" : "0");
+      } catch {}
+      native.setAdblockDomEnabled?.(Boolean(enabled));
+    });
+  };
+
+  // Báo cho native biết trạng thái ngay khi shell nạp xong, vì mặc định
+  // native cũng để tắt — chỉ cần đồng bộ khi người dùng đã từng bật trước đó.
+  safeCall(() => native.setAdblockDomEnabled?.(window.lqlqGetAdblockDomEnabled()));
+
+  // ==================================================================
   // 1. Điều hướng: nối giao diện với WebView trang web thật
   // ==================================================================
 
@@ -218,6 +248,16 @@
     onOfflinePageSaved(info) {
       safeCall(() => {
         window.LqlqSavedPages?.attachOfflineUri?.(info.url, info.offlineUri, info.title);
+      });
+    },
+
+    // Việc "Lấy chương đang mở" (v0.23.28): kết quả trích xuất BẤT ĐỒNG BỘ
+    // (native.extractChapterForReader(), không còn CountDownLatch chặn luồng
+    // dễ timeout âm thầm) — phát sự kiện để reader.js tự lắng nghe, không
+    // ràng buộc trực tiếp 2 file với nhau.
+    onChapterExtracted(json) {
+      safeCall(() => {
+        window.dispatchEvent(new CustomEvent("lqlq-chapter-extracted", { detail: json }));
       });
     },
 
