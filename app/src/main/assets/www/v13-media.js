@@ -179,9 +179,51 @@
   function syncVolume(value) {
     state.volume = Math.max(0, Math.min(1, Number(value)));
     refs.htmlPlayer.volume = state.volume;
-    refs.miniVideo.volume = state.volume;
+    // KHÔNG bao giờ đồng bộ volume của mini theo state.volume — mini phải
+    // luôn câm hẳn (volume=0 + muted=true), nếu không sẽ vô tình chồng tiếng
+    // dù .muted đã bật (đây là lỗi thật gây phát 2 lần từng bị báo trước đó).
+    refs.miniVideo.volume = 0;
+    refs.miniVideo.muted = true;
     refs.volume.value = String(Math.round(state.volume * 100));
     refs.volumeLabel.textContent = `${Math.round(state.volume * 100)}%`;
+  }
+
+  // Cả 2 khung YouTube (chính + mini) trước đây cùng nhận src với
+  // autoplay=1 → CẢ HAI cùng phát có tiếng cùng lúc, nghe như 1 bài hát
+  // chồng lặp 2 lần (khác với video/audio trực tiếp dùng <video> tag, vốn
+  // xử lý bằng cách tắt tiếng bản mini). YouTube iframe không cho JS ngoài
+  // đọc/ghi thuộc tính muted trực tiếp — phải dùng IFrame Player API qua
+  // postMessage (enablejsapi=1 đã bật sẵn ở youtubeEmbedUrl()).
+  function postYoutubeCommand(iframe, func) {
+    try {
+      iframe?.contentWindow?.postMessage(
+        JSON.stringify({ event: "command", func, args: [] }),
+        "*"
+      );
+    } catch {}
+  }
+
+  function retryYoutubeCommand(iframe, func) {
+    // Player bên trong iframe cần một chút thời gian để sẵn sàng nhận lệnh
+    // postMessage sau khi vừa gán src — gửi lặp lại vài lần trong ~2.4s để
+    // không bị lỡ nếu gửi quá sớm.
+    let attempts = 0;
+    postYoutubeCommand(iframe, func);
+    const timer = setInterval(() => {
+      postYoutubeCommand(iframe, func);
+      attempts++;
+      if (attempts >= 6) clearInterval(timer);
+    }, 400);
+  }
+
+  // Chỉ ĐÚNG 1 trong 2 khung được phép phát tiếng tại một thời điểm — khung
+  // còn lại luôn bị mute qua postMessage, không bao giờ để cả 2 cùng có tiếng.
+  function focusYoutubeAudio(mini) {
+    if (state.type !== "youtube") return;
+    const audible = mini ? refs.miniYoutube : refs.youtube;
+    const silent = mini ? refs.youtube : refs.miniYoutube;
+    retryYoutubeCommand(silent, "mute");
+    retryYoutubeCommand(audible, "unMute");
   }
 
   function loadYoutube(id) {
@@ -224,8 +266,11 @@
     refs.miniVideo.src = source;
     refs.htmlPlayer.muted = false;
     // Trình phát mini chỉ là hình ảnh phản chiếu — phải luôn tắt tiếng,
-    // nếu không âm thanh sẽ phát 2 lần chồng lên nhau.
+    // nếu không âm thanh sẽ phát 2 lần chồng lên nhau. Đặt cả muted VÀ
+    // volume=0 (một số bản WebView không tôn trọng .muted đáng tin cậy cho
+    // phần tử video đang ẩn/không hiển thị).
     refs.miniVideo.muted = true;
+    refs.miniVideo.volume = 0;
     syncVolume(state.volume);
 
     show(refs.htmlPlayer);
@@ -334,12 +379,14 @@
     refs.mini.classList.toggle("collapsed", collapsed);
     refs.collapsed.classList.toggle("hidden", !collapsed);
     hide(refs.overlay);
+    focusYoutubeAudio(true);
   }
 
   function restoreCenter() {
     refs.mini.classList.remove("collapsed");
     hide(refs.mini);
     show(refs.overlay);
+    focusYoutubeAudio(false);
   }
 
   function toggleAudioOnly() {
@@ -446,7 +493,13 @@
       } catch {}
     }
 
-    target.volume = sourcePlayer.volume;
+    // Mini phải luôn câm hẳn — không đồng bộ volume của nguồn sang mini.
+    if (target === refs.miniVideo) {
+      target.volume = 0;
+      target.muted = true;
+    } else {
+      target.volume = sourcePlayer.volume;
+    }
   }
 
   function installMediaSession() {

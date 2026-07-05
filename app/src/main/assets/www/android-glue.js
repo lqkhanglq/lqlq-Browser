@@ -336,17 +336,33 @@
 
   function sendMediaState() {
     safeCall(() => {
-      const players = allAudiblePlayers();
-      const playing = players.some(player => !player.paused && !player.ended);
-      const started = players.some(
-        player => player.currentTime > 0 && !player.ended
-      );
-      const payload = JSON.stringify({
-        active: playing || started,
-        playing,
-        title: ($("mediaNowTitle")?.textContent || "Nhạc và video nền").trim(),
-        text: ($("mediaNowSubtitle")?.textContent || "").trim().slice(0, 160)
-      });
+      // Ưu tiên đọc trạng thái thật từ window.ShieldMedia (v13-media.js) —
+      // đây là nguồn ĐÚNG vì bao quát cả YouTube (chạy trong iframe, KHÔNG
+      // có thẻ <audio>/<video> để quét DOM được) lẫn media trực tiếp. Quét
+      // DOM chỉ dùng làm dự phòng nếu vì lý do gì đó module media chưa nạp.
+      const shieldMedia = window.ShieldMedia;
+      let active;
+      let playing;
+      let title;
+      let text;
+
+      if (shieldMedia && shieldMedia.state && shieldMedia.state.type !== "none") {
+        active = true;
+        playing = Boolean(shieldMedia.state.isPlaying);
+        title = shieldMedia.state.title || "Nhạc và video nền";
+        text = shieldMedia.state.subtitle || "";
+      } else {
+        const players = allAudiblePlayers();
+        playing = players.some(player => !player.paused && !player.ended);
+        const started = players.some(
+          player => player.currentTime > 0 && !player.ended
+        );
+        active = playing || started;
+        title = ($("mediaNowTitle")?.textContent || "Nhạc và video nền").trim();
+        text = ($("mediaNowSubtitle")?.textContent || "").trim().slice(0, 160);
+      }
+
+      const payload = JSON.stringify({ active, playing, title, text: String(text).slice(0, 160) });
       if (payload === lastMediaJson) return;
       lastMediaJson = payload;
       native.onMediaState(payload);
