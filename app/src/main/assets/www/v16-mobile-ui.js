@@ -321,9 +321,30 @@
 
     try {
       renderMobileTabs();
+      // Việc "vẫn trống dù đang có nhiều thẻ" (v0.23.35): đã qua nhiều vòng
+      // sửa (v0.23.27/31-34) mà vẫn có báo cáo trống hoàn toàn khi đang xem
+      // 1 trang web thật, dù không hề throw lỗi gì (không thấy cả thông báo
+      // "Không thể tải danh sách thẻ"). Thêm kiểm tra ĐỐI CHIẾU: nếu
+      // profile.tabs thực sự có thẻ nhưng lưới lại không có card nào được
+      // tạo ra (mâu thuẫn), hiện rõ SỐ LƯỢNG THẺ THỰC TẾ + trạng thái để có
+      // manh mối chẩn đoán thật, thay vì im lặng trống trơn không dấu vết.
+      const actualTabCount = currentProfile().tabs.length;
+      const cardCount = refs.grid.querySelectorAll(".mobile-tab-card").length;
+      if (actualTabCount > 0 && cardCount === 0 && !refs.grid.querySelector(".mobile-tab-card-empty")) {
+        refs.grid.innerHTML = `<div class="mobile-tab-card-empty" style="grid-column:1/-1;text-align:center;padding:24px 8px;color:#89958d;font-size:12px;">Có ${actualTabCount} thẻ trong dữ liệu nhưng lưới không tạo được thẻ nào (lỗi hiển thị — vui lòng chụp màn hình này báo lại).</div>`;
+      } else if (cardCount > 0 && refs.grid.offsetHeight < 10) {
+        // Card CÓ được tạo ra (đúng số lượng) nhưng vùng lưới bị co lại gần
+        // như 0px chiều cao — đây là dấu hiệu lỗi CSS/layout (kích thước bị
+        // sập), không phải thiếu dữ liệu. Hiện rõ để phân biệt 2 loại lỗi.
+        const note = document.createElement("div");
+        note.style.cssText = "grid-column:1/-1;text-align:center;padding:8px;color:#c0392b;font-size:11px;background:#fff3f0;border-radius:8px;";
+        note.textContent = `Cảnh báo: ${cardCount} thẻ đã tạo nhưng vùng lưới cao ${refs.grid.offsetHeight}px (lỗi co layout) — vui lòng chụp màn hình này báo lại.`;
+        refs.grid.prepend(note);
+      }
     } catch (error) {
       console.warn("lqlq mobile tabs:", error);
-      refs.grid.innerHTML = `<div class="mobile-tab-card-empty" style="grid-column:1/-1;text-align:center;padding:24px 8px;color:#89958d;font-size:12px;">Không thể tải danh sách thẻ.</div>`;
+      const message = escapeHtml(String(error?.message || error));
+      refs.grid.innerHTML = `<div class="mobile-tab-card-empty" style="grid-column:1/-1;text-align:center;padding:24px 8px;color:#89958d;font-size:12px;">Không thể tải danh sách thẻ: ${message}</div>`;
     }
   }
 
