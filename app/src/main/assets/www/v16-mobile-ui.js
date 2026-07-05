@@ -193,20 +193,13 @@
       preview.style.background = `linear-gradient(180deg, hsl(${hue} 45% 94%), hsl(${hue} 35% 88%))`;
       preview.innerHTML = `<span>${escapeHtml(faviconLetter(tab))}</span>`;
 
-      // Việc "ảnh xem trước giống Chrome" (v0.23.31): dùng ảnh chụp THẬT của
-      // WebView (native đã chụp sẵn trong bộ nhớ, không tải mạng) nếu có —
-      // giống hệt cách Chrome cache snapshot mỗi tab. Nếu tab chưa từng
-      // render xong (chưa có ảnh), giữ nguyên gradient+chữ cái làm dự phòng.
-      try {
-        const thumbnail = window.LqlqAndroid?.getTabThumbnail?.(String(tab.id));
-        if (thumbnail) {
-          preview.style.backgroundImage = `url("${thumbnail}")`;
-          preview.style.backgroundSize = "cover";
-          preview.style.backgroundPosition = "top center";
-          preview.querySelector("span")?.remove();
-        }
-      } catch {}
-
+      // Việc "vẫn lag/trống" (v0.23.34): BỎ HẲN việc gọi native.getTabThumbnail()
+      // — đây là nguồn gốc bất ổn nhất qua 3 lần vá liên tiếp (v0.23.31/32/33)
+      // mà vẫn còn báo lỗi mới ("trống hoàn toàn, không cả thẻ nào"), rất có
+      // thể do gọi cầu nối native N lần đồng bộ trong 1 vòng lặp render khi
+      // đang có trang web thật hiển thị. Quay lại icon chữ+màu cục bộ (không
+      // native, không mạng) — kém đẹp hơn ảnh thật nhưng ĐÁNG TIN CẬY tuyệt
+      // đối, đúng ưu tiên người dùng yêu cầu (mượt/ổn định hơn là đẹp).
       if (tab.id === profile.activeTabId) {
         const activeBadge = document.createElement("span");
         activeBadge.className = "mobile-tab-active-badge";
@@ -436,13 +429,12 @@
     }, 180);
   });
 
-  let tabsListMode = false;
-  refs.viewToggle?.addEventListener("click", () => {
-    tabsListMode = !tabsListMode;
-    refs.grid.classList.toggle("list-mode", tabsListMode);
-    refs.viewToggle.textContent = tabsListMode ? "☰" : "▦";
-    refs.viewToggle.title = tabsListMode ? "Xem dạng lưới" : "Xem dạng danh sách";
-  });
+  // Việc "Các thẻ đang mở vẫn lag/trống" (v0.23.34): người dùng yêu cầu bỏ
+  // hẳn cách/logic cũ thay vì tiếp tục vá — bỏ nút đổi chế độ lưới/danh
+  // sách (nguồn gây lỗi "trống tiêu đề" ở list-mode vừa sửa xong lại phát
+  // sinh thêm báo lỗi mới), chỉ còn ĐÚNG 1 chế độ lưới đơn giản, giống
+  // Chrome, giảm bề mặt lỗi.
+  if (refs.viewToggle) refs.viewToggle.style.display = "none";
 
   refs.overlay.addEventListener("click", event => {
     if (event.target === refs.overlay) {

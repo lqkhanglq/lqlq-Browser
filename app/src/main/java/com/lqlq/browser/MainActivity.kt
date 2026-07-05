@@ -433,10 +433,14 @@ class MainActivity : AppCompatActivity() {
         activeTabId?.let { pageWebViews[it] }
 
     /** Chụp ảnh xem trước của tab đang rời đi TRƯỚC KHI chuyển sang tab khác. */
+    /**
+     * Việc "vẫn lag/trống" (v0.23.34): TẮT HẲN việc chụp ảnh xem trước —
+     * JS (v16-mobile-ui.js) không còn gọi getTabThumbnail() nữa (quay lại
+     * icon chữ+màu cục bộ, đáng tin cậy hơn), nên việc tiếp tục chụp bitmap
+     * ở đây chỉ tốn tài nguyên vô ích, không còn ai dùng kết quả.
+     */
     private fun captureOutgoingTabThumbnail() {
-        val outgoingId = activeTabId ?: return
-        val outgoingView = pageWebViews[outgoingId] ?: return
-        captureTabThumbnail(outgoingId, outgoingView)
+        // Không làm gì — xem ghi chú ở trên.
     }
 
     fun openPage(tabId: String, url: String) {
