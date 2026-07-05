@@ -638,20 +638,34 @@ $js
                     return true
                 }
 
-                // Việc (v0.23.13): chặn TUYỆT ĐỐI mọi điều hướng sang domain
-                // khác domain gốc hiện tại của TAB, KHÔNG xét gesture nữa —
-                // giống hệt cách metruyenchu_clipper_android_project chỉ
-                // whitelist 1 domain và chặn mọi thứ khác vô điều kiện. Lý do
-                // bỏ ngoại lệ gesture: quảng cáo hay dùng lớp phủ vô hình để
-                // "đánh cắp" đúng cú chạm thật của người dùng, nên hasGesture
-                // = true không còn đáng tin để phân biệt bấm thật hay bị lừa.
+                // Việc (v0.23.13 + v0.23.16): chặn TUYỆT ĐỐI mọi điều hướng
+                // TOÀN TRANG (main frame) sang domain khác domain gốc hiện
+                // tại của TAB, KHÔNG xét gesture nữa — giống hệt cách
+                // metruyenchu_clipper_android_project chỉ whitelist 1 domain
+                // và chặn mọi thứ khác vô điều kiện. Lý do bỏ ngoại lệ
+                // gesture: quảng cáo hay dùng lớp phủ vô hình để "đánh cắp"
+                // đúng cú chạm thật của người dùng.
+                //
+                // CHỈ áp dụng cho main frame (request.isForMainFrame) — nhiều
+                // trang (kể cả Google) dùng điều hướng NỘI BỘ trong khung con
+                // (iframe) sang domain khác cho chức năng chính đáng (ô tìm
+                // kiếm, gợi ý...); chặn cả sub-frame từng làm hỏng hộp tìm
+                // kiếm của Google.
+                //
+                // Miễn trừ 2 chiều với công cụ tìm kiếm/AI (isSearchOrAiToolHost):
+                // bỏ qua khi đang Ở ĐÓ (bấm ra ngoài từ kết quả tìm kiếm) HOẶC
+                // đang quay VỀ ĐÓ từ trang khác (bấm nút back trên Google, hay
+                // trang có link quay lại Google/ChatGPT) — trước đây chỉ xét 1
+                // chiều nên "quay lại Google" từ trang khác vẫn bị chặn.
+                //
                 // Điều hướng CHỦ ĐỘNG sang domain khác (gõ địa chỉ mới, bấm
                 // liên kết nhanh ở trang chủ) vẫn luôn được vì đi qua
                 // openPage() — nơi đã tự cập nhật tabRootDomain thành domain
                 // mới TRƯỚC khi gọi loadUrl(), nên không bị chặn nhầm ở đây.
                 val safeHost = tabRootDomain[tabId]
                 val targetHost = request.url.host
-                if (!isSearchOrAiToolHost(safeHost) &&
+                if (request.isForMainFrame &&
+                    !isSearchOrAiToolHost(safeHost) && !isSearchOrAiToolHost(targetHost) &&
                     !safeHost.isNullOrEmpty() && !targetHost.isNullOrEmpty() &&
                     !isSameRootDomain(safeHost, targetHost)
                 ) {
@@ -689,7 +703,7 @@ $js
 
                 if (!blockedByList && request.isForMainFrame) {
                     val safeHost = tabRootDomain[tabId]
-                    if (!isSearchOrAiToolHost(safeHost) &&
+                    if (!isSearchOrAiToolHost(safeHost) && !isSearchOrAiToolHost(targetHost) &&
                         !safeHost.isNullOrEmpty() && !targetHost.isNullOrEmpty() &&
                         !isSameRootDomain(safeHost, targetHost)
                     ) {
