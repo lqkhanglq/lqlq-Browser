@@ -1191,8 +1191,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun updateYoutubePictureInPictureParams() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+    private fun buildYoutubePictureInPictureParams(): PictureInPictureParams {
         val builder = PictureInPictureParams.Builder()
             .setAspectRatio(Rational(16, 9))
         if (::shellWebView.isInitialized) {
@@ -1205,8 +1204,13 @@ class MainActivity : AppCompatActivity() {
             builder.setAutoEnterEnabled(youtubePipActive && youtubePipPlaying)
             builder.setSeamlessResizeEnabled(true)
         }
+        return builder.build()
+    }
+
+    private fun updateYoutubePictureInPictureParams() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         try {
-            setPictureInPictureParams(builder.build())
+            setPictureInPictureParams(buildYoutubePictureInPictureParams())
         } catch (_: Exception) {
         }
     }
@@ -1226,9 +1230,8 @@ class MainActivity : AppCompatActivity() {
     private fun enterYoutubePipNow() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || isDestroyed) return
         if (isInPictureInPictureMode) return
-        updateYoutubePictureInPictureParams()
         try {
-            enterPictureInPictureMode(pictureInPictureParams)
+            enterPictureInPictureMode(buildYoutubePictureInPictureParams())
         } catch (_: Exception) {
             Toast.makeText(this, "Không thể mở Picture-in-Picture.", Toast.LENGTH_SHORT).show()
         }
