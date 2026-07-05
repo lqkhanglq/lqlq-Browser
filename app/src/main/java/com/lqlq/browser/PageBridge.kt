@@ -105,106 +105,253 @@ class PageBridge(
 
     companion object {
         /**
-         * Thuật toán trích chương tự chứa, chạy trong ngữ cảnh trang web.
-         * Trả về chuỗi JSON: storyTitle, chapterTitle, chapterNumber, body,
-         * url, charCount.
+         * Việc "Đọc TXT lấy chương chưa sạch" (v0.23.9): thuật toán cũ ở đây
+         * (BAD-selector generic) yếu hơn nhiều so với bộ máy trích xuất thật
+         * dùng trong Chapter Clipper (extractByPageBoundaries +
+         * extractByContainerFallback trong chapter-clipper-content.js).
+         * reader.js chạy trong shellWebView nên KHÔNG thể gọi thẳng
+         * window.LqlqChapterClipper của trang thật (khác WebView = khác JS
+         * realm) — PageBridge là đường ĐÚNG để tái sử dụng logic đó, vì
+         * evaluateJavascript chạy ngay trong ngữ cảnh trang thật. Cổng y hệt
+         * thuật toán trong chapter-clipper-content.js để 2 nơi cho cùng 1
+         * chất lượng trích xuất.
          */
         private val EXTRACTOR_JS = """
 (function () {
   try {
-    var BAD = /(^|[-_ ])(nav|menu|header|footer|sidebar|comment|breadcrumb|share|social|related|recommend|banner|advert|ads?|qc|quangcao|popup|login|paging|pagination|toolbar|button|btn)([-_ ]|${'$'})/i;
-
-    function textLen(node) {
-      return (node.innerText || "").replace(/\s+/g, " ").trim().length;
-    }
-
-    function isVisible(el) {
-      var style = window.getComputedStyle(el);
-      return style && style.display !== "none" && style.visibility !== "hidden";
-    }
-
-    var candidates = [];
-    var selectors = [
-      "#chapter-content", ".chapter-content", "#chapter-c", ".chapter-c",
-      "#content", ".content", ".reading-content", ".entry-content",
-      ".post-content", "article", "#article", ".article", "main",
-      ".box-chap", ".truyen", "#noidung", ".noidung"
+    var DROP_LINE_PATTERNS = [
+      /^Mê\s*Truyện\s*Chữ${'$'}/i, /^Danh\s+sách${'$'}/i, /^Thể\s+loại${'$'}/i,
+      /^Tìm\s+kiếm\s+truyện/i, /^Chương\s+trước${'$'}/i, /^Chương\s+tiếp${'$'}/i,
+      /^《?\s*Chương\s+trước\s*${'$'}/i, /^Chương\s+tiếp\s*》?${'$'}/i,
+      /^《\s*Chương\s+trước${'$'}/i, /^Tải\s+Ebook${'$'}/i, /^Báo\s+lỗi${'$'}/i,
+      /^Bình\s+luận${'$'}/i, /^Activate\s+Windows/i, /^Go\s+to\s+Settings/i,
+      /^SIÊU/i, /^\d+\s+chương${'$'}/i, /^©/i, /^Menu${'$'}/i, /^Trang chủ${'$'}/i,
+      /^Toggle navigation${'$'}/i
     ];
-    selectors.forEach(function (sel) {
-      document.querySelectorAll(sel).forEach(function (el) {
-        candidates.push(el);
-      });
-    });
-    document.querySelectorAll("div,section").forEach(function (el) {
-      if (textLen(el) > 800) candidates.push(el);
-    });
+    var TOP_UI_PATTERNS = [
+      /^Mê\s*Truyện\s*Chữ${'$'}/i, /^Danh\s+sách${'$'}/i, /^Thể\s+loại${'$'}/i,
+      /^Tìm\s+kiếm\s+truyện/i, /^Nữ\s+Đế/i, /^Chương\s+\d+/i,
+      /^Chương\s+trước${'$'}/i, /^Chương\s+tiếp${'$'}/i, /^《?\s*Chương\s+trước/i,
+      /^Chương\s+tiếp\s*》?${'$'}/i, /^Tải\s+Ebook${'$'}/i, /^Menu${'$'}/i,
+      /^Trang chủ${'$'}/i, /^Toggle navigation${'$'}/i
+    ];
+    var END_PATTERNS = [
+      /^《?\s*Chương\s+trước/i, /^Chương\s+tiếp\s*》?${'$'}/i,
+      /^Bạn có thể dùng phím/i, /^Báo lỗi${'$'}/i, /^Bình luận${'$'}/i,
+      /^TRUYỆN HOT/i, /^Truyện hot/i, /^Danh sách truyện/i,
+      /^Truyện đề cử/i, /^Có thể bạn thích/i, /^Mời bạn đọc/i,
+      /^Các truyện/i, /^Đọc truyện/i
+    ];
 
-    var best = null;
-    var bestScore = 0;
-    candidates.forEach(function (el) {
-      if (!isVisible(el)) return;
-      var id = (el.id || "") + " " + (el.className || "");
-      if (BAD.test(id)) return;
-      var len = textLen(el);
-      if (len < 200) return;
-      var pCount = el.querySelectorAll("p,br").length;
-      var linkLen = 0;
-      el.querySelectorAll("a").forEach(function (a) {
-        linkLen += (a.innerText || "").length;
-      });
-      var linkDensity = len ? linkLen / len : 1;
-      if (linkDensity > 0.4) return;
-      var depthPenalty = 0;
-      var parent = el.parentElement;
-      var depth = 0;
-      while (parent && depth < 20) { depth++; parent = parent.parentElement; }
-      var score = len + pCount * 30 - depth * 5 - linkDensity * len * 0.5;
-      if (score > bestScore) { bestScore = score; best = el; }
-    });
-
-    if (!best) best = document.body;
-
-    var clone = best.cloneNode(true);
-    clone.querySelectorAll(
-      "script,style,noscript,iframe,nav,header,footer,form,button,select,input," +
-      "[class*='ad' i],[id*='ad' i],[class*='banner' i],[class*='share' i]," +
-      "[class*='comment' i],[id*='comment' i],[class*='recommend' i]"
-    ).forEach(function (el) { el.remove(); });
-
-    clone.querySelectorAll("br").forEach(function (br) {
-      br.replaceWith(document.createTextNode("\n"));
-    });
-    clone.querySelectorAll("p,div,h1,h2,h3,h4,li").forEach(function (el) {
-      el.append(document.createTextNode("\n"));
-    });
-
-    var body = (clone.innerText || clone.textContent || "")
-      .replace(/\u00a0/g, " ")
-      .split(/\n+/)
-      .map(function (line) { return line.replace(/\s+/g, " ").trim(); })
-      .filter(function (line) { return line.length > 0; })
-      .join("\n\n");
-
-    var heading = document.querySelector("h1,h2,.chapter-title,#chapter-title,.chapter_title");
-    var chapterTitle = heading ? (heading.innerText || "").trim() : "";
-    var pageTitle = (document.title || "").trim();
-    if (!chapterTitle) {
-      var match = pageTitle.match(/ch[uươ][ơo]?ng\s*\d+[^|–-]*/i);
-      chapterTitle = match ? match[0].trim() : pageTitle;
+    function normalizeLine(s) {
+      return String(s || "").replace(/ /g, " ").replace(/[ \t\f\v]+/g, " ").trim();
     }
-    var numMatch = (chapterTitle + " " + pageTitle).match(/ch[uươ][ơo]?ng\s*(\d+)/i);
-    var chapterNumber = numMatch ? parseInt(numMatch[1], 10) : 0;
 
-    var storyTitle = pageTitle
-      .replace(chapterTitle, "")
-      .replace(/^[\s|–—:-]+|[\s|–—:-]+${'$'}/g, "")
-      .trim() || pageTitle;
+    function bodyTextLines() {
+      var raw = document.body ? (document.body.innerText || document.body.textContent || "") : "";
+      return raw.replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/ /g, " ")
+        .split("\n").map(normalizeLine);
+    }
+
+    function getStoryTitle() {
+      var breadcrumb = Array.from(document.querySelectorAll(
+        ".breadcrumb a, .breadcrumb span, [class*='breadcrumb'] a, [class*='breadcrumb'] span"
+      )).map(function (x) { return normalizeLine(x.innerText || x.textContent); }).filter(Boolean);
+      var good = breadcrumb.filter(function (x) {
+        return !/^Mê\s*Truyện\s*Chữ${'$'}/i.test(x) && !/^Chương\s+\d+/i.test(x);
+      });
+      if (good.length >= 1) return good[good.length - 1];
+      var headings = Array.from(document.querySelectorAll("h1"));
+      for (var i = 0; i < headings.length; i++) {
+        var t = normalizeLine(headings[i].innerText || headings[i].textContent);
+        if (t && !/^Chương\s+\d+/i.test(t)) return t;
+      }
+      return normalizeLine((document.title || "").split("|")[0].split("- Chương")[0]);
+    }
+
+    function getChapterTitle() {
+      var selectors = [
+        "h2", "h1", ".chapter-title", ".chapter-name", "[class*='chapter'][class*='title']",
+        "[class*='chapter'][class*='name']", ".title"
+      ];
+      for (var s = 0; s < selectors.length; s++) {
+        var nodes = Array.from(document.querySelectorAll(selectors[s]));
+        for (var n = 0; n < nodes.length; n++) {
+          var t = normalizeLine(nodes[n].innerText || nodes[n].textContent);
+          if (/^(Chương|Chuong|Chapter)\s*\d+/i.test(t)) return t;
+        }
+      }
+      var lines = bodyTextLines().slice(0, 50);
+      for (var l = 0; l < lines.length; l++) {
+        if (/^(Chương|Chuong|Chapter)\s*\d+/i.test(lines[l])) return lines[l];
+      }
+      var fromTitle = normalizeLine((document.title || "").split("|")[0]);
+      var m = fromTitle.match(/(Chương|Chuong|Chapter)\s*\d+[^-|]*/i);
+      if (m) return normalizeLine(m[0]);
+      var urlM = location.href.match(/chuong[-_\/]?(\d+)/i);
+      if (urlM) return "Chương " + parseInt(urlM[1], 10);
+      return "Chương chưa rõ số";
+    }
+
+    function getChapterNumber(title) {
+      var m1 = String(title || "").match(/(?:Chương|Chuong|Chapter)\s*0*(\d+)/i);
+      if (m1) return parseInt(m1[1], 10);
+      var m2 = location.href.match(/chuong[-_\/]?(\d+)/i);
+      if (m2) return parseInt(m2[1], 10);
+      return null;
+    }
+
+    function lineHasStoryTitle(line, storyTitle) {
+      if (!storyTitle) return false;
+      var a = normalizeLine(line).toLowerCase();
+      var b = normalizeLine(storyTitle).toLowerCase();
+      return a === b || a.indexOf(b) >= 0;
+    }
+
+    function isLikelyContentLine(line) {
+      if (!line) return false;
+      if (DROP_LINE_PATTERNS.some(function (p) { return p.test(line); })) return false;
+      if (TOP_UI_PATTERNS.some(function (p) { return p.test(line); })) return false;
+      if (!/[a-zA-ZÀ-ỹ]/.test(line)) return false;
+      if (line.length < 12) return false;
+      return true;
+    }
+
+    function cleanFinalLines(lines, chapterTitle, storyTitle) {
+      var out = [];
+      for (var i = 0; i < lines.length; i++) {
+        var line = normalizeLine(lines[i]);
+        if (!line) {
+          if (out.length && out[out.length - 1] !== "") out.push("");
+          continue;
+        }
+        if (DROP_LINE_PATTERNS.some(function (p) { return p.test(line); })) continue;
+        if (chapterTitle && line.toLowerCase() === chapterTitle.toLowerCase()) continue;
+        if (lineHasStoryTitle(line, storyTitle)) continue;
+        out.push(line);
+      }
+      return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+    }
+
+    function extractByPageBoundaries(chapterTitle, storyTitle) {
+      var lines = bodyTextLines();
+      var titleIndexes = [];
+      var chapNum = getChapterNumber(chapterTitle);
+      var exactTitle = normalizeLine(chapterTitle).toLowerCase();
+
+      for (var i = 0; i < Math.min(lines.length, 160); i++) {
+        var l = normalizeLine(lines[i]);
+        if (!l) continue;
+        var low = l.toLowerCase();
+        if (exactTitle && low === exactTitle) titleIndexes.push(i);
+        else if (chapNum != null && new RegExp("^chương\\s*0*" + chapNum + "\\b", "i").test(l)) titleIndexes.push(i);
+      }
+
+      var scanFrom = titleIndexes.length ? titleIndexes[titleIndexes.length - 1] + 1 : 0;
+      var start = -1;
+      for (var j = scanFrom; j < Math.min(lines.length, scanFrom + 100); j++) {
+        var lj = normalizeLine(lines[j]);
+        if (!lj) continue;
+        if (!isLikelyContentLine(lj)) continue;
+        if (lineHasStoryTitle(lj, storyTitle)) continue;
+        start = j;
+        break;
+      }
+      if (start < 0) return "";
+
+      var kept = [];
+      var charCount = 0;
+      for (var k = start; k < lines.length; k++) {
+        var lk = normalizeLine(lines[k]);
+        if (charCount > 800 && lk && END_PATTERNS.some(function (p) { return p.test(lk); })) break;
+        kept.push(lines[k]);
+        if (lk) charCount += lk.length + 1;
+        if (charCount > 800 && /^TRUYỆN HOT|^Truyện hot/i.test(lk)) break;
+      }
+      return cleanFinalLines(kept, chapterTitle, storyTitle);
+    }
+
+    function getVisibleText(el) {
+      if (!el) return "";
+      var clone = el.cloneNode(true);
+      clone.querySelectorAll([
+        "script", "style", "noscript", "svg", "canvas", "iframe",
+        "nav", "header", "footer", "aside", "form", "button",
+        ".ads", ".ad", ".advertisement", ".banner", ".comment", ".comments",
+        ".breadcrumb", ".navbar", ".menu", ".search", ".recommend", ".hot",
+        "[class*='ads' i]", "[id*='ads' i]", "[class*='comment' i]", "[id*='comment' i]",
+        "[class*='banner' i]", "[id*='banner' i]"
+      ].join(",")).forEach(function (n) { n.remove(); });
+      return clone.innerText || clone.textContent || "";
+    }
+
+    function normalizeText(raw, chapterTitle, storyTitle) {
+      var lines = String(raw || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n")
+        .replace(/ /g, " ").split("\n").map(normalizeLine);
+      var kept = [];
+      var charCount = 0;
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        if (charCount > 800 && line && END_PATTERNS.some(function (p) { return p.test(line); })) break;
+        kept.push(line);
+        if (line) charCount += line.length + 1;
+      }
+      return cleanFinalLines(kept, chapterTitle, storyTitle);
+    }
+
+    function scoreText(text) {
+      var s = String(text || "");
+      var lines = s.split("\n").map(normalizeLine).filter(Boolean);
+      var longLines = lines.filter(function (l) { return l.length >= 30; }).length;
+      var punc = (s.match(/[,.!?;:。！？…]/g) || []).length;
+      var bad = (s.match(/Chương trước|Chương tiếp|Tải Ebook|Bình luận|TRUYỆN HOT|Danh sách|Thể loại/gi) || []).length;
+      return s.length + longLines * 220 + punc * 5 - bad * 1200;
+    }
+
+    function extractByContainerFallback(chapterTitle, storyTitle) {
+      var selectors = [
+        "#chapter-content", ".chapter-content", ".chapter-c", "#chapter-c",
+        ".chapter-body", ".chapter-text", ".content-chapter", ".reading-content",
+        ".entry-content", "article", "main", ".container", ".chapter", "body"
+      ];
+      var best = "";
+      var bestScore = -Infinity;
+      for (var s = 0; s < selectors.length; s++) {
+        var els = Array.from(document.querySelectorAll(selectors[s]));
+        for (var e = 0; e < els.length; e++) {
+          var raw = getVisibleText(els[e]);
+          var cleaned = normalizeText(raw, chapterTitle, storyTitle);
+          var sc = scoreText(cleaned);
+          if (cleaned.length > 120 && sc > bestScore) { best = cleaned; bestScore = sc; }
+        }
+      }
+      if (!best || best.length < 300) {
+        var ps = Array.from(document.querySelectorAll("p"))
+          .map(function (p) { return normalizeLine(p.innerText || p.textContent); })
+          .filter(function (t) { return t.length > 20 && !DROP_LINE_PATTERNS.some(function (p) { return p.test(t); }); });
+        if (ps.length) best = normalizeText(ps.join("\n\n"), chapterTitle, storyTitle);
+      }
+      return best;
+    }
+
+    function extractBody(chapterTitle, storyTitle) {
+      var byBoundary = extractByPageBoundaries(chapterTitle, storyTitle);
+      var byContainer = extractByContainerFallback(chapterTitle, storyTitle);
+      if (byBoundary.length >= byContainer.length * 0.85) return byBoundary;
+      if (byContainer.length > byBoundary.length + 1000) return byContainer;
+      return byBoundary || byContainer;
+    }
+
+    var storyTitle = getStoryTitle();
+    var chapterTitle = getChapterTitle();
+    var chapterNumber = getChapterNumber(chapterTitle);
+    var body = extractBody(chapterTitle, storyTitle);
 
     return JSON.stringify({
       storyTitle: storyTitle,
       chapterTitle: chapterTitle,
       chapterNumber: chapterNumber,
-      title: chapterTitle || pageTitle,
+      title: chapterTitle || storyTitle,
       body: body,
       text: body,
       url: location.href,
