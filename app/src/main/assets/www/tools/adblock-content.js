@@ -26,15 +26,9 @@
     "iframe[src*='popcash.net']"
   ];
 
-  // Việc (v0.23.18): SỬA LỖI NGHIÊM TRỌNG — regex/selector cũ dùng so khớp
-  // CHUỖI CON không có ranh giới từ (vd "ads?" khớp cả "load", "already",
-  // "gradient", "header"; "[class*='ads' i]" khớp cả class "loads-spinner").
-  // Trên trang thật (vd Google), điều này từng ẩn NHẦM một phần giao diện
-  // thật của trang (ô tìm kiếm tự nhiên biến mất) vì tình cờ khớp 1 trong
-  // các mẫu quá rộng đó. Giờ chỉ coi là "quảng cáo" khi từ khoá xuất hiện
+  // Việc (v0.23.18): class/id chỉ coi là quảng cáo khi từ khoá xuất hiện
   // dưới dạng 1 TOKEN RIÊNG BIỆT (ngăn cách bởi dấu gạch/khoảng trắng/đầu
-  // cuối chuỗi trong kiểu đặt tên kebab-case phổ biến của class/id CSS),
-  // không phải là 1 chuỗi con nằm giữa từ khác.
+  // cuối chuỗi) — an toàn hơn so khớp chuỗi con cũ ("ads?" khớp cả "load").
   const AD_TOKEN_RE = /(?:^|[-_ ])(ads?|advert(?:isement)?s?|banner|sponsored|popunder)(?:[-_ ]|$)/i;
 
   function hasAdToken(value) {
@@ -43,6 +37,31 @@
 
   function isLikelyAdElement(el) {
     return hasAdToken(el.id) || hasAdToken(el.className);
+  }
+
+  // Việc (v0.23.19): người dùng muốn GIỮ NGUYÊN cách chặn "tự do" theo
+  // văn bản/HTML (bắt được nhiều quảng cáo hơn ở các trang thường), CHỈ tắt
+  // riêng nó ở các trang tìm kiếm/AI (Google, ChatGPT, Gemini, Cốc Cốc...) —
+  // vì đây là nơi giao diện thật của trang dễ bị ẩn nhầm nhất do class/id
+  // nội bộ phức tạp. Không tắt hẳn cho mọi trang như bản trước.
+  const EXEMPT_HOSTS = [
+    "google.com", "google.com.vn", "bing.com", "search.brave.com",
+    "duckduckgo.com", "yahoo.com", "coccoc.com", "yandex.com", "baidu.com",
+    "chatgpt.com", "chat.openai.com", "openai.com", "gemini.google.com",
+    "bard.google.com", "claude.ai", "perplexity.ai", "you.com",
+    "copilot.microsoft.com"
+  ];
+
+  function isExemptHost() {
+    const h = (location.hostname || "").toLowerCase();
+    return EXEMPT_HOSTS.some(host => h === host || h.endsWith("." + host));
+  }
+
+  function normalizeLine(s) {
+    return String(s || "")
+      .replace(/ /g, " ")
+      .replace(/[ \t\f\v]+/g, " ")
+      .trim();
   }
 
   function hideAdsFast() {
@@ -59,6 +78,26 @@
         el.style.setProperty("display", "none", "important");
         el.style.setProperty("visibility", "hidden", "important");
       });
+
+      // Cách chặn "tự do" (fixed-position + từ khoá trong văn bản/HTML) —
+      // bắt được nhiều quảng cáo hơn nhưng dễ khớp nhầm giao diện thật của
+      // trang phức tạp, nên chỉ chạy khi KHÔNG phải trang tìm kiếm/AI.
+      if (!isExemptHost()) {
+        document.querySelectorAll("a, div").forEach(el => {
+          let style;
+          try {
+            style = getComputedStyle(el);
+          } catch (e) {
+            return;
+          }
+          if (style.position !== "fixed") return;
+          const text = normalizeLine(el.innerText || el.textContent || "");
+          const html = (el.outerHTML || "").slice(0, 500).toLowerCase();
+          if (/ads?|advert|banner|popup|siêu|500k|casino|promo|click/.test(text.toLowerCase() + " " + html)) {
+            el.style.setProperty("display", "none", "important");
+          }
+        });
+      }
     } catch (e) {}
   }
 

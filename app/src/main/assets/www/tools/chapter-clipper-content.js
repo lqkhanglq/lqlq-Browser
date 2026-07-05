@@ -120,6 +120,22 @@
     return AD_TOKEN_RE.test(String(value || ""));
   }
 
+  // Việc (v0.23.19): giữ nguyên cách chặn "tự do" theo văn bản/HTML (bắt
+  // được nhiều quảng cáo hơn) nhưng CHỈ tắt riêng ở trang tìm kiếm/AI, nơi
+  // giao diện thật dễ bị ẩn nhầm nhất.
+  const EXEMPT_HOSTS = [
+    "google.com", "google.com.vn", "bing.com", "search.brave.com",
+    "duckduckgo.com", "yahoo.com", "coccoc.com", "yandex.com", "baidu.com",
+    "chatgpt.com", "chat.openai.com", "openai.com", "gemini.google.com",
+    "bard.google.com", "claude.ai", "perplexity.ai", "you.com",
+    "copilot.microsoft.com"
+  ];
+
+  function isExemptHost() {
+    const h = (location.hostname || "").toLowerCase();
+    return EXEMPT_HOSTS.some(host => h === host || h.endsWith("." + host));
+  }
+
   // ------------------------------------------------------------------
   // Chặn popup cơ bản: tổng quát cho mọi site (không hard-code 1 site) —
   // chỉ cho phép window.open()/target=_blank tới CÙNG origin với trang
@@ -232,6 +248,27 @@
         el.style.setProperty("display", "none", "important");
         el.style.setProperty("visibility", "hidden", "important");
       });
+
+      // Cách chặn "tự do" (fixed-position + từ khoá trong văn bản/HTML) —
+      // bắt được nhiều quảng cáo hơn nhưng dễ khớp nhầm giao diện thật của
+      // trang phức tạp, nên chỉ chạy khi KHÔNG phải trang tìm kiếm/AI.
+      if (!isExemptHost()) {
+        document.querySelectorAll("a, div").forEach(el => {
+          if (el.closest && el.closest("#cc-panel")) return;
+          let style;
+          try {
+            style = getComputedStyle(el);
+          } catch (e) {
+            return;
+          }
+          if (style.position !== "fixed") return;
+          const text = normalizeLine(el.innerText || el.textContent || "");
+          const html = (el.outerHTML || "").slice(0, 500).toLowerCase();
+          if (/ads?|advert|banner|popup|siêu|500k|casino|promo|click/.test(text.toLowerCase() + " " + html)) {
+            el.style.setProperty("display", "none", "important");
+          }
+        });
+      }
     } catch (e) {}
   }
 
