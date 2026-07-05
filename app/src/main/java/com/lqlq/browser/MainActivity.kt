@@ -79,6 +79,39 @@ class MainActivity : AppCompatActivity() {
             val h = host.lowercase()
             return AD_HOST_BLOCKLIST.any { h == it || h.endsWith(".$it") }
         }
+
+        // Việc (v0.23.14): công cụ tìm kiếm/trợ lý AI — người dùng bấm vào
+        // kết quả tìm kiếm/liên kết do chính các trang này tạo ra LÀ mục
+        // đích sử dụng bình thường, không phải bị quảng cáo lừa nhảy trang.
+        // Khi tab đang ở 1 trong các domain này, bỏ qua lớp khoá domain
+        // (Việc v0.23.13) — vẫn giữ nguyên chặn danh sách quảng cáo đã biết.
+        private val SEARCH_AND_AI_TOOL_HOSTS = listOf(
+            "google.com",
+            "google.com.vn",
+            "bing.com",
+            "search.brave.com",
+            "duckduckgo.com",
+            "yahoo.com",
+            "coccoc.com",
+            "cnn.coccoc.com",
+            "yandex.com",
+            "baidu.com",
+            "chatgpt.com",
+            "chat.openai.com",
+            "openai.com",
+            "gemini.google.com",
+            "bard.google.com",
+            "claude.ai",
+            "perplexity.ai",
+            "you.com",
+            "copilot.microsoft.com"
+        )
+
+        private fun isSearchOrAiToolHost(host: String?): Boolean {
+            if (host.isNullOrEmpty()) return false
+            val h = host.lowercase()
+            return SEARCH_AND_AI_TOOL_HOSTS.any { h == it || h.endsWith(".$it") }
+        }
     }
 
     private lateinit var root: FrameLayout
@@ -591,7 +624,8 @@ $js
                 // mới TRƯỚC khi gọi loadUrl(), nên không bị chặn nhầm ở đây.
                 val safeHost = tabRootDomain[tabId]
                 val targetHost = request.url.host
-                if (!safeHost.isNullOrEmpty() && !targetHost.isNullOrEmpty() &&
+                if (!isSearchOrAiToolHost(safeHost) &&
+                    !safeHost.isNullOrEmpty() && !targetHost.isNullOrEmpty() &&
                     !isSameRootDomain(safeHost, targetHost)
                 ) {
                     Toast.makeText(
@@ -628,7 +662,8 @@ $js
 
                 if (!blockedByList && request.isForMainFrame) {
                     val safeHost = tabRootDomain[tabId]
-                    if (!safeHost.isNullOrEmpty() && !targetHost.isNullOrEmpty() &&
+                    if (!isSearchOrAiToolHost(safeHost) &&
+                        !safeHost.isNullOrEmpty() && !targetHost.isNullOrEmpty() &&
                         !isSameRootDomain(safeHost, targetHost)
                     ) {
                         blockedByRootDomainGuard = true
