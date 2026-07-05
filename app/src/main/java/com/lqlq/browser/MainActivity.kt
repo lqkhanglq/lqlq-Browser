@@ -1005,6 +1005,15 @@ $js
         }
     }
 
+    /** Việc (v0.23.24 — Vấn đề 2): entry point gọi từ ShellBridge.openOfflineUri(). */
+    fun openOfflineUriFromShell(uriString: String) {
+        try {
+            loadOfflineHtml(Uri.parse(uriString))
+        } catch (_: Exception) {
+            Toast.makeText(this, "Không mở được tệp đã lưu.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     private fun loadOfflineHtml(uri: Uri) {
         try {
             val mimeType = contentResolver.getType(uri) ?: ""
@@ -1067,14 +1076,33 @@ $js
                 Toast.makeText(this, "Không lưu được nội dung trang.", Toast.LENGTH_SHORT).show()
                 return@saveWebArchive
             }
+            val sourceUrl = page.url ?: ""
             Thread {
                 try {
                     val bytes = File(savedPath).readBytes()
-                    shellBridge.saveBytes(
+                    val savedUri = shellBridge.saveBytesReturningUri(
                         "${title}_offline.mht",
                         "application/x-mimearchive",
                         bytes
                     )
+                    if (savedUri != null) {
+                        // Việc (v0.23.24 — Vấn đề 2): báo cho JS biết chính xác
+                        // Uri của tệp .mht vừa lưu, để "Trang đã lưu" gắn cờ
+                        // offline + lưu lại Uri này, cho phép mở lại ĐÚNG tệp
+                        // (qua LqlqPageBridge/openOfflineUri) thay vì chỉ điều
+                        // hướng online lại URL gốc.
+                        val payload = JSONObject().apply {
+                            put("url", sourceUrl)
+                            put("title", title)
+                            put("offlineUri", savedUri)
+                        }
+                        runOnUiThread {
+                            shellWebView.evaluateJavascript(
+                                "window.LqlqGlue && LqlqGlue.onOfflinePageSaved($payload);",
+                                null
+                            )
+                        }
+                    }
                 } catch (_: Exception) {
                     runOnUiThread {
                         Toast.makeText(this, "Không đọc được tệp đã lưu.", Toast.LENGTH_SHORT).show()

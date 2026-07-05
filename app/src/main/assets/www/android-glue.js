@@ -177,11 +177,19 @@
         const tab = profile.tabs.find(item => String(item.id) === String(info.tabId));
         if (!tab) return;
 
-        const changed = tab.url !== info.url;
+        // Lưu ý (v0.23.24 — Vấn đề 3): KHÔNG dùng "tab.url !== info.url" để
+        // xác định "đã đổi trang" — doUpdateVisitedHistory() gọi onNativePage
+        // với loading=true và URL ĐÍCH CUỐI CÙNG *trước khi* onPageFinished()
+        // gọi lại với loading=false cùng URL đó. Vì tab.url đã được gán ở lần
+        // gọi loading=true, đến lần loading=false thì tab.url === info.url
+        // sẵn rồi → "changed" luôn false → Nhật ký KHÔNG BAO GIỜ được ghi.
+        // Sửa: theo dõi URL đã ghi lịch sử gần nhất riêng (_lastHistoryUrl),
+        // chỉ so sánh với biến đó để quyết định có ghi nhật ký hay không.
         tab.url = info.url || tab.url;
         if (info.title) tab.title = info.title;
 
-        if (!info.loading && changed && /^https?:\/\//i.test(info.url)) {
+        if (!info.loading && /^https?:\/\//i.test(info.url) && tab._lastHistoryUrl !== info.url) {
+          tab._lastHistoryUrl = info.url;
           profile.history.unshift({
             title: info.title || tab.title,
             url: info.url,
@@ -199,6 +207,17 @@
           }
           window.render?.();
         }
+      });
+    },
+
+    // Việc (v0.23.24 — Vấn đề 2): native báo Uri thật của tệp .mht vừa lưu
+    // ngoại tuyến — gắn Uri đó vào mục bookmark tương ứng (đã được thêm bởi
+    // saveCurrent() ngay khi bấm "Lưu trang ngoại tuyến") để "Trang đã lưu"
+    // biết đây là 1 trang có bản offline, và mở lại ĐÚNG tệp đó thay vì chỉ
+    // điều hướng online lại URL gốc.
+    onOfflinePageSaved(info) {
+      safeCall(() => {
+        window.LqlqSavedPages?.attachOfflineUri?.(info.url, info.offlineUri, info.title);
       });
     },
 

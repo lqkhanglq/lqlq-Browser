@@ -221,6 +221,34 @@
     toast(`Đã lưu ${title}.`);
   }
 
+  // Việc (v0.23.24 — Vấn đề 2): gắn Uri tệp .mht/.html đã lưu ngoại tuyến vào
+  // bookmark khớp URL (được native gọi lại sau khi ghi file xong — xem
+  // MainActivity.saveActivePageOffline() / android-glue.js onOfflinePageSaved).
+  function attachOfflineUri(url, offlineUri, title) {
+    if (!url || !offlineUri) return;
+
+    const bookmarks = currentBookmarks();
+    const index = findBookmarkIndex(url);
+
+    if (index >= 0) {
+      bookmarks[index].offlineUri = offlineUri;
+      if (title) bookmarks[index].title = bookmarks[index].title || title;
+    } else {
+      // Trường hợp saveCurrent() chưa kịp thêm bookmark (thứ tự hiếm gặp) —
+      // tự thêm luôn để không mất liên kết tới tệp vừa lưu.
+      bookmarks.unshift(normalizeBookmark({
+        title: title || titleFromUrl(url) || pageHost(url) || "Trang đã lưu",
+        url,
+        kind: knownKind(url),
+        offlineUri
+      }));
+      currentProfile().bookmarks = bookmarks.slice(0, 80);
+    }
+
+    saveState();
+    renderSavedShortcuts();
+  }
+
   function removeSavedPage(id, event = null) {
     event?.stopPropagation();
 
@@ -343,9 +371,29 @@
       removeSavedPage(item.id, event);
     });
 
+    if (item.offlineUri) {
+      const offlineBadge = document.createElement("span");
+      offlineBadge.className = "saved-page-row-offline-badge";
+      offlineBadge.title = "Có bản lưu ngoại tuyến";
+      offlineBadge.textContent = "⬇";
+      copy.appendChild(offlineBadge);
+    }
+
     row.append(icon, copy, remove);
     row.addEventListener("click", () => {
-      navigate(item.url);
+      // Việc (v0.23.24 — Vấn đề 2): nếu mục này có bản .mht đã lưu ngoại
+      // tuyến, mở lại ĐÚNG tệp đó qua native (đọc từ Uri MediaStore) thay vì
+      // chỉ điều hướng online lại URL gốc — trước đây LUÔN gọi navigate(),
+      // khiến "mở trang đã lưu" chưa từng thực sự dùng tới bản đã lưu.
+      if (item.offlineUri && typeof window.LqlqAndroid?.openOfflineUri === "function") {
+        try {
+          window.LqlqAndroid.openOfflineUri(item.offlineUri);
+        } catch {
+          navigate(item.url);
+        }
+      } else {
+        navigate(item.url);
+      }
       els.drawer.classList.remove("open");
     });
 
@@ -452,6 +500,7 @@
     open: openSavedPagesDrawer,
     saveCurrent: saveCurrentPage,
     remove: removeSavedPage,
+    attachOfflineUri,
     render: renderSavedShortcuts,
     defaults: DEFAULT_SAVED_PAGES
   };

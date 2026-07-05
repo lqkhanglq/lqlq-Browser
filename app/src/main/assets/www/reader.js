@@ -252,13 +252,24 @@
   function setPayload(payload, fallbackTitle = "Trang đang mở") {
     const data = parseNativePayload(payload) || {};
     let text = data.text || data.body || "";
+    // Việc (v0.23.24 — Vấn đề 5): nếu payload đã có sẵn text/body (tới từ
+    // LqlqPageBridge.extractCurrentChapter() hoặc bộ máy Chapter Clipper
+    // dùng chung), nội dung ĐÃ được thuật toán tốt (extractByPageBoundaries/
+    // extractByContainerFallback) làm sạch rồi. Trước đây code này CHẠY LẠI
+    // cleanText() (thuật toán yếu hơn, tuned cho HTML thô) đè lên kết quả đã
+    // sạch — có thể cắt cụt/xáo nội dung đúng do ngưỡng "contentStarted"/800
+    // ký tự/END_PATTERNS không khớp với input đã sạch. Chỉ dùng cleanText()
+    // khi PHẢI tự trích xuất từ data.html thô (không có sẵn text/body).
+    const alreadyClean = Boolean(text);
     if (!text && data.html) {
       const doc = new DOMParser().parseFromString(String(data.html), "text/html");
-      const extracted = extractFromDocument(doc);
+      const extracted = extractFromDocument(doc); // extractFromDocument() đã tự cleanText() bên trong
       text = extracted.text;
       data.title ||= extracted.title;
+    } else if (!alreadyClean) {
+      text = cleanText(text, data.title || fallbackTitle);
     }
-    text = cleanText(text, data.title || fallbackTitle) || String(text || "").trim();
+    text = String(text || "").trim();
     if (!text) {
       notify("Không tìm thấy phần nội dung truyện trong trang này.", "warning");
       return false;

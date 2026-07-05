@@ -12,8 +12,127 @@
     close: document.getElementById("mobileTabsClose"),
     closeOthers: document.getElementById("mobileTabsCloseOthers"),
     closeAll: document.getElementById("mobileTabsCloseAll"),
-    menuBackdrop: document.getElementById("mobileMenuBackdrop")
+    menuBackdrop: document.getElementById("mobileMenuBackdrop"),
+    search: document.getElementById("mobileTabsSearch"),
+    viewToggle: document.getElementById("mobileTabsViewToggle")
   };
+
+  // Việc (v0.23.24 — Vấn đề 4): Nhóm thẻ kiểu Chrome — bản đơn giản nhất.
+  // Mỗi profile có 1 danh sách nhóm (id/tên/màu), mỗi tab tham chiếu tới 1
+  // nhóm qua tab.groupId. Không hỗ trợ kéo-thả như Chrome thật, chỉ cần
+  // gán/bỏ nhóm qua nút "⋮" trên mỗi thẻ trong lưới "Các thẻ đang mở".
+  const GROUP_COLORS = ["#4f8f6d", "#4a7fc4", "#c48a3f", "#b1548a", "#7a63c9", "#c15a4d"];
+
+  function ensureProfileGroups(profile) {
+    if (!Array.isArray(profile.tabGroups)) profile.tabGroups = [];
+    return profile.tabGroups;
+  }
+
+  function findGroup(profile, groupId) {
+    return ensureProfileGroups(profile).find(g => g.id === groupId) || null;
+  }
+
+  function nextGroupColor(profile) {
+    const groups = ensureProfileGroups(profile);
+    return GROUP_COLORS[groups.length % GROUP_COLORS.length];
+  }
+
+  let openGroupMenuEl = null;
+
+  function closeGroupMenu() {
+    openGroupMenuEl?.remove();
+    openGroupMenuEl = null;
+  }
+
+  function assignTabToGroup(tab, groupId) {
+    tab.groupId = groupId || null;
+    saveState();
+    renderMobileTabs();
+  }
+
+  function openGroupMenu(tab, anchorEl) {
+    closeGroupMenu();
+    const profile = currentProfile();
+    const groups = ensureProfileGroups(profile);
+
+    const menu = document.createElement("div");
+    menu.className = "mobile-tab-group-menu";
+
+    const rect = anchorEl.getBoundingClientRect();
+    menu.style.top = `${Math.min(rect.bottom + 6, window.innerHeight - 220)}px`;
+    menu.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - 268))}px`;
+
+    if (tab.groupId) {
+      const clearBtn = document.createElement("button");
+      clearBtn.type = "button";
+      clearBtn.className = "mobile-tab-group-menu-item";
+      clearBtn.textContent = "✕ Bỏ khỏi nhóm";
+      clearBtn.addEventListener("click", () => {
+        assignTabToGroup(tab, null);
+        closeGroupMenu();
+      });
+      menu.appendChild(clearBtn);
+    }
+
+    groups.forEach(group => {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "mobile-tab-group-menu-item";
+
+      const dot = document.createElement("span");
+      dot.className = "mobile-tab-group-menu-dot";
+      dot.style.background = group.color;
+
+      const label = document.createElement("span");
+      label.textContent = group.name;
+
+      item.append(dot, label);
+      item.addEventListener("click", () => {
+        assignTabToGroup(tab, group.id);
+        closeGroupMenu();
+      });
+      menu.appendChild(item);
+    });
+
+    const inputRow = document.createElement("div");
+    inputRow.className = "mobile-tab-group-menu-input";
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.placeholder = "Tên nhóm mới";
+    input.maxLength = 24;
+
+    const createBtn = document.createElement("button");
+    createBtn.type = "button";
+    createBtn.textContent = "Tạo";
+    createBtn.addEventListener("click", () => {
+      const name = input.value.trim();
+      if (!name) return;
+      const group = {
+        id: uid(),
+        name,
+        color: nextGroupColor(profile)
+      };
+      groups.push(group);
+      assignTabToGroup(tab, group.id);
+      closeGroupMenu();
+    });
+
+    inputRow.append(input, createBtn);
+    menu.appendChild(inputRow);
+
+    document.body.appendChild(menu);
+    openGroupMenuEl = menu;
+
+    setTimeout(() => {
+      document.addEventListener("click", function onOutsideClick(event) {
+        if (!menu.contains(event.target)) {
+          closeGroupMenu();
+          document.removeEventListener("click", onOutsideClick, true);
+        }
+      }, true);
+    }, 0);
+  }
 
   function isMobileLayout() {
     return window.matchMedia("(max-width: 700px)").matches;
@@ -34,18 +153,44 @@
     return title.charAt(0).toUpperCase() || "T";
   }
 
+  let tabsFilter = "";
+
+  function tabMatchesFilter(tab) {
+    if (!tabsFilter) return true;
+    const haystack = `${tab.title || ""} ${tab.url || ""}`.toLowerCase();
+    return haystack.includes(tabsFilter);
+  }
+
   function renderMobileTabs() {
     const profile = currentProfile();
+    const groups = ensureProfileGroups(profile);
+    closeGroupMenu();
     refs.grid.innerHTML = "";
 
-    profile.tabs.forEach(tab => {
+    const visibleTabs = profile.tabs.filter(tabMatchesFilter);
+
+    if (!visibleTabs.length) {
+      refs.grid.innerHTML = `<div class="mobile-tab-card-empty" style="grid-column:1/-1;text-align:center;padding:24px 8px;color:#89958d;font-size:12px;">Không tìm thấy thẻ phù hợp.</div>`;
+      return;
+    }
+
+    visibleTabs.forEach(tab => {
+      const group = tab.groupId ? findGroup(profile, tab.groupId) : null;
+
       const card = document.createElement("article");
       card.className =
         "mobile-tab-card"
         + (tab.id === profile.activeTabId ? " active" : "");
+      if (group) card.style.borderColor = group.color;
 
       const preview = document.createElement("div");
       preview.className = "mobile-tab-card-preview";
+
+      const domainColorSeed = String(tab.url || tab.title || "").split("/")[2] || tab.title || "T";
+      let hash = 0;
+      for (let i = 0; i < domainColorSeed.length; i++) hash = (hash * 31 + domainColorSeed.charCodeAt(i)) >>> 0;
+      const hue = hash % 360;
+      preview.style.background = `linear-gradient(180deg, hsl(${hue} 45% 94%), hsl(${hue} 35% 88%))`;
       preview.innerHTML = `<span>${escapeHtml(faviconLetter(tab))}</span>`;
 
       if (tab.id === profile.activeTabId) {
@@ -55,6 +200,24 @@
         preview.appendChild(activeBadge);
       }
 
+      if (group) {
+        const chip = document.createElement("span");
+        chip.className = "mobile-tab-group-chip";
+        chip.style.background = group.color;
+        chip.textContent = group.name;
+        preview.appendChild(chip);
+      }
+
+      const menuButton = document.createElement("button");
+      menuButton.className = "mobile-tab-card-menu";
+      menuButton.type = "button";
+      menuButton.setAttribute("aria-label", `Tùy chọn nhóm cho ${tab.title || "thẻ"}`);
+      menuButton.textContent = "⋮";
+      menuButton.addEventListener("click", event => {
+        event.stopPropagation();
+        openGroupMenu(tab, menuButton);
+      });
+
       const closeButton = document.createElement("button");
       closeButton.className = "mobile-tab-card-close";
       closeButton.type = "button";
@@ -63,10 +226,24 @@
 
       const copy = document.createElement("div");
       copy.className = "mobile-tab-card-copy";
-      copy.innerHTML = `
-        <b>${escapeHtml(tab.title || "Thẻ mới")}</b>
-        <small>${escapeHtml(tab.url || "https://google.com")}</small>
-      `;
+
+      const titleRow = document.createElement("div");
+      titleRow.className = "mobile-tab-card-copy-title";
+      const favicon = document.createElement("img");
+      favicon.className = "mobile-tab-card-favicon";
+      favicon.alt = "";
+      favicon.loading = "lazy";
+      favicon.referrerPolicy = "no-referrer";
+      favicon.src = (typeof faviconForUrl === "function" && faviconForUrl(tab.url)) || "";
+      favicon.addEventListener("error", () => favicon.classList.add("hidden"));
+      const titleEl = document.createElement("b");
+      titleEl.textContent = tab.title || "Thẻ mới";
+      titleRow.append(favicon, titleEl);
+
+      const urlEl = document.createElement("small");
+      urlEl.textContent = tab.url || "https://google.com";
+
+      copy.append(titleRow, urlEl);
 
       closeButton.addEventListener("click", event => {
         event.stopPropagation();
@@ -80,19 +257,22 @@
         closeTabSwitcher();
       });
 
-      card.append(preview, closeButton, copy);
+      card.append(preview, closeButton, menuButton, copy);
       refs.grid.appendChild(card);
     });
   }
 
   function openTabSwitcher() {
     closeMenus();
+    tabsFilter = "";
+    if (refs.search) refs.search.value = "";
     renderMobileTabs();
     refs.overlay.classList.remove("hidden");
     document.body.classList.add("mobile-overlay-open");
   }
 
   function closeTabSwitcher() {
+    closeGroupMenu();
     refs.overlay.classList.add("hidden");
     document.body.classList.remove("mobile-overlay-open");
   }
@@ -168,6 +348,22 @@
   refs.close.addEventListener("click", closeTabSwitcher);
   refs.closeOthers.addEventListener("click", closeOtherTabs);
   refs.closeAll.addEventListener("click", closeAllTabs);
+
+  // Việc (v0.23.24 — Vấn đề 1): ô "Tìm thẻ của bạn" lọc theo tiêu đề/URL các
+  // tab đang mở, phía client-side. Nút đổi kiểu xem chuyển giữa lưới 2 cột
+  // (mặc định) và danh sách 1 cột (giống nút "danh sách số/lưới" của Chrome).
+  refs.search?.addEventListener("input", () => {
+    tabsFilter = String(refs.search.value || "").trim().toLowerCase();
+    renderMobileTabs();
+  });
+
+  let tabsListMode = false;
+  refs.viewToggle?.addEventListener("click", () => {
+    tabsListMode = !tabsListMode;
+    refs.grid.classList.toggle("list-mode", tabsListMode);
+    refs.viewToggle.textContent = tabsListMode ? "☰" : "▦";
+    refs.viewToggle.title = tabsListMode ? "Xem dạng lưới" : "Xem dạng danh sách";
+  });
 
   refs.overlay.addEventListener("click", event => {
     if (event.target === refs.overlay) {

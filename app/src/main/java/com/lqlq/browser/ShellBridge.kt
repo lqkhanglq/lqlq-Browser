@@ -58,6 +58,17 @@ class ShellBridge(private val activity: MainActivity) {
         activity.runOnUiThread { activity.saveActivePageOffline() }
     }
 
+    /**
+     * Việc (v0.23.24 — Vấn đề 2): mở lại ĐÚNG tệp .mht/.html đã lưu ngoại
+     * tuyến, từ Uri (content:// do chính app tạo qua MediaStore, hoặc
+     * file:// trên Android < Q) — dùng khi người dùng bấm vào 1 mục trong
+     * "Trang đã lưu" có gắn cờ offline, thay vì điều hướng online lại URL.
+     */
+    @JavascriptInterface
+    fun openOfflineUri(uriString: String) {
+        activity.runOnUiThread { activity.openOfflineUriFromShell(uriString) }
+    }
+
     @JavascriptInterface
     fun reloadPage() {
         activity.runOnUiThread { activity.reloadActivePage() }
@@ -169,11 +180,22 @@ class ShellBridge(private val activity: MainActivity) {
     }
 
     internal fun saveBytes(fileName: String, mimeType: String, bytes: ByteArray): Boolean {
+        return saveBytesReturningUri(fileName, mimeType, bytes) != null
+    }
+
+    /**
+     * Việc (v0.23.24 — Vấn đề 2): giống saveBytes() nhưng trả về Uri (dạng
+     * String) của tệp vừa lưu — cần để "Lưu trang ngoại tuyến" biết CHÍNH
+     * XÁC tệp .mht nào vừa ghi, để "Trang đã lưu" có thể mở lại ĐÚNG tệp đó
+     * (qua openOfflineUri()) thay vì chỉ điều hướng online lại URL gốc.
+     */
+    internal fun saveBytesReturningUri(fileName: String, mimeType: String, bytes: ByteArray): String? {
         val safeMime = mimeType.substringBefore(";").trim()
             .ifBlank { "application/octet-stream" }
         val safeName = fileName.replace(Regex("[\\\\/:*?\"<>|]"), "_")
             .ifBlank { "lqlq-file" }
         return try {
+            val resultUri: String
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val values = ContentValues().apply {
                     put(MediaStore.Downloads.DISPLAY_NAME, safeName)
@@ -184,17 +206,20 @@ class ShellBridge(private val activity: MainActivity) {
                     MediaStore.Downloads.EXTERNAL_CONTENT_URI, values
                 ) ?: throw IllegalStateException("insert null")
                 activity.contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+                resultUri = uri.toString()
             } else {
                 val dir = Environment
                     .getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
                 dir.mkdirs()
-                File(dir, safeName).writeBytes(bytes)
+                val file = File(dir, safeName)
+                file.writeBytes(bytes)
+                resultUri = Uri.fromFile(file).toString()
             }
             toast("Đã lưu vào Download: $safeName")
-            true
+            resultUri
         } catch (_: Exception) {
             toast("Không lưu được tệp $safeName.")
-            false
+            null
         }
     }
 
