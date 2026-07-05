@@ -1,6 +1,6 @@
-# lqlq Browser — Android APK (v0.23)
+# lqlq Browser — Android APK (v0.24)
 
-Chuyển từ HTML prototype v0.23 sang project Android hoàn chỉnh, build APK trực tiếp trên GitHub Actions.
+Project Android của lqlq Browser, build APK trực tiếp bằng GitHub Actions. Bản v0.24 thay toàn bộ hệ thống thẻ cũ bằng kiến trúc native ổn định hơn.
 
 ## Cách build trên GitHub
 
@@ -9,8 +9,8 @@ Chuyển từ HTML prototype v0.23 sang project Android hoàn chỉnh, build APK
 3. Vào tab **Actions** → chọn workflow **Build lqlq Browser APK** → bấm **Run workflow** (hoặc chỉ cần push code là tự chạy).
 4. Chờ build xong (~5-10 phút) → mở lần chạy → kéo xuống mục **Artifacts** → tải `lqlq-browser-apk`.
 5. Trong file zip tải về có 2 APK:
-   - `lqlq-browser-v0.23-debug.apk`
-   - `lqlq-browser-v0.23-release.apk` ← nên cài bản này.
+   - `lqlq-browser-v0.24.0-debug.apk`
+   - `lqlq-browser-v0.24.0-release.apk` ← nên cài bản này.
 
 **Chữ ký ổn định:** repo có sẵn `keystore/lqlq-release.keystore`, mọi lần build đều ký cùng một chữ ký, nên cài bản mới đè lên bản cũ được, không phải gỡ ra cài lại.
 
@@ -39,13 +39,15 @@ Chế độ "Tự động ẩn khi cuộn" trong v22 đã được **gỡ bỏ**
 ## Kiến trúc
 
 - **WebView giao diện (shell):** tải `assets/www/index.html` qua `WebViewAssetLoader` (origin `https://appassets.androidapp.com` — secure context nên `crypto.randomUUID`, `mediaSession`... hoạt động đầy đủ).
-- **WebView trang web:** mỗi thẻ là một WebView native riêng, nằm ngay dưới thanh công cụ HTML (chiều cao thanh do `android-glue.js` báo qua `LqlqAndroid.setToolbarHeight`).
+- **Hệ thống thẻ native:** `BrowserTabStore` là nguồn dữ liệu duy nhất cho danh sách thẻ, thẻ đang chọn, URL và tiêu đề. JavaScript chỉ giữ một bản sao để cập nhật thanh địa chỉ và số đếm.
+- **Bộ chuyển thẻ:** `NativeTabSwitcherView` là giao diện Android native dạng lưới hai cột, không còn phụ thuộc overlay HTML, MutationObserver hoặc z-index của shell WebView.
+- **WebView trang web:** chỉ giữ tối đa 4 WebView gần đây trong bộ nhớ. Khi chọn lại một thẻ đã bị giải phóng, WebView được tạo lại và nạp URL đã lưu. Cách này tránh giữ hàng chục renderer cùng lúc.
 - **Cầu nối JavaScript:**
   - `LqlqTtsBridge` — đúng hợp đồng trong `ANDROID_TTS_BRIDGE_SPEC.md` (ưu tiên `com.google.android.tts`, danh sách giọng từ `textToSpeech.voices`, gọi lại `LqlqReader.onNativeUtteranceDone/Error`).
   - `LqlqPageBridge` — đúng hợp đồng trong `ANDROID_PAGE_BRIDGE_SPEC.md` kiểu A: inject thuật toán trích chương vào WebView trang web, trả JSON chương cho nút "Lấy chương đang mở" của Đọc truyện TXT và Chapter Clipper.
-  - `LqlqAndroid` — điều khiển thẻ, báo trạng thái đọc/nhạc cho thông báo, lưu tệp (TXT, ảnh đã chỉnh...) vào thư mục Download.
-  - Cả 3 bridge **chỉ gắn vào WebView giao diện**, không lộ cho website bên ngoài (đúng mục "An toàn" trong spec).
-- **`android-glue.js`** (script cuối trong `index.html`): nối `navigate/newTab/closeTab/switchTab` của giao diện với WebView thật, đồng bộ thanh địa chỉ + lịch sử, theo dõi trạng thái Reader/Media để cập nhật thông báo, chuyển link tải `blob:`/`data:` thành lưu file thật. Mở bằng trình duyệt máy tính thì file này tự tắt, bản web vẫn chạy như cũ.
+  - `LqlqAndroid` — gọi API thẻ native, báo trạng thái đọc/nhạc cho thông báo, lưu tệp (TXT, ảnh đã chỉnh...) vào thư mục Download.
+  - Website bên ngoài chỉ nhận `PageToolsBridge` tối thiểu với `saveTextFile()` để Chapter Clipper xuất TXT; API quản lý thẻ và các quyền đặc biệt chỉ tồn tại trong shell.
+- **`android-glue.js`** (script cuối trong `index.html`): đồng bộ bản sao trạng thái thẻ từ native sang giao diện, nối điều hướng với WebView thật, cập nhật thanh địa chỉ + lịch sử, theo dõi trạng thái Reader/Media và xử lý lưu tệp. Mở bằng trình duyệt máy tính thì file này tự tắt.
 
 ## Icon
 

@@ -15,21 +15,23 @@
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="stylesheet" href="styles.css" />
   <script>
-    // Việc 1/2 (v0.23.4): nếu phiên trước còn thẻ đang mở một trang web
-    // thật (http/https), ẩn ngay phần "trang chủ" (browser-stage) TRƯỚC
-    // khi nó kịp vẽ ra — tránh loé trang chủ 1 nhịp trước khi native mở
-    // lại trang cũ. Chạy đồng bộ ngay trong <head>, không đợi app.js.
+    // Ẩn trang chủ trước khung hình đầu tiên nếu phiên tab native đang có
+    // một trang thật. Trong APK không đọc danh sách tabs cũ từ localStorage.
     (function () {
       try {
-        var raw = localStorage.getItem("shieldBrowserPrototypeStateV2");
-        if (!raw) return;
-        var parsed = JSON.parse(raw);
-        var profile = parsed && parsed.normal;
-        if (!profile || !profile.tabs || !profile.tabs.length) return;
-        var tab = profile.tabs.find(function (t) {
-          return t && t.id === profile.activeTabId;
-        }) || profile.tabs[0];
-        if (tab && /^https?:\/\//i.test(String(tab.url || ""))) {
+        var state = null;
+        if (window.LqlqAndroid && typeof window.LqlqAndroid.getTabState === "function") {
+          state = JSON.parse(window.LqlqAndroid.getTabState());
+        } else {
+          var raw = localStorage.getItem("shieldBrowserPrototypeStateV2");
+          var parsed = raw ? JSON.parse(raw) : null;
+          state = parsed && parsed.normal;
+        }
+        if (!state || !state.tabs || !state.tabs.length) return;
+        var tab = state.tabs.find(function (t) {
+          return t && t.id === state.activeTabId;
+        }) || state.tabs[0];
+        if (tab && /^(https?|file):\/\//i.test(String(tab.url || ""))) {
           document.documentElement.classList.add("lqlq-native-page-open");
         }
       } catch (e) {}
@@ -1145,35 +1147,6 @@
         </div>
       </div>
     </aside>
-
-
-    <div class="mobile-tabs-overlay hidden" id="mobileTabsOverlay">
-      <section class="mobile-tabs-sheet" aria-label="Các thẻ đang mở">
-        <header class="mobile-tabs-header">
-          <div>
-            <span class="section-kicker">PHIÊN DUYỆT</span>
-            <h2>Các thẻ đang mở</h2>
-          </div>
-
-          <div class="mobile-tabs-header-actions">
-            <button id="mobileTabsViewToggle" title="Đổi kiểu xem" aria-label="Đổi giữa danh sách và lưới">▦</button>
-            <button id="mobileTabsAdd" title="Thẻ mới" aria-label="Mở thẻ mới">＋</button>
-            <button id="mobileTabsClose" title="Đóng" aria-label="Đóng danh sách thẻ">×</button>
-          </div>
-        </header>
-
-        <div class="mobile-tabs-search">
-          <input type="search" id="mobileTabsSearch" placeholder="Tìm thẻ của bạn" aria-label="Tìm thẻ của bạn">
-        </div>
-
-        <div class="mobile-tabs-grid" id="mobileTabsGrid"></div>
-
-        <footer class="mobile-tabs-footer">
-          <button id="mobileTabsCloseOthers">Đóng các thẻ khác</button>
-          <button class="danger" id="mobileTabsCloseAll">Đóng tất cả</button>
-        </footer>
-      </section>
-    </div>
 
     <div class="video-panel hidden" id="videoPanel">
       <div class="video-shell" id="videoShell">

@@ -32,8 +32,7 @@
     tabs: document.getElementById("mobileTabsBtn"),
     drawer: document.getElementById("sideDrawer"),
     chromeMenu: document.getElementById("chromeMenu"),
-    toolsMenu: document.getElementById("toolsMenu"),
-    mobileTabs: document.getElementById("mobileTabsOverlay")
+    toolsMenu: document.getElementById("toolsMenu")
   };
 
   if (!refs.shell || !refs.stage || !refs.reveal) {
@@ -87,7 +86,6 @@
     if (refs.drawer?.classList.contains("open")) return true;
     if (isVisible(refs.chromeMenu)) return true;
     if (isVisible(refs.toolsMenu)) return true;
-    if (isVisible(refs.mobileTabs)) return true;
 
     const activePanels = [
       "#readerPanel:not(.hidden)",
@@ -433,8 +431,7 @@
   const observedElements = [
     refs.chromeMenu,
     refs.toolsMenu,
-    refs.drawer,
-    refs.mobileTabs
+    refs.drawer
   ].filter(Boolean);
 
   const uiObserver = new MutationObserver(() => {

@@ -1,0 +1,13 @@
+lqlq Browser v0.24.0 — Làm lại toàn bộ hệ thống thẻ native
+
+- Xóa bộ chuyển thẻ HTML cũ và toàn bộ DOM/CSS liên quan.
+- Thêm BrowserTabStore làm nguồn dữ liệu duy nhất cho danh sách thẻ.
+- Thêm NativeTabSwitcherView dạng lưới hai cột, giao diện gần Chrome.
+- Sửa triệt để lỗi thẻ khôi phục có trong JavaScript nhưng không có WebView native.
+- Khi chọn thẻ chưa có WebView, ứng dụng tự tạo lại WebView và nạp URL đã lưu.
+- Chỉ giữ tối đa 4 WebView gần đây để tránh đơ do hàng chục renderer chạy cùng lúc.
+- Xóa toàn bộ cơ chế chụp ảnh thumbnail WebView trên UI thread.
+- Đóng thẻ, đóng các thẻ khác và đóng tất cả giờ đều xử lý ở native.
+- Renderer bị lỗi không còn làm mất thẻ; thẻ được giữ lại và tải lại.
+- Phiên thẻ thường được lưu bằng SharedPreferences; phiên riêng tư không lưu qua lần mở app sau.
+- Tăng versionCode lên 60 và versionName lên 0.24.0.

@@ -1,5 +1,6 @@
 const ACCESS_TEXT = "Iqlq";
 const STORAGE_KEY = "shieldBrowserPrototypeStateV2";
+const NATIVE_TAB_STORE = Boolean(window.LqlqAndroid && window.LqlqAndroid.getTabState);
 
 function uid() {
   if (window.crypto && typeof window.crypto.randomUUID === "function") {
@@ -105,6 +106,17 @@ function loadState() {
       Object.assign(store.normal, parsed.normal || {});
       Object.assign(store.private, parsed.private || {});
       store.zoom = parsed.zoom || 100;
+
+      // Trong APK, danh sách thẻ do Android quản lý duy nhất. Không khôi phục
+      // mảng tabs cũ từ localStorage vì đó là nguyên nhân tạo "thẻ ma": JS có
+      // thẻ nhưng native không có WebView tương ứng. Lịch sử/dấu trang/tải xuống
+      // vẫn được giữ nguyên; android-glue sẽ đồng bộ bản sao tabs ngay sau đó.
+      if (NATIVE_TAB_STORE) {
+        store.normal.tabs = [blankTab("Thẻ mới")];
+        store.normal.activeTabId = store.normal.tabs[0].id;
+        store.private.tabs = [blankTab("Thẻ mới")];
+        store.private.activeTabId = store.private.tabs[0].id;
+      }
     } catch {
       localStorage.removeItem(STORAGE_KEY);
     }

@@ -7,10 +7,7 @@ import android.app.DownloadManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
-import android.graphics.Canvas
 import android.graphics.Color
-import android.util.Base64
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
@@ -121,10 +118,19 @@ class MainActivity : AppCompatActivity() {
     private lateinit var shellWebView: WebView
     private lateinit var pageContainer: FrameLayout
 
-    /** WebView của từng thẻ đang mở website thật. */
+    /**
+     * Hệ thống thẻ native: BrowserTabStore là nguồn dữ liệu duy nhất.
+     * pageWebViews chỉ là bộ nhớ đệm renderer cho một số thẻ gần đây.
+     */
+    private lateinit var tabStore: BrowserTabStore
+    private lateinit var nativeTabSwitcher: NativeTabSwitcherView
     private val pageWebViews = LinkedHashMap<String, WebView>()
+    private val pageLastUsedAt = mutableMapOf<String, Long>()
     private var activeTabId: String? = null
     private var pageVisible = false
+    private var shellReady = false
+
+    private val maxCachedPageWebViews = 4
 
     /**
      * Các tab đã bật Chapter Clipper (việc 1, v0.23.5): một khi người dùng
@@ -145,59 +151,6 @@ class MainActivity : AppCompatActivity() {
      */
     private val tabRootDomain = mutableMapOf<String, String>()
 
-    /**
-     * Việc "Các thẻ đang mở nên có ảnh xem trước thật giống Chrome" (v0.23.31):
-     * ảnh chụp (bitmap) nội dung WebView của từng tab, chụp NGAY TRÊN MÁY
-     * (không qua mạng) — giống hệt cách Chrome lưu snapshot mỗi tab để lưới
-     * "các thẻ đang mở" hiện tức thì, không cần tải lại trang. Chụp lại khi
-     * trang tải xong và khi rời tab (bringPageToFront tab khác) để ảnh luôn
-     * là trạng thái gần nhất người dùng nhìn thấy.
-     */
-    private val tabThumbnails = mutableMapOf<String, Bitmap>()
-
-    /**
-     * Việc "Ảnh xem trước gây lag" (v0.23.32): bản trước vẽ WebView vào 1
-     * bitmap KÍCH THƯỚC ĐẦY ĐỦ MÀN HÌNH (ARGB_8888, ~9-10MB mỗi lần) rồi mới
-     * co nhỏ lại — toàn bộ việc này chạy TRÊN LUỒNG GIAO DIỆN CHÍNH (bắt
-     * buộc vì webView.draw() chỉ chạy được ở UI thread), và còn tệ hơn là
-     * chụp SAU MỖI LẦN TẢI TRANG (không chỉ khi chuyển tab) — quá tốn, đúng
-     * là nguyên nhân lag mới. Giờ vẽ THẲNG ở độ phân giải nhỏ (co bằng
-     * Canvas.scale() trước khi vẽ, không tạo bitmap to trung gian) và dùng
-     * RGB_565 (nhẹ bằng nửa ARGB_8888) — rẻ hơn nhiều lần.
-     */
-    private fun captureTabThumbnail(tabId: String, webView: WebView) {
-        try {
-            if (webView.width <= 0 || webView.height <= 0) return
-            val maxWidth = 360
-            val scale = (maxWidth.toFloat() / webView.width).coerceAtMost(1f)
-            val targetWidth = (webView.width * scale).toInt().coerceAtLeast(1)
-            val targetHeight = (webView.height * scale).toInt().coerceAtLeast(1)
-            val bitmap = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.RGB_565)
-            val canvas = Canvas(bitmap)
-            canvas.scale(scale, scale)
-            webView.draw(canvas)
-            tabThumbnails.put(tabId, bitmap)?.recycle()
-        } catch (_: Exception) {
-            // Bỏ qua — ảnh xem trước chỉ là tiện ích phụ, không quan trọng
-            // bằng việc trang vẫn hoạt động bình thường.
-        }
-    }
-
-    /** Gọi từ ShellBridge — trả về data URI JPEG hoặc chuỗi rỗng nếu chưa có. */
-    fun getTabThumbnailDataUri(tabId: String): String {
-        val bitmap = tabThumbnails[tabId] ?: return ""
-        return try {
-            val stream = java.io.ByteArrayOutputStream()
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 72, stream)
-            "data:image/jpeg;base64," + Base64.encodeToString(stream.toByteArray(), Base64.NO_WRAP)
-        } catch (_: Exception) {
-            ""
-        }
-    }
-
-    private fun removeTabThumbnail(tabId: String) {
-        tabThumbnails.remove(tabId)?.recycle()
-    }
 
     /** Lớp phủ của giao diện (menu, panel...) đang mở → phải nổi trên trang web. */
     @Volatile
@@ -208,6 +161,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var assetLoader: WebViewAssetLoader
     private var ttsBridge: TtsBridge? = null
     private lateinit var shellBridge: ShellBridge
+    private lateinit var pageToolsBridge: PageToolsBridge
     private lateinit var pageBridge: PageBridge
 
     private val htmlFileLauncher = registerForActivityResult(
@@ -257,6 +211,9 @@ class MainActivity : AppCompatActivity() {
         // Nút âm lượng vật lý điều khiển kênh media (nhạc + TTS).
         volumeControlStream = AudioManager.STREAM_MUSIC
 
+        tabStore = BrowserTabStore(this)
+        activeTabId = tabStore.activeTabId()
+
         root = FrameLayout(this)
         shellWebView = WebView(this)
         pageContainer = FrameLayout(this).apply {
@@ -279,6 +236,7 @@ class MainActivity : AppCompatActivity() {
             )
         )
         setupMediaBubble()
+        setupNativeTabSwitcher()
         setContentView(root)
 
         assetLoader = WebViewAssetLoader.Builder()
@@ -349,6 +307,7 @@ class MainActivity : AppCompatActivity() {
 
         ttsBridge = TtsBridge(applicationContext)
         shellBridge = ShellBridge(this)
+        pageToolsBridge = PageToolsBridge(shellBridge)
         pageBridge = PageBridge { currentPageWebView() }
         shellWebView.addJavascriptInterface(shellBridge, "LqlqAndroid")
         shellWebView.addJavascriptInterface(ttsBridge!!, "LqlqTtsBridge")
@@ -370,12 +329,20 @@ class MainActivity : AppCompatActivity() {
                 // Giữ shell trong asset; link http bấm trong shell mở như một trang.
                 if (request.url.host == SHELL_HOST) return false
                 if (url.startsWith("http://") || url.startsWith("https://")) {
-                    val tabId = activeTabId ?: "shell-tab"
+                    val tabId = activeTabId ?: tabStore.activeTabId()
                     openPage(tabId, url)
                     return true
                 }
                 openExternalUri(request.url)
                 return true
+            }
+
+            override fun onPageFinished(view: WebView, url: String) {
+                if (url.startsWith(SHELL_URL)) {
+                    shellReady = true
+                    notifyShellTabsChanged()
+                    restoreActiveTabAfterShellLoad()
+                }
             }
         }
 
@@ -432,56 +399,136 @@ class MainActivity : AppCompatActivity() {
     private fun currentPageWebView(): WebView? =
         activeTabId?.let { pageWebViews[it] }
 
-    /** Chụp ảnh xem trước của tab đang rời đi TRƯỚC KHI chuyển sang tab khác. */
-    /**
-     * Việc "vẫn lag/trống" (v0.23.34): TẮT HẲN việc chụp ảnh xem trước —
-     * JS (v16-mobile-ui.js) không còn gọi getTabThumbnail() nữa (quay lại
-     * icon chữ+màu cục bộ, đáng tin cậy hơn), nên việc tiếp tục chụp bitmap
-     * ở đây chỉ tốn tài nguyên vô ích, không còn ai dùng kết quả.
-     */
-    private fun captureOutgoingTabThumbnail() {
-        // Không làm gì — xem ghi chú ở trên.
+    // ------------------------------------------------------------------
+    // Hệ thống thẻ native — nguồn dữ liệu duy nhất + WebView cache giới hạn
+    // ------------------------------------------------------------------
+
+    private fun setupNativeTabSwitcher() {
+        nativeTabSwitcher = NativeTabSwitcherView(
+            this,
+            object : NativeTabSwitcherView.Callbacks {
+                override fun onNewTab() {
+                    createNativeTab("", tabStore.currentMode)
+                    nativeTabSwitcher.hide(notify = false)
+                    updatePageVisibility()
+                }
+
+                override fun onSelectTab(tabId: String) {
+                    selectNativeTab(tabId, tabStore.currentMode)
+                    nativeTabSwitcher.hide(notify = false)
+                    updatePageVisibility()
+                }
+
+                override fun onCloseTab(tabId: String) {
+                    closeNativeTab(tabId, tabStore.currentMode)
+                }
+
+                override fun onCloseOtherTabs() {
+                    closeOtherNativeTabs()
+                }
+
+                override fun onCloseAllTabs() {
+                    closeAllNativeTabs()
+                }
+
+                override fun onDismiss() {
+                    updatePageVisibility()
+                }
+            }
+        )
+        root.addView(
+            nativeTabSwitcher,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        )
+    }
+
+    fun getTabStateJson(): String = tabStore.stateJson()
+
+    fun showNativeTabSwitcher() {
+        nativeTabSwitcher.show(tabStore.tabs(), tabStore.activeTabId())
+        root.bringChildToFront(nativeTabSwitcher)
+    }
+
+    fun setNativeTabMode(mode: String) {
+        val tab = tabStore.setMode(mode)
+        activeTabId = tab.id
+        activateTab(tab)
+        notifyShellTabsChanged()
+    }
+
+    fun createNativeTab(url: String, mode: String = tabStore.currentMode): String {
+        tabStore.setMode(mode)
+        val tab = tabStore.createTab(url = url)
+        activeTabId = tab.id
+        activateTab(tab, forceReload = url.isNotBlank())
+        notifyShellTabsChanged()
+        return tab.id
+    }
+
+    fun selectNativeTab(tabId: String, mode: String = tabStore.currentMode) {
+        tabStore.setMode(mode)
+        val tab = tabStore.selectTab(tabId) ?: return
+        activateTab(tab)
+        notifyShellTabsChanged()
+    }
+
+    fun closeNativeTab(tabId: String, mode: String = tabStore.currentMode) {
+        tabStore.setMode(mode)
+        destroyPageWebView(tabId)
+        chapterClipperEnabledTabs.remove(tabId)
+        tabRootDomain.remove(tabId)
+        val next = tabStore.closeTab(tabId)
+        activeTabId = next.id
+        activateTab(next)
+        notifyShellTabsChanged()
+    }
+
+    fun closeOtherNativeTabs() {
+        val keepId = tabStore.activeTabId()
+        val removedIds = tabStore.tabs().map { it.id }.filter { it != keepId }
+        removedIds.forEach { id ->
+            destroyPageWebView(id)
+            chapterClipperEnabledTabs.remove(id)
+            tabRootDomain.remove(id)
+        }
+        val keep = tabStore.closeOtherTabs(keepId)
+        activeTabId = keep.id
+        activateTab(keep)
+        notifyShellTabsChanged()
+    }
+
+    fun closeAllNativeTabs() {
+        val closingIds = tabStore.tabs().map { it.id }
+        closingIds.forEach { id ->
+            destroyPageWebView(id)
+            chapterClipperEnabledTabs.remove(id)
+            tabRootDomain.remove(id)
+        }
+        val blank = tabStore.closeAllTabs()
+        activeTabId = blank.id
+        activateTab(blank)
+        notifyShellTabsChanged()
     }
 
     fun openPage(tabId: String, url: String) {
-        if (activeTabId != tabId) captureOutgoingTabThumbnail()
-        activeTabId = tabId
-        val webView = pageWebViews.getOrPut(tabId) { createPageWebView(tabId) }
+        val tab = tabStore.ensureTab(tabId, url = url)
+        tabStore.selectTab(tab.id)
+        tabStore.updateTab(tab.id, url = url, loading = true)
+        activeTabId = tab.id
+
+        // openPage() là điều hướng chủ động, vì vậy domain đích trở thành
+        // domain hợp lệ mới của thẻ trước khi WebView bắt đầu tải.
+        Uri.parse(url).host?.let { tabRootDomain[tab.id] = it }
+
+        val webView = pageWebViews.getOrPut(tab.id) { createPageWebView(tab.id) }
         bringPageToFront(webView)
-        // Việc (v0.23.13): openPage() là điểm vào "đáng tin" duy nhất cho điều
-        // hướng CHỦ ĐỘNG của người dùng (gõ địa chỉ, bấm liên kết nhanh ở
-        // trang chủ...) — đánh dấu NGAY domain đích là domain gốc hợp lệ của
-        // tab, để không bị chính lớp chặn cross-domain của chúng ta chặn
-        // nhầm khi người dùng cố tình chuyển sang 1 trang web khác hẳn.
-        Uri.parse(url).host?.let { tabRootDomain[tabId] = it }
         webView.loadUrl(url)
         setPageVisible(true)
-    }
-
-    fun switchPage(tabId: String) {
-        if (activeTabId != tabId) captureOutgoingTabThumbnail()
-        activeTabId = tabId
-        val webView = pageWebViews[tabId]
-        if (webView != null) {
-            bringPageToFront(webView)
-            setPageVisible(true)
-            notifyShellPage(tabId, webView.url ?: "", webView.title ?: "", loading = false)
-        } else {
-            setPageVisible(false)
-        }
-    }
-
-    fun closePage(tabId: String) {
-        val webView = pageWebViews.remove(tabId) ?: return
-        pageContainer.removeView(webView)
-        webView.stopLoading()
-        webView.destroy()
-        chapterClipperEnabledTabs.remove(tabId)
-        tabRootDomain.remove(tabId)
-        removeTabThumbnail(tabId)
-        if (activeTabId == tabId) {
-            setPageVisible(false)
-        }
+        trimPageWebViewCache()
+        notifyShellTabsChanged()
     }
 
     fun showHome() {
@@ -490,6 +537,92 @@ class MainActivity : AppCompatActivity() {
 
     fun reloadActivePage() {
         currentPageWebView()?.reload()
+    }
+
+    private fun restoreActiveTabAfterShellLoad() {
+        val tab = tabStore.currentTab()
+        activeTabId = tab.id
+        activateTab(tab)
+    }
+
+    private fun activateTab(tab: BrowserTab, forceReload: Boolean = false) {
+        activeTabId = tab.id
+
+        if (tab.url.isBlank()) {
+            deactivateAllPageWebViews()
+            setPageVisible(false)
+            notifyShellPage(tab.id, "", tab.title, loading = false)
+            return
+        }
+
+        val webView = pageWebViews.getOrPut(tab.id) { createPageWebView(tab.id) }
+        bringPageToFront(webView)
+        val loadedUrl = webView.url.orEmpty()
+        if (forceReload || loadedUrl.isBlank() || loadedUrl != tab.url) {
+            Uri.parse(tab.url).host?.let { tabRootDomain[tab.id] = it }
+            webView.loadUrl(tab.url)
+        } else {
+            notifyShellPage(tab.id, loadedUrl, webView.title ?: tab.title, loading = false)
+        }
+        setPageVisible(true)
+        trimPageWebViewCache()
+    }
+
+    private fun deactivateAllPageWebViews() {
+        pageWebViews.values.forEach { view ->
+            view.visibility = View.GONE
+            setPageRendererPriority(view, active = false)
+        }
+    }
+
+    private fun destroyPageWebView(tabId: String) {
+        val webView = pageWebViews.remove(tabId) ?: return
+        pageLastUsedAt.remove(tabId)
+        try {
+            pageContainer.removeView(webView)
+            webView.stopLoading()
+            // Không load about:blank trước khi destroy: callback của trang trắng
+            // có thể chạy sau đó và ghi đè URL đã lưu của thẻ vừa bị đẩy khỏi
+            // cache, khiến lần chọn lại chỉ mở một trang trắng.
+            webView.removeJavascriptInterface("LqlqAndroid")
+            webView.webChromeClient = null
+            webView.webViewClient = WebViewClient()
+            webView.removeAllViews()
+            webView.destroy()
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun trimPageWebViewCache() {
+        if (pageWebViews.size <= maxCachedPageWebViews) return
+        val active = activeTabId
+        val candidates = pageWebViews.keys
+            .filter { it != active }
+            .sortedBy { pageLastUsedAt[it] ?: 0L }
+        val removeCount = pageWebViews.size - maxCachedPageWebViews
+        candidates.take(removeCount).forEach { tabId ->
+            pageWebViews[tabId]?.let { webView ->
+                tabStore.updateTab(
+                    tabId,
+                    url = webView.url,
+                    title = webView.title,
+                    loading = false
+                )
+            }
+            destroyPageWebView(tabId)
+        }
+    }
+
+    private fun notifyShellTabsChanged() {
+        if (::nativeTabSwitcher.isInitialized) {
+            nativeTabSwitcher.submitTabs(tabStore.tabs(), tabStore.activeTabId())
+        }
+        if (!shellReady) return
+        val state = tabStore.stateJson()
+        shellWebView.evaluateJavascript(
+            "window.LqlqGlue && LqlqGlue.onNativeTabsChanged($state);",
+            null
+        )
     }
 
     /**
@@ -642,9 +775,6 @@ $js
     }
 
     private fun bringPageToFront(webView: WebView) {
-        for (view in pageWebViews.values) {
-            view.visibility = if (view === webView) View.VISIBLE else View.GONE
-        }
         if (webView.parent == null) {
             pageContainer.addView(
                 webView,
@@ -654,6 +784,24 @@ $js
                 )
             )
         }
+
+        pageWebViews.forEach { (tabId, view) ->
+            val active = view === webView
+            view.visibility = if (active) View.VISIBLE else View.GONE
+            setPageRendererPriority(view, active)
+            if (active) pageLastUsedAt[tabId] = System.currentTimeMillis()
+        }
+    }
+
+    private fun setPageRendererPriority(webView: WebView, active: Boolean) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        try {
+            webView.setRendererPriorityPolicy(
+                if (active) WebView.RENDERER_PRIORITY_IMPORTANT else WebView.RENDERER_PRIORITY_BOUND,
+                false
+            )
+        } catch (_: Exception) {
+        }
     }
 
     fun setOverlayOpen(open: Boolean) {
@@ -662,29 +810,21 @@ $js
     }
 
     private fun updatePageVisibility() {
-        // pageContainer LUÔN hiển thị khi có trang web đang mở — menu/panel của
-        // giao diện nổi lên bằng z-order (bringChildToFront), không che bằng
-        // cách ẩn pageContainer (việc đó từng làm lộ trang chủ phía dưới).
         pageContainer.visibility = if (pageVisible) View.VISIBLE else View.GONE
 
         if (overlayOpen) {
-            // Đưa shell lên trên để menu/panel nổi trên trang web thật; nền
-            // shell luôn trong suốt (đặt 1 lần trong setupShellWebView()) nên
-            // không cần chờ hay set lại ở đây — tránh chớp trắng do vẽ lại.
             root.bringChildToFront(shellWebView)
+        } else if (pageVisible) {
+            root.bringChildToFront(pageContainer)
         } else {
-            // Đóng overlay: nếu đang có trang web thật thì đưa nó lên trên;
-            // nếu không (đang ở trang chủ) thì giữ shell trên cùng như cũ.
-            if (pageVisible) {
-                root.bringChildToFront(pageContainer)
-            } else {
-                root.bringChildToFront(shellWebView)
-            }
+            root.bringChildToFront(shellWebView)
         }
-        // Nút bọt nhạc nổi (v0.23.17) phải luôn nổi trên cùng bất kể shell
-        // hay trang web thật đang ở trên — bringChildToFront() ở trên đưa
-        // 1 trong 2 cái đó lên vị trí cuối, cần tự đưa bọt nhạc lên sau chót.
-        if (::mediaBubble.isInitialized) {
+
+        if (::nativeTabSwitcher.isInitialized && nativeTabSwitcher.isOpen) {
+            // Bộ chuyển thẻ là View native toàn màn hình, luôn đứng trên WebView
+            // và cả bọt media để không xảy ra lỗi chạm xuyên/z-index như bản cũ.
+            root.bringChildToFront(nativeTabSwitcher)
+        } else if (::mediaBubble.isInitialized) {
             root.bringChildToFront(mediaBubble)
         }
         root.invalidate()
@@ -732,7 +872,9 @@ $js
     fun setMediaBubbleVisible(visible: Boolean) {
         if (!::mediaBubble.isInitialized) return
         mediaBubble.visibility = if (visible) View.VISIBLE else View.GONE
-        if (visible) root.bringChildToFront(mediaBubble)
+        if (visible && (!::nativeTabSwitcher.isInitialized || !nativeTabSwitcher.isOpen)) {
+            root.bringChildToFront(mediaBubble)
+        }
     }
 
     private fun setPageVisible(visible: Boolean) {
@@ -748,7 +890,6 @@ $js
     private fun createPageWebView(tabId: String): WebView {
         val webView = WebView(this)
         applyCommonSettings(webView.settings)
-        applyBackgroundRendererPriority(webView)
 
         // Việc A (v0.23.6): chặn quảng cáo tự mở cửa sổ/tab mới ở tầng
         // WebView (mạnh hơn nhiều so với chỉ override window.open bằng JS,
@@ -758,12 +899,10 @@ $js
         webView.settings.setSupportMultipleWindows(false)
         webView.settings.javaScriptCanOpenWindowsAutomatically = false
 
-        // Chapter Clipper (content-script tiêm vào trang thật) cần lưu file
-        // TXT ra Download — gắn cùng bridge LqlqAndroid.saveTextFile() dùng
-        // cho shellWebView, vì trước đây page WebView không có bridge này
-        // nên xuất TXT rơi vào nhánh blob:/<a download> mà DownloadListener
-        // của app từ chối xử lý (xem startDownload()).
-        webView.addJavascriptInterface(shellBridge, "LqlqAndroid")
+        // Chapter Clipper cần duy nhất API saveTextFile(). Website bên ngoài
+        // chỉ nhận PageToolsBridge tối thiểu, không được thấy API quản lý thẻ
+        // và các quyền đặc biệt khác của ShellBridge.
+        webView.addJavascriptInterface(pageToolsBridge, "LqlqAndroid")
 
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
@@ -925,14 +1064,6 @@ $js
                     injectChapterClipperInto(view)
                 }
 
-                // Việc "ảnh xem trước gây lag" (v0.23.32): BỎ chụp tự động
-                // sau MỖI LẦN TẢI TRANG — quá thường xuyên (mỗi lần điều
-                // hướng/next-chapter đều chụp lại dù người dùng không hề mở
-                // lưới tab), cộng dồn với chi phí vẽ WebView trên UI thread
-                // gây lag rõ rệt. Giờ CHỈ chụp khi thực sự rời tab
-                // (captureOutgoingTabThumbnail trong switchPage()/openPage()),
-                // tần suất thấp hơn nhiều vì gắn với hành động chuyển tab thật
-                // của người dùng.
             }
 
             override fun doUpdateVisitedHistory(
@@ -996,13 +1127,26 @@ $js
                 view: WebView,
                 detail: android.webkit.RenderProcessGoneDetail
             ): Boolean {
-                // Không để cả app văng khi renderer của một trang chết.
-                closePage(tabId)
+                // Renderer chết không được xóa thẻ. Chỉ hủy WebView lỗi; URL và
+                // tiêu đề vẫn nằm trong TabStore để thẻ có thể tải lại an toàn.
+                val tab = tabStore.findTab(tabId)
+                pageWebViews.remove(tabId)
+                pageLastUsedAt.remove(tabId)
+                try {
+                    pageContainer.removeView(view)
+                    view.destroy()
+                } catch (_: Exception) {
+                }
                 Toast.makeText(
                     this@MainActivity,
-                    "Trang web gặp sự cố và đã được đóng.",
+                    "Trang web gặp sự cố. Đang tải lại thẻ…",
                     Toast.LENGTH_SHORT
                 ).show()
+                if (tabId == activeTabId && tab != null) {
+                    setPageVisible(false)
+                    pageContainer.post { activateTab(tab, forceReload = true) }
+                }
+                notifyShellTabsChanged()
                 return true
             }
         }
@@ -1017,6 +1161,18 @@ $js
     }
 
     private fun notifyShellPage(tabId: String, url: String, title: String, loading: Boolean) {
+        tabStore.updateTab(
+            tabId,
+            url = url,
+            title = title.takeIf { it.isNotBlank() },
+            loading = loading,
+            persist = !loading
+        )
+        if (::nativeTabSwitcher.isInitialized) {
+            nativeTabSwitcher.submitTabs(tabStore.tabs(), tabStore.activeTabId())
+        }
+        if (!shellReady) return
+
         val payload = JSONObject().apply {
             put("tabId", tabId)
             put("url", url)
@@ -1164,29 +1320,35 @@ $js
     }
 
     private fun openOfflineMhtFile(tempFile: File) {
-        val tabId = "offline-html"
-        activeTabId = tabId
-        val webView = pageWebViews.getOrPut(tabId) { createPageWebView(tabId) }
+        val offlineUrl = "file://${tempFile.absolutePath}"
+        val tab = tabStore.createTab(url = offlineUrl, title = "Trang ngoại tuyến")
+        activeTabId = tab.id
+        val webView = pageWebViews.getOrPut(tab.id) { createPageWebView(tab.id) }
         bringPageToFront(webView)
         webView.settings.allowFileAccess = true
-        webView.loadUrl("file://${tempFile.absolutePath}")
+        webView.loadUrl(offlineUrl)
         setPageVisible(true)
+        trimPageWebViewCache()
+        notifyShellTabsChanged()
         Toast.makeText(this, "Đã mở trang ngoại tuyến.", Toast.LENGTH_SHORT).show()
     }
 
     private fun openOfflineHtmlString(html: String) {
-        val tabId = "offline-html"
-        activeTabId = tabId
-        val webView = pageWebViews.getOrPut(tabId) { createPageWebView(tabId) }
+        val baseUrl = "https://offline.lqlq.local/"
+        val tab = tabStore.createTab(url = baseUrl, title = "Trang ngoại tuyến")
+        activeTabId = tab.id
+        val webView = pageWebViews.getOrPut(tab.id) { createPageWebView(tab.id) }
         bringPageToFront(webView)
         webView.loadDataWithBaseURL(
-            "https://offline.lqlq.local/",
+            baseUrl,
             html,
             "text/html",
             "utf-8",
             null
         )
         setPageVisible(true)
+        trimPageWebViewCache()
+        notifyShellTabsChanged()
         Toast.makeText(this, "Đã mở trang ngoại tuyến.", Toast.LENGTH_SHORT).show()
     }
 
@@ -1381,6 +1543,8 @@ $js
                 val page = currentPageWebView()
                 when {
                     customView != null -> exitCustomView()
+                    ::nativeTabSwitcher.isInitialized && nativeTabSwitcher.isOpen ->
+                        nativeTabSwitcher.hide()
                     // Menu / panel của giao diện đang mở → đóng nó trước
                     overlayOpen -> shellWebView.evaluateJavascript(
                         "window.LqlqGlue && LqlqGlue.closeTopOverlay();",

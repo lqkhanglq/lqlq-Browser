@@ -12,7 +12,7 @@ android {
         minSdk = 24
         targetSdk = 35
         versionCode = 60
-        versionName = "0.23.37"
+        versionName = "0.24.0"
     }
 
     signingConfigs {
@@ -54,4 +54,5 @@ dependencies {
     implementation("androidx.webkit:webkit:1.11.0")
     implementation("androidx.media:media:1.7.0")
     implementation("androidx.activity:activity-ktx:1.9.2")
+    implementation("androidx.recyclerview:recyclerview:1.3.2")
 }

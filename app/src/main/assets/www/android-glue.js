@@ -1,5 +1,5 @@
 /*
- * android-glue.js — lqlq Browser v0.23.1 APK
+ * android-glue.js — lqlq Browser v0.24.0 APK
  *
  * Cầu nối giữa giao diện HTML và lớp native Android.
  * Chỉ hoạt động khi chạy trong APK (window.LqlqAndroid tồn tại);
@@ -48,8 +48,43 @@
   safeCall(() => native.setAdblockDomEnabled?.(window.lqlqGetAdblockDomEnabled()));
 
   // ==================================================================
-  // 1. Điều hướng: nối giao diện với WebView trang web thật
+  // 1. Hệ thống thẻ native — Android là nguồn dữ liệu duy nhất
   // ==================================================================
+
+  function currentMode() {
+    try { return store.mode === "private" ? "private" : "normal"; }
+    catch { return "normal"; }
+  }
+
+  function applyNativeTabState(rawState) {
+    safeCall(() => {
+      const state = typeof rawState === "string" ? JSON.parse(rawState) : rawState;
+      if (!state || !Array.isArray(state.tabs)) return;
+      const mode = state.mode === "private" ? "private" : "normal";
+      const profile = mode === "private" ? store.private : store.normal;
+      profile.tabs = state.tabs.map(tab => ({
+        id: String(tab.id),
+        title: String(tab.title || "Thẻ mới"),
+        url: String(tab.url || ""),
+        loading: Boolean(tab.loading)
+      }));
+      if (!profile.tabs.length) {
+        profile.tabs = [{ id: "native-empty", title: "Thẻ mới", url: "" }];
+      }
+      profile.activeTabId = String(state.activeTabId || profile.tabs[0].id);
+      window.saveState?.();
+      if (currentMode() === mode) {
+        window.render?.();
+        window.ShieldMobileChrome?.update?.();
+      }
+    });
+  }
+
+  window.lqlqApplyNativeTabState = applyNativeTabState;
+
+  // Đồng bộ ngay khi shell nạp. Mảng tabs trong localStorage chỉ còn là bản
+  // sao để các chức năng giao diện cũ đọc, không còn quyền tạo/đóng/chọn thẻ.
+  safeCall(() => applyNativeTabState(native.getTabState()));
 
   const origNavigate = window.navigate;
   if (typeof origNavigate === "function") {
@@ -58,9 +93,6 @@
       safeCall(() => {
         const tab = window.activeTab?.();
         if (tab && /^https?:\/\//i.test(tab.url)) {
-          // Trang web thật sắp mở có thể tự phát video/âm thanh riêng —
-          // tạm dừng media đang phát trong panel của shell trước, tránh
-          // chồng tiếng giữa 2 nguồn phát cùng lúc.
           safeCall(() => window.ShieldMedia?.pause?.());
           native.openPage(String(tab.id), tab.url);
         }
@@ -68,41 +100,38 @@
     };
   }
 
-  // Khôi phục thẻ gần nhất: khi shell vừa nạp xong, nếu phiên trước có
-  // thẻ đang mở với URL http(s) thật, tự mở lại thẻ đó trong pageContainer
-  // (giống Chrome mở lại tab cuối cùng khi khởi động ứng dụng).
-  safeCall(() => {
-    const tab = window.activeTab?.();
-    if (tab && /^https?:\/\//i.test(tab.url)) {
-      native.openPage(String(tab.id), tab.url);
-    }
-  });
-
   const origNewTab = window.newTab;
-  if (typeof origNewTab === "function") {
-    window.newTab = function (url) {
-      origNewTab(url);
-      safeCall(() => native.showHome());
-    };
-  }
+  window.newTab = function (url = "") {
+    safeCall(() => {
+      const finalUrl = url ? window.normalizeUrl?.(url) || String(url) : "";
+      native.createTab(finalUrl, currentMode());
+      // createTab trả về sau khi UI thread đã hoàn tất; đọc lại snapshot native
+      // để thanh đếm/địa chỉ cập nhật ngay cả trước callback evaluateJavascript.
+      applyNativeTabState(native.getTabState());
+    });
+  };
 
   const origSwitchTab = window.switchTab;
-  if (typeof origSwitchTab === "function") {
-    window.switchTab = function (id) {
-      origSwitchTab(id);
-      safeCall(() => native.switchPage(String(id)));
-    };
-  }
+  window.switchTab = function (id) {
+    // Cập nhật bản sao giao diện ngay để thao tác có phản hồi tức thì; Android
+    // vẫn là nơi quyết định cuối cùng và sẽ gửi lại onNativeTabsChanged().
+    if (typeof origSwitchTab === "function") origSwitchTab(id);
+    safeCall(() => native.selectTab(String(id), currentMode()));
+  };
 
-  const origCloseTab = window.closeTab;
-  if (typeof origCloseTab === "function") {
-    window.closeTab = function (id) {
-      origCloseTab(id);
-      safeCall(() => {
-        native.closePage(String(id));
-        const tab = window.activeTab?.();
-        if (tab) native.switchPage(String(tab.id));
-      });
+  window.closeTab = function (id) {
+    safeCall(() => native.closeTab(String(id), currentMode()));
+  };
+
+  // Chế độ riêng tư dùng một phiên tab native riêng và không được lưu qua lần
+  // mở app sau. Bọc hàm ẩn hiện có để báo mode cho Android ngay khi đổi.
+  const origSubmitHiddenSearch = window.submitHiddenSearch;
+  if (typeof origSubmitHiddenSearch === "function") {
+    window.submitHiddenSearch = function () {
+      const before = currentMode();
+      origSubmitHiddenSearch();
+      const after = currentMode();
+      if (before !== after) safeCall(() => native.setTabMode(after));
     };
   }
 
@@ -120,7 +149,6 @@
     { id: "chapterClipperPanel", kind: "aria", closeBtn: "chapterClipperClose" },
     { id: "storyReaderPanel", kind: "aria", closeBtn: "closeStoryReader" },
     { id: "securityCenterOverlay", kind: "hidden", closeBtn: "closeSecurityCenter" },
-    { id: "mobileTabsOverlay", kind: "hidden", closeBtn: "mobileTabsClose" },
     { id: "chromeMenu", kind: "hidden", closeBtn: null },
     { id: "toolsMenu", kind: "hidden", closeBtn: null },
     { id: "sideDrawer", kind: "open", closeBtn: "closeDrawer" }
@@ -177,7 +205,6 @@
   function closeAllMenus() {
     ["chromeMenu", "toolsMenu"].forEach(id => $(id)?.classList.add("hidden"));
     $("sideDrawer")?.classList.remove("open");
-    $("mobileTabsOverlay")?.classList.add("hidden");
     setTimeout(reportOverlayState, 60);
   }
 
@@ -198,6 +225,10 @@
       });
       setTimeout(reportOverlayState, 120);
       return closed;
+    },
+
+    onNativeTabsChanged(info) {
+      applyNativeTabState(info);
     },
 
     onNativePage(info) {

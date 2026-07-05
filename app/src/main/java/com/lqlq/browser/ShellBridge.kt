@@ -12,6 +12,8 @@ import android.webkit.JavascriptInterface
 import android.widget.Toast
 import org.json.JSONObject
 import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /**
  * Cầu nối "LqlqAndroid" cho WebView giao diện (shell).
@@ -23,19 +25,68 @@ class ShellBridge(private val activity: MainActivity) {
     // Điều khiển thẻ / trang web thật
     // ------------------------------------------------------------------
 
+
+    @JavascriptInterface
+    fun getTabState(): String = activity.getTabStateJson()
+
+    @JavascriptInterface
+    fun showTabSwitcher() {
+        activity.runOnUiThread { activity.showNativeTabSwitcher() }
+    }
+
+    @JavascriptInterface
+    fun createTab(url: String, mode: String): String {
+        var result = ""
+        val latch = CountDownLatch(1)
+        activity.runOnUiThread {
+            try {
+                result = activity.createNativeTab(url, mode)
+            } finally {
+                latch.countDown()
+            }
+        }
+        try {
+            latch.await(3, TimeUnit.SECONDS)
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+        }
+        return result
+    }
+
+    @JavascriptInterface
+    fun selectTab(tabId: String, mode: String) {
+        activity.runOnUiThread { activity.selectNativeTab(tabId, mode) }
+    }
+
+    @JavascriptInterface
+    fun closeTab(tabId: String, mode: String) {
+        activity.runOnUiThread { activity.closeNativeTab(tabId, mode) }
+    }
+
+    @JavascriptInterface
+    fun closeOtherTabs(mode: String) {
+        activity.runOnUiThread {
+            activity.setNativeTabMode(mode)
+            activity.closeOtherNativeTabs()
+        }
+    }
+
+    @JavascriptInterface
+    fun closeAllTabs(mode: String) {
+        activity.runOnUiThread {
+            activity.setNativeTabMode(mode)
+            activity.closeAllNativeTabs()
+        }
+    }
+
+    @JavascriptInterface
+    fun setTabMode(mode: String) {
+        activity.runOnUiThread { activity.setNativeTabMode(mode) }
+    }
+
     @JavascriptInterface
     fun openPage(tabId: String, url: String) {
         activity.runOnUiThread { activity.openPage(tabId, url) }
-    }
-
-    @JavascriptInterface
-    fun switchPage(tabId: String) {
-        activity.runOnUiThread { activity.switchPage(tabId) }
-    }
-
-    @JavascriptInterface
-    fun closePage(tabId: String) {
-        activity.runOnUiThread { activity.closePage(tabId) }
     }
 
     @JavascriptInterface
@@ -89,13 +140,6 @@ class ShellBridge(private val activity: MainActivity) {
         activity.runOnUiThread { activity.extractChapterForReader() }
     }
 
-    /**
-     * Việc (v0.23.31): ảnh xem trước thật của từng tab (giống Chrome) —
-     * đọc thẳng bitmap đã chụp sẵn trong bộ nhớ (không tải mạng), trả về
-     * data URI để lưới "Các thẻ đang mở" gán thẳng vào <img>/CSS background.
-     */
-    @JavascriptInterface
-    fun getTabThumbnail(tabId: String): String = activity.getTabThumbnailDataUri(tabId)
 
     /**
      * Việc (v0.23.28): bật/tắt lớp ẩn quảng cáo DOM — mặc định TẮT (đặt ở
