@@ -193,6 +193,20 @@
       preview.style.background = `linear-gradient(180deg, hsl(${hue} 45% 94%), hsl(${hue} 35% 88%))`;
       preview.innerHTML = `<span>${escapeHtml(faviconLetter(tab))}</span>`;
 
+      // Việc "ảnh xem trước giống Chrome" (v0.23.31): dùng ảnh chụp THẬT của
+      // WebView (native đã chụp sẵn trong bộ nhớ, không tải mạng) nếu có —
+      // giống hệt cách Chrome cache snapshot mỗi tab. Nếu tab chưa từng
+      // render xong (chưa có ảnh), giữ nguyên gradient+chữ cái làm dự phòng.
+      try {
+        const thumbnail = window.LqlqAndroid?.getTabThumbnail?.(String(tab.id));
+        if (thumbnail) {
+          preview.style.backgroundImage = `url("${thumbnail}")`;
+          preview.style.backgroundSize = "cover";
+          preview.style.backgroundPosition = "top center";
+          preview.querySelector("span")?.remove();
+        }
+      } catch {}
+
       if (tab.id === profile.activeTabId) {
         const activeBadge = document.createElement("span");
         activeBadge.className = "mobile-tab-active-badge";

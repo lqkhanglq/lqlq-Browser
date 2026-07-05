@@ -7,7 +7,10 @@ import android.app.DownloadManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
+import android.util.Base64
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
@@ -141,6 +144,53 @@ class MainActivity : AppCompatActivity() {
      * rác đổi liên tục kiểu "scouplayen.qp").
      */
     private val tabRootDomain = mutableMapOf<String, String>()
+
+    /**
+     * Việc "Các thẻ đang mở nên có ảnh xem trước thật giống Chrome" (v0.23.31):
+     * ảnh chụp (bitmap) nội dung WebView của từng tab, chụp NGAY TRÊN MÁY
+     * (không qua mạng) — giống hệt cách Chrome lưu snapshot mỗi tab để lưới
+     * "các thẻ đang mở" hiện tức thì, không cần tải lại trang. Chụp lại khi
+     * trang tải xong và khi rời tab (bringPageToFront tab khác) để ảnh luôn
+     * là trạng thái gần nhất người dùng nhìn thấy.
+     */
+    private val tabThumbnails = mutableMapOf<String, Bitmap>()
+
+    private fun captureTabThumbnail(tabId: String, webView: WebView) {
+        try {
+            if (webView.width <= 0 || webView.height <= 0) return
+            val full = Bitmap.createBitmap(webView.width, webView.height, Bitmap.Config.ARGB_8888)
+            webView.draw(Canvas(full))
+            val maxWidth = 480
+            val scaled = if (full.width > maxWidth) {
+                val ratio = maxWidth.toFloat() / full.width
+                Bitmap.createScaledBitmap(full, maxWidth, (full.height * ratio).toInt(), true).also {
+                    full.recycle()
+                }
+            } else {
+                full
+            }
+            tabThumbnails.put(tabId, scaled)?.recycle()
+        } catch (_: Exception) {
+            // Bỏ qua — ảnh xem trước chỉ là tiện ích phụ, không quan trọng
+            // bằng việc trang vẫn hoạt động bình thường.
+        }
+    }
+
+    /** Gọi từ ShellBridge — trả về data URI JPEG hoặc chuỗi rỗng nếu chưa có. */
+    fun getTabThumbnailDataUri(tabId: String): String {
+        val bitmap = tabThumbnails[tabId] ?: return ""
+        return try {
+            val stream = java.io.ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 72, stream)
+            "data:image/jpeg;base64," + Base64.encodeToString(stream.toByteArray(), Base64.NO_WRAP)
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
+    private fun removeTabThumbnail(tabId: String) {
+        tabThumbnails.remove(tabId)?.recycle()
+    }
 
     /** Lớp phủ của giao diện (menu, panel...) đang mở → phải nổi trên trang web. */
     @Volatile
@@ -375,7 +425,15 @@ class MainActivity : AppCompatActivity() {
     private fun currentPageWebView(): WebView? =
         activeTabId?.let { pageWebViews[it] }
 
+    /** Chụp ảnh xem trước của tab đang rời đi TRƯỚC KHI chuyển sang tab khác. */
+    private fun captureOutgoingTabThumbnail() {
+        val outgoingId = activeTabId ?: return
+        val outgoingView = pageWebViews[outgoingId] ?: return
+        captureTabThumbnail(outgoingId, outgoingView)
+    }
+
     fun openPage(tabId: String, url: String) {
+        if (activeTabId != tabId) captureOutgoingTabThumbnail()
         activeTabId = tabId
         val webView = pageWebViews.getOrPut(tabId) { createPageWebView(tabId) }
         bringPageToFront(webView)
@@ -390,6 +448,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun switchPage(tabId: String) {
+        if (activeTabId != tabId) captureOutgoingTabThumbnail()
         activeTabId = tabId
         val webView = pageWebViews[tabId]
         if (webView != null) {
@@ -408,6 +467,7 @@ class MainActivity : AppCompatActivity() {
         webView.destroy()
         chapterClipperEnabledTabs.remove(tabId)
         tabRootDomain.remove(tabId)
+        removeTabThumbnail(tabId)
         if (activeTabId == tabId) {
             setPageVisible(false)
         }
@@ -853,6 +913,12 @@ $js
                 if (chapterClipperEnabledTabs.contains(tabId)) {
                     injectChapterClipperInto(view)
                 }
+
+                // Việc "ảnh xem trước thẻ giống Chrome" (v0.23.31): chụp lại
+                // sau khi trang tải xong (trễ 1 nhịp để nội dung kịp vẽ xong),
+                // để lưới "Các thẻ đang mở" luôn có ảnh gần nhất, không chỉ
+                // chụp lúc rời tab.
+                view.postDelayed({ captureTabThumbnail(tabId, view) }, 350)
             }
 
             override fun doUpdateVisitedHistory(

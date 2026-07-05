@@ -11,8 +11,8 @@ android {
         applicationId = "com.lqlq.browser"
         minSdk = 24
         targetSdk = 35
-        versionCode = 53
-        versionName = "0.23.30"
+        versionCode = 54
+        versionName = "0.23.31"
     }
 
     signingConfigs {

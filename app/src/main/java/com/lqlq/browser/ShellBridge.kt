@@ -90,6 +90,14 @@ class ShellBridge(private val activity: MainActivity) {
     }
 
     /**
+     * Việc (v0.23.31): ảnh xem trước thật của từng tab (giống Chrome) —
+     * đọc thẳng bitmap đã chụp sẵn trong bộ nhớ (không tải mạng), trả về
+     * data URI để lưới "Các thẻ đang mở" gán thẳng vào <img>/CSS background.
+     */
+    @JavascriptInterface
+    fun getTabThumbnail(tabId: String): String = activity.getTabThumbnailDataUri(tabId)
+
+    /**
      * Việc (v0.23.28): bật/tắt lớp ẩn quảng cáo DOM — mặc định TẮT (đặt ở
      * MainActivity.adblockDomEnabled, khởi tạo false). Lớp chặn domain/
      * redirect (native, luôn bật) không bị ảnh hưởng bởi cờ này.
