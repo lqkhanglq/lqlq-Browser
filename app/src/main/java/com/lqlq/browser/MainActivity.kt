@@ -21,6 +21,7 @@ import android.webkit.MimeTypeMap
 import android.webkit.URLUtil
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
@@ -577,6 +578,47 @@ $js
                 // đề tạm thời (loading=true) — mục Nhật ký chỉ được ghi thật sự
                 // tại onPageFinished(), khi URL cuối cùng đã tải xong.
                 notifyShellPage(tabId, url, view.title ?: "", loading = true)
+            }
+
+            // Việc D (v0.23.7): nhiều quảng cáo dùng redirect HTTP phía server
+            // (Location header) thay vì JS location.href — kiểu này KHÔNG đi
+            // qua shouldOverrideUrlLoading() ở trên (WebView tự âm thầm theo
+            // chuỗi redirect của 1 request đã được cho phép), nên lọt qua
+            // "Việc B" và trang đích cuối cùng (thường hỏng/trắng) vẫn hiện
+            // ra. Bắt lỗi tải trang CHÍNH (main frame) ở đây và tự quay lại
+            // trang trước đó thay vì để màn hình trắng.
+            private fun recoverFromBadLoad(view: WebView, reason: String) {
+                runOnUiThread {
+                    if (view.canGoBack()) {
+                        Toast.makeText(
+                            this@MainActivity,
+                            "Trang đích không tải được ($reason) — đã quay lại trang trước.",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        view.stopLoading()
+                        view.goBack()
+                    }
+                }
+            }
+
+            override fun onReceivedError(
+                view: WebView,
+                request: WebResourceRequest,
+                error: WebResourceError
+            ) {
+                if (request.isForMainFrame) {
+                    recoverFromBadLoad(view, "lỗi kết nối")
+                }
+            }
+
+            override fun onReceivedHttpError(
+                view: WebView,
+                request: WebResourceRequest,
+                errorResponse: android.webkit.WebResourceResponse
+            ) {
+                if (request.isForMainFrame && errorResponse.statusCode >= 400) {
+                    recoverFromBadLoad(view, "HTTP ${errorResponse.statusCode}")
+                }
             }
 
             override fun onRenderProcessGone(

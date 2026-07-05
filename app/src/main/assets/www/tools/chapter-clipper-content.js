@@ -517,7 +517,7 @@
     let suffix;
     if (nums.length) suffix = `chuong_${Math.min(...nums)}_${Math.max(...nums)}`;
     else suffix = `lo_${state.batchNo || 1}`;
-    return `${story}_${suffix}.txt`;
+    return `${suffix}_${story}.txt`;
   }
 
   async function exportChapters(clearAfter = false) {
