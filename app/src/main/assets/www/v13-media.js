@@ -1,12 +1,13 @@
 (() => {
-  // Việc (v0.23.22): GỘP LẠI còn 1 cơ chế nổi duy nhất cho nhạc/video nền —
-  // trước đây có 2 thứ trùng chức năng: (1) khung "trình phát thu nhỏ" nổi
-  // kéo được của chính JS này (kèm 1 <video>/<iframe YouTube> MIRROR riêng
-  // để hiển thị, phải khoá tiếng vĩnh viễn để tránh chồng tiếng với bản
-  // chính), và (2) nút bọt native mới thêm ở MainActivity.kt. Giờ CHỈ còn
-  // nút bọt native làm điểm nổi trên mọi trang; panel đầy đủ (#mediaCenterOverlay)
-  // chỉ có ĐÚNG 1 <video> (refs.htmlPlayer) và ĐÚNG 1 iframe YouTube
-  // (refs.youtube) — không còn bản mirror nào để phải khoá tiếng giả tạo nữa.
+  /**
+   * v0.26.0 — hai backend rõ ràng:
+   * - native: MP3/MP4 trong máy và URL media trực tiếp, do Media3 service sở hữu.
+   * - web: YouTube iframe chính thức và fallback HTMLMediaElement ngoài Android.
+   *
+   * Trạng thái native chỉ được nhận từ Android. WebView không còn cố mở
+   * content:// bằng URL.createObjectURL(), nguyên nhân khiến file local lúc
+   * chạy lúc không và tắt ngay khi Activity ra nền.
+   */
   const refs = {
     toolbarBtn: document.getElementById("mediaToolbarBtn"),
     liveIndicator: document.getElementById("mediaLiveIndicator"),
@@ -15,6 +16,7 @@
     minimize: document.getElementById("mediaMinimizeBtn"),
     urlInput: document.getElementById("mediaUrlInput"),
     openUrl: document.getElementById("mediaOpenUrlBtn"),
+    chooseFile: document.getElementById("mediaChooseFileBtn"),
     fileInput: document.getElementById("mediaFileInput"),
     sourceBadge: document.getElementById("mediaSourceBadge"),
     stage: document.getElementById("mediaStage"),
@@ -33,8 +35,13 @@
     volumeLabel: document.getElementById("mediaVolumeLabel")
   };
 
+  const emptyIcon = refs.empty?.querySelector("span");
+  const emptyTitle = refs.empty?.querySelector("b");
+  const emptyText = refs.empty?.querySelector("small");
+
   const state = {
-    type: "none",
+    backend: "none", // none | native | web
+    type: "none",    // none | audio | video | youtube
     title: "",
     subtitle: "",
     source: "",
@@ -42,15 +49,12 @@
     objectUrl: "",
     audioOnly: false,
     isPlaying: false,
+    isLoading: false,
     volume: 1,
-    // Việc (v0.23.21): "Nhạc và video nền" hoạt động như 1 công cụ tiện ích
-    // kiểu Chapter Clipper — bật/tắt bằng nút trong menu ☰, KHÁC với việc
-    // đang phát hay không. Khi bật: nút bọt nổi (native) hiện trên MỌI
-    // trang. Đóng bảng thêm nhạc (nút X/Thu nhỏ) chỉ ẩn giao diện, KHÔNG
-    // tắt công cụ, nhạc vẫn chạy. Chỉ khi bấm lại nút menu để TẮT công cụ
-    // thì mới thật sự dừng phát + ẩn nút bọt.
     toolEnabled: false
   };
+
+  let lastNativeError = "";
 
   function show(element) {
     element?.classList.remove("hidden");
@@ -61,46 +65,50 @@
   }
 
   function notify(message) {
-    if (typeof toast === "function") {
-      toast(message);
+    if (message && typeof toast === "function") toast(message);
+  }
+
+  function nativeBridge() {
+    return window.LqlqAndroid || null;
+  }
+
+  function hasNativePlayer() {
+    const bridge = nativeBridge();
+    return Boolean(
+      bridge
+      && typeof bridge.openNativeMediaFile === "function"
+      && typeof bridge.playNativeMediaUrl === "function"
+      && typeof bridge.nativeMediaCommand === "function"
+    );
+  }
+
+  function callNative(name, ...args) {
+    try {
+      const fn = nativeBridge()?.[name];
+      if (typeof fn === "function") return fn.apply(nativeBridge(), args);
+    } catch (error) {
+      console.warn(`Native media call failed: ${name}`, error);
     }
+    return undefined;
   }
 
   function youtubeIdFromUrl(value) {
     const raw = String(value || "").trim();
-
-    if (/^[\w-]{11}$/.test(raw)) {
-      return raw;
-    }
+    if (/^[\w-]{11}$/.test(raw)) return raw;
 
     try {
       const url = new URL(raw);
       const host = url.hostname.replace(/^www\./, "");
-
       if (host === "youtu.be") {
         return url.pathname.split("/").filter(Boolean)[0] || "";
       }
-
-      if (
-        host === "youtube.com"
-        || host === "m.youtube.com"
-        || host === "music.youtube.com"
-      ) {
-        if (url.pathname === "/watch") {
-          return url.searchParams.get("v") || "";
-        }
-
+      if (["youtube.com", "m.youtube.com", "music.youtube.com"].includes(host)) {
+        if (url.pathname === "/watch") return url.searchParams.get("v") || "";
         const parts = url.pathname.split("/").filter(Boolean);
-        const marker = parts.findIndex(part =>
-          ["embed", "shorts", "live"].includes(part)
-        );
-
-        if (marker >= 0) {
-          return parts[marker + 1] || "";
-        }
+        const marker = parts.findIndex(part => ["embed", "shorts", "live"].includes(part));
+        if (marker >= 0) return parts[marker + 1] || "";
       }
     } catch {}
-
     return "";
   }
 
@@ -112,30 +120,50 @@
       rel: "0",
       modestbranding: "1"
     });
-
     return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?${params}`;
   }
 
   function isDirectMediaUrl(value) {
-    return /\.(mp3|m4a|aac|ogg|wav|flac|mp4|webm|mov)(?:[?#].*)?$/i
+    return /\.(mp3|m4a|m4b|aac|ogg|oga|wav|flac|mp4|m4v|webm|mov|mkv|3gp)(?:[?#].*)?$/i
       .test(String(value || ""));
   }
 
   function directMediaKind(value, mime = "") {
     if (/^audio\//i.test(mime)) return "audio";
     if (/^video\//i.test(mime)) return "video";
-    if (/\.(mp3|m4a|aac|ogg|wav|flac)(?:[?#].*)?$/i.test(value)) return "audio";
+    if (/\.(mp3|m4a|m4b|aac|ogg|oga|wav|flac)(?:[?#].*)?$/i.test(value)) return "audio";
     return "video";
   }
 
-  function setMetadata(title, subtitle, icon = "♫") {
+  function inferMime(value) {
+    const clean = String(value || "").split(/[?#]/)[0].toLowerCase();
+    if (clean.endsWith(".mp3")) return "audio/mpeg";
+    if (clean.endsWith(".m4a") || clean.endsWith(".m4b")) return "audio/mp4";
+    if (clean.endsWith(".aac")) return "audio/aac";
+    if (clean.endsWith(".ogg") || clean.endsWith(".oga")) return "audio/ogg";
+    if (clean.endsWith(".wav")) return "audio/wav";
+    if (clean.endsWith(".flac")) return "audio/flac";
+    if (clean.endsWith(".mp4") || clean.endsWith(".m4v")) return "video/mp4";
+    if (clean.endsWith(".webm")) return "video/webm";
+    if (clean.endsWith(".mkv")) return "video/x-matroska";
+    if (clean.endsWith(".mov")) return "video/quicktime";
+    if (clean.endsWith(".3gp")) return "video/3gpp";
+    return "";
+  }
+
+  function clearBrowserMediaSession() {
+    if (!("mediaSession" in navigator)) return;
+    try { navigator.mediaSession.metadata = null; } catch {}
+  }
+
+  function setMetadata(title, subtitle, icon = "♫", publishWebSession = true) {
     state.title = title || "Nội dung đang phát";
     state.subtitle = subtitle || "Trình phát nền";
     refs.nowTitle.textContent = state.title;
     refs.nowSubtitle.textContent = state.subtitle;
     refs.nowIcon.textContent = icon;
 
-    if ("mediaSession" in navigator) {
+    if (publishWebSession && "mediaSession" in navigator) {
       try {
         navigator.mediaSession.metadata = new MediaMetadata({
           title: state.title,
@@ -148,40 +176,88 @@
 
   function setPlaying(playing) {
     state.isPlaying = Boolean(playing);
-    refs.playingPill.classList.toggle("hidden", !state.isPlaying);
-    refs.liveIndicator.classList.toggle("hidden", state.type === "none");
-    refs.playingPill.textContent = state.isPlaying ? "Đang phát" : "Đã tạm dừng";
+    const active = state.type !== "none";
+    refs.playingPill.classList.toggle("hidden", !active);
+    refs.liveIndicator.classList.toggle("hidden", !active);
+    refs.playingPill.textContent = state.isLoading
+      ? "Đang tải"
+      : state.isPlaying ? "Đang phát" : "Đã tạm dừng";
   }
 
-  function clearFrames() {
-    refs.youtube.src = "";
-    refs.htmlPlayer.pause();
-    refs.htmlPlayer.removeAttribute("src");
-    refs.htmlPlayer.load();
+  function setEmptyCopy(icon, title, text) {
+    if (emptyIcon) emptyIcon.textContent = icon;
+    if (emptyTitle) emptyTitle.textContent = title;
+    if (emptyText) emptyText.textContent = text;
+  }
+
+  function clearWebFrames() {
+    try {
+      refs.youtube.src = "";
+      refs.htmlPlayer.pause();
+      refs.htmlPlayer.removeAttribute("src");
+      refs.htmlPlayer.load();
+    } catch {}
 
     hide(refs.youtube);
     hide(refs.htmlPlayer);
 
     if (state.objectUrl) {
-      URL.revokeObjectURL(state.objectUrl);
+      try { URL.revokeObjectURL(state.objectUrl); } catch {}
       state.objectUrl = "";
     }
   }
 
-  function syncVolume(value) {
-    state.volume = Math.max(0, Math.min(1, Number(value)));
-    refs.htmlPlayer.volume = state.volume;
+  function syncVolume(value, reportNative = false) {
+    const normalized = Math.max(0, Math.min(1, Number(value)));
+    state.volume = Number.isFinite(normalized) ? normalized : 1;
+
+    if (state.backend !== "native") {
+      try { refs.htmlPlayer.volume = state.volume; } catch {}
+    }
+
     refs.volume.value = String(Math.round(state.volume * 100));
     refs.volumeLabel.textContent = `${Math.round(state.volume * 100)}%`;
+
+    if (reportNative && state.backend === "native") {
+      callNative("setNativeMediaVolume", state.volume);
+    }
   }
 
-  // YouTube (và nhiều trình duyệt/WebView nói chung) tự ép CÂM TIẾNG khi
-  // autoplay=1 nếu không coi thao tác của người dùng với app là đủ "gắn
-  // kết" trực tiếp với chính khung iframe đó (autoplay policy) — kể cả khi
-  // ta không hề yêu cầu câm tiếng. Phải chủ động gửi lệnh "unMute" qua
-  // IFrame Player API (postMessage) NGAY SAU KHI player sẵn sàng để đảm bảo
-  // luôn có tiếng, gửi lặp lại vài lần vì player cần chút thời gian khởi tạo
-  // trước khi chịu nhận lệnh.
+  function resetUi({ hidePanel = false } = {}) {
+    clearWebFrames();
+    state.backend = "none";
+    state.type = "none";
+    state.title = "";
+    state.subtitle = "";
+    state.source = "";
+    state.youtubeId = "";
+    state.audioOnly = false;
+    state.isPlaying = false;
+    state.isLoading = false;
+
+    refs.stage.classList.remove("audio-only");
+    show(refs.empty);
+    hide(refs.playingPill);
+    hide(refs.liveIndicator);
+    if (hidePanel) hide(refs.overlay);
+
+    refs.sourceBadge.textContent = "Chưa có nguồn";
+    refs.nowTitle.textContent = "Chưa phát nội dung";
+    refs.nowSubtitle.textContent = "MP3/MP4 có thể tiếp tục phát khi tắt màn hình hoặc chuyển ứng dụng.";
+    refs.nowIcon.textContent = "♫";
+    setEmptyCopy(
+      "♫",
+      "Chưa có nội dung đang phát",
+      "File trong máy và liên kết media trực tiếp dùng trình phát Android; YouTube dùng trình nhúng chính thức."
+    );
+    clearBrowserMediaSession();
+  }
+
+  function stopNativeSilently() {
+    if (hasNativePlayer()) callNative("nativeMediaCommand", "stop");
+  }
+
+  // YouTube iframe đôi khi tự câm do autoplay policy. Thử unmute sau khi nạp.
   function forceYoutubeUnmute() {
     let attempts = 0;
     const send = () => {
@@ -199,7 +275,7 @@
     send();
     const timer = setInterval(() => {
       send();
-      attempts++;
+      attempts += 1;
       if (attempts >= 8) clearInterval(timer);
     }, 350);
   }
@@ -210,70 +286,95 @@
       return;
     }
 
-    clearFrames();
+    stopNativeSilently();
+    clearWebFrames();
+    state.backend = "web";
     state.type = "youtube";
     state.youtubeId = id;
     state.source = id;
     state.audioOnly = false;
+    state.isLoading = false;
 
     refs.youtube.src = youtubeEmbedUrl(id, true);
     forceYoutubeUnmute();
-
     show(refs.youtube);
     hide(refs.empty);
     refs.stage.classList.remove("audio-only");
-
     refs.sourceBadge.textContent = "YouTube";
-    setMetadata(`YouTube · ${id}`, "Phát bằng trình nhúng chính thức", "▶");
+    setMetadata(`YouTube · ${id}`, "Phát bằng trình nhúng chính thức", "▶", true);
     setPlaying(true);
   }
 
+  /** Fallback dành cho trình duyệt desktop; Android ưu tiên Media3 native. */
   function loadDirectSource(source, title, mime = "") {
-    clearFrames();
+    stopNativeSilently();
+    clearWebFrames();
 
     const kind = directMediaKind(source, mime);
+    state.backend = "web";
     state.type = kind;
     state.source = source;
     state.youtubeId = "";
     state.audioOnly = kind === "audio";
+    state.isLoading = true;
 
     refs.htmlPlayer.src = source;
     refs.htmlPlayer.muted = false;
     syncVolume(state.volume);
-
     show(refs.htmlPlayer);
     hide(refs.empty);
-
     refs.stage.classList.toggle("audio-only", state.audioOnly);
     refs.sourceBadge.textContent = kind === "audio" ? "Âm thanh" : "Video";
 
     setMetadata(
       title || (kind === "audio" ? "Tệp âm thanh" : "Video trực tiếp"),
-      kind === "audio" ? "Đang phát ở chế độ âm thanh" : "Video tiếp tục khi chuyển thẻ",
-      kind === "audio" ? "♫" : "▶"
+      kind === "audio" ? "Đang phát bằng WebView" : "Video trực tiếp trong ứng dụng",
+      kind === "audio" ? "♫" : "▶",
+      true
     );
+    setPlaying(false);
 
-    // Không chờ đồng bộ cho metadata: nếu trình duyệt chưa đọc xong metadata
-    // (thường gặp với tệp content:// lớn từ hộp chọn tệp native), đợi sự kiện
-    // loadedmetadata rồi mới play() — tránh đơ khi mở tệp local nặng.
     const startPlayback = () => {
-      const playPromise = refs.htmlPlayer.play();
-      playPromise?.catch(() => {
-        notify("Trình duyệt yêu cầu bạn nhấn Play để bắt đầu.");
+      state.isLoading = false;
+      refs.htmlPlayer.play()?.catch(() => {
+        setPlaying(false);
+        notify("Hãy nhấn Play để bắt đầu nội dung này.");
       });
     };
-    if (refs.htmlPlayer.readyState >= 1) {
-      startPlayback();
-    } else {
-      refs.htmlPlayer.addEventListener("loadedmetadata", startPlayback, { once: true });
-    }
+    if (refs.htmlPlayer.readyState >= 1) startPlayback();
+    else refs.htmlPlayer.addEventListener("loadedmetadata", startPlayback, { once: true });
+  }
 
-    setPlaying(true);
+  function showNativePending(title, source, kind, sourceKind) {
+    clearWebFrames();
+    clearBrowserMediaSession();
+    state.backend = "native";
+    state.type = kind || "audio";
+    state.source = source || "";
+    state.youtubeId = "";
+    state.audioOnly = true;
+    state.isLoading = true;
+    state.isPlaying = false;
+
+    show(refs.empty);
+    refs.stage.classList.add("audio-only");
+    refs.sourceBadge.textContent = sourceKind === "file" ? "Tệp trong máy" : "Media trực tiếp";
+    setEmptyCopy(
+      kind === "video" ? "▶" : "♫",
+      "Đang mở bằng trình phát Android…",
+      "Bạn có thể chuyển ứng dụng hoặc khóa màn hình sau khi nội dung bắt đầu phát."
+    );
+    setMetadata(
+      title || "Đang mở media",
+      sourceKind === "file" ? "Tệp trong máy • đang chuẩn bị" : "Liên kết trực tiếp • đang chuẩn bị",
+      kind === "video" ? "▶" : "♫",
+      false
+    );
+    setPlaying(false);
   }
 
   function openUrl() {
     const value = String(refs.urlInput.value || "").trim();
-
     if (!value) {
       notify("Hãy dán liên kết YouTube hoặc media trực tiếp.");
       return;
@@ -286,35 +387,38 @@
     }
 
     if (!/^https?:\/\//i.test(value) || !isDirectMediaUrl(value)) {
-      notify("HTML chỉ nhận YouTube hoặc liên kết trực tiếp .mp3/.mp4/.webm.");
+      notify("Chỉ nhận YouTube hoặc liên kết trực tiếp .mp3/.mp4/.webm…");
       return;
     }
 
-    const name = decodeURIComponent(value.split("/").pop()?.split(/[?#]/)[0] || "Media");
-    loadDirectSource(value, name);
+    let name = value.split("/").pop()?.split(/[?#]/)[0] || "Media trực tiếp";
+    try { name = decodeURIComponent(name); } catch {}
+    const mime = inferMime(value);
+    const kind = directMediaKind(value, mime);
+
+    if (hasNativePlayer()) {
+      showNativePending(name, value, kind, "url");
+      callNative("playNativeMediaUrl", value, name, mime);
+    } else {
+      loadDirectSource(value, name, mime);
+    }
   }
 
-  function openFile(file) {
+  function openFileFallback(file) {
     if (!file) return;
-
     let isMedia = /^audio\/|^video\//i.test(file.type);
     if (!isMedia) {
-      // Một số hộp chọn tệp native trả mime rỗng/sai cho content:// — đoán
-      // theo đuôi tệp thay vì từ chối luôn.
       const ext = String(file.name || "").split(".").pop()?.toLowerCase() || "";
-      const audioExt = ["mp3", "m4a", "aac", "ogg", "oga", "wav", "flac"];
-      const videoExt = ["mp4", "webm", "mov", "mkv", "3gp", "m4v"];
-      isMedia = audioExt.includes(ext) || videoExt.includes(ext);
+      isMedia = [
+        "mp3", "m4a", "m4b", "aac", "ogg", "oga", "wav", "flac",
+        "mp4", "webm", "mov", "mkv", "3gp", "m4v"
+      ].includes(ext);
     }
-
     if (!isMedia) {
       notify("File đã chọn không phải âm thanh hoặc video.");
       return;
     }
 
-    // Nhường main thread một nhịp trước khi tạo object URL / gán src, để
-    // hộp chọn tệp native (content://) kịp đóng UI trước khi WebView bắt
-    // đầu nạp tệp — tránh cảm giác đơ khi chọn tệp lớn.
     setTimeout(() => {
       const objectUrl = URL.createObjectURL(file);
       state.objectUrl = objectUrl;
@@ -322,13 +426,26 @@
     }, 0);
   }
 
+  function requestNativeFile() {
+    // Chỉ mở picker; giữ nguyên nguồn đang phát cho tới khi người dùng thật sự
+    // chọn tệp mới. Hủy picker không làm mất YouTube/bài đang nghe.
+    callNative("openNativeMediaFile");
+  }
+
+  function refreshNativeState() {
+    if (!hasNativePlayer()) return;
+    try {
+      const raw = callNative("getNativeMediaState");
+      if (raw) onNativeState(raw);
+    } catch {}
+  }
+
   function openCenter() {
     closeMenus?.();
     show(refs.overlay);
+    refreshNativeState();
   }
 
-  // Đóng bảng — CHỈ ẩn giao diện, nhạc/video vẫn tiếp tục phát nền. Nút bọt
-  // native (nếu công cụ đang bật) vẫn hiện trên mọi trang để mở lại bảng.
   function closeCenter() {
     hide(refs.overlay);
   }
@@ -338,7 +455,10 @@
       notify("Chưa có nội dung đang phát.");
       return;
     }
-
+    if (state.backend === "native") {
+      notify("Trình phát Android đang dùng chế độ âm thanh nền. MP4 vẫn phát phần âm thanh khi khóa màn hình.");
+      return;
+    }
     if (state.type === "youtube") {
       notify("YouTube phải giữ khung video chính thức.");
       return;
@@ -346,11 +466,7 @@
 
     state.audioOnly = !state.audioOnly;
     refs.stage.classList.toggle("audio-only", state.audioOnly);
-
-    refs.nowSubtitle.textContent = state.audioOnly
-      ? "Chế độ chỉ âm thanh"
-      : "Video tiếp tục khi chuyển thẻ";
-
+    refs.nowSubtitle.textContent = state.audioOnly ? "Chế độ chỉ âm thanh" : "Video trực tiếp trong ứng dụng";
     notify(state.audioOnly ? "Đã chuyển sang chỉ âm thanh." : "Đã hiện lại video.");
   }
 
@@ -359,94 +475,56 @@
       notify("Chưa có video đang phát.");
       return;
     }
-
-    if (state.type === "youtube") {
-      notify("PiP hệ thống không điều khiển được khung YouTube.");
+    if (state.backend === "native") {
+      notify("Media native hiện phát nền bằng âm thanh; Picture-in-Picture chưa áp dụng cho nguồn này.");
       return;
     }
-
+    if (state.type === "youtube") {
+      notify("PiP hệ thống không điều khiển được khung YouTube này.");
+      return;
+    }
     if (state.type === "audio") {
       notify("Tệp âm thanh không cần Picture-in-Picture.");
       return;
     }
 
     const video = refs.htmlPlayer;
-
     if (!document.pictureInPictureEnabled || !video.requestPictureInPicture) {
       notify("Trình duyệt này không hỗ trợ Picture-in-Picture.");
       return;
     }
-
     try {
-      if (document.pictureInPictureElement) {
-        await document.exitPictureInPicture();
-      } else {
-        await video.requestPictureInPicture();
-      }
+      if (document.pictureInPictureElement) await document.exitPictureInPicture();
+      else await video.requestPictureInPicture();
     } catch {
       notify("Không thể mở Picture-in-Picture cho video này.");
     }
   }
 
-  function stopAll() {
-    clearFrames();
-    state.type = "none";
-    state.title = "";
-    state.subtitle = "";
-    state.source = "";
-    state.youtubeId = "";
-    state.audioOnly = false;
-    state.isPlaying = false;
-
-    show(refs.empty);
-    hide(refs.playingPill);
-    hide(refs.liveIndicator);
-    hide(refs.overlay);
-
-    refs.sourceBadge.textContent = "Chưa có nguồn";
-    refs.nowTitle.textContent = "Chưa phát nội dung";
-    refs.nowSubtitle.textContent = "Âm thanh sẽ tiếp tục khi chuyển thẻ trong prototype.";
-    refs.nowIcon.textContent = "♫";
-
-    if ("mediaSession" in navigator) {
-      try {
-        navigator.mediaSession.metadata = null;
-      } catch {}
-    }
-
-    notify("Đã dừng trình phát nền.");
+  function stopAll({ silent = false } = {}) {
+    if (state.backend === "native") callNative("nativeMediaCommand", "stop");
+    resetUi({ hidePanel: true });
+    if (!silent) notify("Đã dừng trình phát nền.");
   }
 
   function installMediaSession() {
     if (!("mediaSession" in navigator)) return;
-
     try {
       navigator.mediaSession.setActionHandler("play", async () => {
-        if (state.type === "audio" || state.type === "video") {
-          await refs.htmlPlayer.play();
-        }
+        if (state.backend === "native") callNative("nativeMediaCommand", "play");
+        else if (state.type === "audio" || state.type === "video") await refs.htmlPlayer.play();
       });
-
       navigator.mediaSession.setActionHandler("pause", () => {
-        if (state.type === "audio" || state.type === "video") {
-          refs.htmlPlayer.pause();
-        }
+        if (state.backend === "native") callNative("nativeMediaCommand", "pause");
+        else if (state.type === "audio" || state.type === "video") refs.htmlPlayer.pause();
       });
-
-      navigator.mediaSession.setActionHandler("stop", stopAll);
+      navigator.mediaSession.setActionHandler("stop", () => stopAll());
     } catch {}
   }
 
-  // Việc (v0.23.21): báo cho native biết công cụ đang bật/tắt để hiện/ẩn
-  // nút bọt nổi trên MỌI trang (độc lập với việc có đang phát hay không —
-  // khác setPlaying()/sendMediaState() vốn chỉ phản ánh trạng thái phát).
   function setToolEnabled(enabled) {
     state.toolEnabled = Boolean(enabled);
-    try {
-      if (typeof window.LqlqAndroid?.setMediaToolEnabled === "function") {
-        window.LqlqAndroid.setMediaToolEnabled(state.toolEnabled);
-      }
-    } catch {}
+    callNative("setMediaToolEnabled", state.toolEnabled);
 
     const menuBtn = document.querySelector(".media-menu-entry");
     if (menuBtn) {
@@ -460,12 +538,60 @@
     }
   }
 
+  function onNativeState(raw) {
+    let data = raw;
+    if (typeof raw === "string") {
+      try { data = JSON.parse(raw); } catch { return; }
+    }
+    if (!data || data.backend !== "native") return;
+
+    const error = String(data.error || "");
+    if (error && error !== lastNativeError) {
+      lastNativeError = error;
+      notify(`Không phát được media: ${error}`);
+    }
+    if (!error) lastNativeError = "";
+
+    if (!data.active) {
+      if (state.backend === "native") resetUi({ hidePanel: false });
+      return;
+    }
+
+    clearWebFrames();
+    clearBrowserMediaSession();
+    state.backend = "native";
+    state.type = data.kind === "video" ? "video" : "audio";
+    state.title = String(data.title || "Nội dung đang phát");
+    state.subtitle = String(data.text || "Phát nền Android");
+    state.source = String(data.source || "");
+    state.youtubeId = "";
+    state.audioOnly = true;
+    state.isLoading = Boolean(data.loading);
+    state.isPlaying = Boolean(data.playing);
+
+    const isLocal = state.source.startsWith("content://") || state.source.startsWith("file://");
+    refs.sourceBadge.textContent = isLocal ? "Tệp trong máy" : "Media trực tiếp";
+    refs.stage.classList.add("audio-only");
+    show(refs.empty);
+    hide(refs.youtube);
+    hide(refs.htmlPlayer);
+    setEmptyCopy(
+      state.type === "video" ? "▶" : "♫",
+      state.isLoading ? "Đang tải bằng Android…" : "Đang phát ngoài nền điện thoại",
+      state.type === "video"
+        ? "MP4 đang phát phần âm thanh nền; có thể chuyển ứng dụng hoặc khóa màn hình."
+        : "Bạn có thể chuyển ứng dụng, khóa màn hình và điều khiển từ thông báo."
+    );
+    setMetadata(state.title, state.subtitle, state.type === "video" ? "▶" : "♫", false);
+    syncVolume(Number(data.volume ?? state.volume), false);
+    setPlaying(state.isPlaying);
+
+    if (!state.toolEnabled) setToolEnabled(true);
+  }
+
   const originalHandleAction = handleAction;
   handleAction = function handleMediaAction(action) {
     if (action === "background-media") {
-      // Toggle giống hệt Chapter Clipper: bấm lần 1 BẬT công cụ (hiện bọt
-      // nổi + mở bảng thêm nhạc), bấm lần 2 TẮT hẳn (dừng phát, đóng bảng,
-      // ẩn bọt nổi).
       if (state.toolEnabled) {
         stopAll();
         setToolEnabled(false);
@@ -475,78 +601,68 @@
       }
       return;
     }
-
     originalHandleAction(action);
   };
 
-  refs.toolbarBtn.addEventListener("click", openCenter);
-  refs.closePanel.addEventListener("click", closeCenter);
-  refs.minimize.addEventListener("click", closeCenter);
-  refs.openUrl.addEventListener("click", openUrl);
-  refs.urlInput.addEventListener("keydown", event => {
+  refs.toolbarBtn?.addEventListener("click", openCenter);
+  refs.closePanel?.addEventListener("click", closeCenter);
+  refs.minimize?.addEventListener("click", closeCenter);
+  refs.openUrl?.addEventListener("click", openUrl);
+  refs.urlInput?.addEventListener("keydown", event => {
     if (event.key === "Enter") openUrl();
   });
 
-  refs.fileInput.addEventListener("change", () => {
-    openFile(refs.fileInput.files?.[0]);
+  refs.chooseFile?.addEventListener("click", event => {
+    if (!hasNativePlayer()) return;
+    // Ngăn label kích hoạt input WebView lần thứ hai.
+    event.preventDefault();
+    requestNativeFile();
+  });
+
+  refs.fileInput?.addEventListener("change", () => {
+    openFileFallback(refs.fileInput.files?.[0]);
     refs.fileInput.value = "";
   });
 
   document.querySelectorAll("[data-media-example]").forEach(button => {
     button.addEventListener("click", () => {
       const type = button.dataset.mediaExample;
-
-      if (type === "youtube") {
-        refs.urlInput.placeholder = "Ví dụ: https://www.youtube.com/watch?v=...";
-        refs.urlInput.focus();
-      } else if (type === "audio") {
-        refs.urlInput.placeholder = "Ví dụ: https://example.com/music.mp3";
-        refs.urlInput.focus();
-      } else {
-        refs.urlInput.placeholder = "Ví dụ: https://example.com/video.mp4";
-        refs.urlInput.focus();
-      }
+      if (type === "youtube") refs.urlInput.placeholder = "Ví dụ: https://www.youtube.com/watch?v=...";
+      else if (type === "audio") refs.urlInput.placeholder = "Ví dụ: https://example.com/music.mp3";
+      else refs.urlInput.placeholder = "Ví dụ: https://example.com/video.mp4";
+      refs.urlInput.focus();
     });
   });
 
-  // Nút "Trình phát thu nhỏ" cũ giờ chỉ còn ý nghĩa "ẩn bảng, giữ nút bọt
-  // nổi trên mọi trang" — hành vi y hệt đóng bảng (không còn khung mini
-  // riêng để mở rộng ra nữa, nút bọt native đã thay thế hoàn toàn).
   refs.minimizeMode?.addEventListener("click", closeCenter);
-  refs.audioMode.addEventListener("click", toggleAudioOnly);
-  refs.pip.addEventListener("click", openPictureInPicture);
-  refs.stop.addEventListener("click", stopAll);
+  refs.audioMode?.addEventListener("click", toggleAudioOnly);
+  refs.pip?.addEventListener("click", openPictureInPicture);
+  refs.stop?.addEventListener("click", () => stopAll());
 
-  refs.volume.addEventListener("input", () => {
-    syncVolume(Number(refs.volume.value) / 100);
+  refs.volume?.addEventListener("input", () => {
+    syncVolume(Number(refs.volume.value) / 100, true);
   });
 
-  refs.overlay.addEventListener("click", event => {
-    if (event.target === refs.overlay) {
-      closeCenter();
-    }
+  refs.overlay?.addEventListener("click", event => {
+    if (event.target === refs.overlay) closeCenter();
   });
 
-  refs.htmlPlayer.addEventListener("play", () => setPlaying(true));
-  refs.htmlPlayer.addEventListener("pause", () => setPlaying(false));
-  refs.htmlPlayer.addEventListener("volumechange", () => {
-    syncVolume(refs.htmlPlayer.volume);
+  refs.htmlPlayer?.addEventListener("play", () => {
+    state.isLoading = false;
+    setPlaying(true);
   });
-  refs.htmlPlayer.addEventListener("ended", () => setPlaying(false));
+  refs.htmlPlayer?.addEventListener("pause", () => setPlaying(false));
+  refs.htmlPlayer?.addEventListener("volumechange", () => {
+    if (state.backend !== "native") syncVolume(refs.htmlPlayer.volume, false);
+  });
+  refs.htmlPlayer?.addEventListener("ended", () => setPlaying(false));
+  refs.htmlPlayer?.addEventListener("error", () => {
+    if (state.backend === "web") notify("Không phát được nguồn media này.");
+  });
 
   document.addEventListener("keydown", event => {
-    if (
-      event.key === "Escape"
-      && !refs.overlay.classList.contains("hidden")
-    ) {
-      closeCenter();
-    }
-
-    if (
-      event.ctrlKey
-      && event.shiftKey
-      && event.key.toLowerCase() === "m"
-    ) {
+    if (event.key === "Escape" && !refs.overlay.classList.contains("hidden")) closeCenter();
+    if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === "m") {
       event.preventDefault();
       openCenter();
     }
@@ -554,24 +670,32 @@
 
   syncVolume(1);
   installMediaSession();
+  resetUi();
 
   window.ShieldMedia = {
     open: openCenter,
     minimize: closeCenter,
     stop: stopAll,
-    // Tạm dừng phát mà không xóa nguồn — dùng khi mở một trang web thật
-    // (video của trang đó có thể tự phát) để tránh chồng tiếng với media
-    // đang phát trong panel này.
     pause: () => {
-      try {
-        refs.htmlPlayer.pause();
-        setPlaying(false);
-      } catch {}
+      // Media native phải tiếp tục chạy khi người dùng mở một trang web khác.
+      if (state.backend === "native") return;
+      if (state.type === "youtube") {
+        try {
+          refs.youtube.contentWindow?.postMessage(
+            JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
+            "*"
+          );
+          setPlaying(false);
+        } catch {}
+        return;
+      }
+      try { refs.htmlPlayer.pause(); } catch {}
     },
-    // Bấm phát/tạm dừng thống nhất cho CẢ YouTube lẫn media trực tiếp — dùng
-    // cho nút trên thanh thông báo nền. YouTube chỉ là iframe (không có thẻ
-    // <audio>/<video>) nên cần gửi lệnh qua IFrame Player API postMessage.
     toggle: () => {
+      if (state.backend === "native") {
+        callNative("nativeMediaCommand", "toggle");
+        return;
+      }
       if (state.type === "youtube") {
         const cmd = state.isPlaying ? "pauseVideo" : "playVideo";
         try {
@@ -590,6 +714,11 @@
     },
     loadYoutube,
     loadDirectSource,
+    onNativeState,
     state
   };
+
+  // Khi Activity/shell được tạo lại, nối vào MediaSession đang phát và khôi
+  // phục giao diện mà không tải lại file hay URL.
+  setTimeout(refreshNativeState, 0);
 })();

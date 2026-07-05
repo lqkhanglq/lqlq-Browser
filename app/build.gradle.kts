@@ -11,8 +11,8 @@ android {
         applicationId = "com.lqlq.browser"
         minSdk = 24
         targetSdk = 35
-        versionCode = 61
-        versionName = "0.25.0"
+        versionCode = 62
+        versionName = "0.26.0"
     }
 
     signingConfigs {
@@ -55,4 +55,6 @@ dependencies {
     implementation("androidx.media:media:1.7.0")
     implementation("androidx.activity:activity-ktx:1.9.2")
     implementation("androidx.recyclerview:recyclerview:1.3.2")
+    implementation("androidx.media3:media3-exoplayer:1.10.1")
+    implementation("androidx.media3:media3-session:1.10.1")
 }

@@ -337,9 +337,8 @@
     onNativePageVisibility(visible) {
       document.body.classList.toggle("lqlq-native-page-open", Boolean(visible));
       if (visible) {
-        // Trang web thật vừa hiện ra (mở tab mới, chuyển tab, hoặc quay lại
-        // trang đang mở) — dừng media panel để không chồng tiếng với video/
-        // âm thanh của chính trang web đó.
+        // Chỉ tạm dừng backend WebView để tránh chồng tiếng. Backend native
+        // (MP3/MP4 ngoài nền) tự xử lý audio focus và phải tiếp tục phát.
         safeCall(() => window.ShieldMedia?.pause?.());
       }
     },
@@ -489,12 +488,14 @@
       let playing;
       let title;
       let text;
+      let backend = "web";
 
       if (shieldMedia && shieldMedia.state && shieldMedia.state.type !== "none") {
         active = true;
         playing = Boolean(shieldMedia.state.isPlaying);
         title = shieldMedia.state.title || "Nhạc và video nền";
         text = shieldMedia.state.subtitle || "";
+        backend = shieldMedia.state.backend || "web";
       } else {
         const players = allAudiblePlayers();
         playing = players.some(player => !player.paused && !player.ended);
@@ -506,7 +507,13 @@
         text = ($("mediaNowSubtitle")?.textContent || "").trim().slice(0, 160);
       }
 
-      const payload = JSON.stringify({ active, playing, title, text: String(text).slice(0, 160) });
+      const payload = JSON.stringify({
+        active,
+        playing,
+        title,
+        text: String(text).slice(0, 160),
+        backend
+      });
       if (payload === lastMediaJson) return;
       lastMediaJson = payload;
       native.onMediaState(payload);

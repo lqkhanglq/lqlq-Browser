@@ -5,6 +5,7 @@ import android.annotation.SuppressLint
 import android.app.AlertDialog
 import android.app.DownloadManager
 import android.app.ActivityManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.ContentValues
 import android.content.Intent
@@ -40,6 +41,14 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
+import com.google.common.util.concurrent.ListenableFuture
 import androidx.webkit.WebViewAssetLoader
 import org.json.JSONObject
 import java.io.File
@@ -187,6 +196,24 @@ class MainActivity : AppCompatActivity() {
     private lateinit var pageBridge: PageBridge
     private lateinit var faviconStore: FaviconStore
 
+    private var nativeMediaControllerFuture: ListenableFuture<MediaController>? = null
+    private var nativeMediaController: MediaController? = null
+    private val pendingNativeMediaActions = mutableListOf<(MediaController) -> Unit>()
+    private var lastNativeMediaError = ""
+    @Volatile
+    private var lastNativeMediaStateJson = "{\"active\":false,\"playing\":false,\"backend\":\"native\"}"
+
+    private val nativeMediaListener = object : Player.Listener {
+        override fun onEvents(player: Player, events: Player.Events) {
+            publishNativeMediaState(player)
+        }
+
+        override fun onPlayerError(error: PlaybackException) {
+            lastNativeMediaError = error.localizedMessage ?: "Không phát được nội dung này."
+            publishNativeMediaState(nativeMediaController)
+        }
+    }
+
     @Volatile
     private var offlineSaveInProgress = false
 
@@ -220,6 +247,40 @@ class MainActivity : AppCompatActivity() {
             else -> null
         }
         callback.onReceiveValue(uris)
+    }
+
+    private val nativeMediaFileLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val data = result.data
+        val uri = data?.data
+        if (result.resultCode != RESULT_OK || uri == null) {
+            // Khôi phục đúng trạng thái player trước đó nếu người dùng hủy chọn.
+            publishNativeMediaState(nativeMediaController)
+            return@registerForActivityResult
+        }
+
+        val takeFlags = data.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION
+        if (takeFlags != 0) {
+            try {
+                contentResolver.takePersistableUriPermission(uri, takeFlags)
+            } catch (_: SecurityException) {
+                // Một số document provider chỉ cấp quyền trong phiên hiện tại.
+            }
+        }
+
+        val displayName = queryOpenableDisplayName(uri)
+            .ifBlank { uri.lastPathSegment?.substringAfterLast('/') ?: "Tệp media" }
+        val mimeType = inferMediaMimeType(
+            contentResolver.getType(uri).orEmpty(),
+            displayName
+        )
+        if (!mimeType.startsWith("audio/") && !mimeType.startsWith("video/")) {
+            Toast.makeText(this, "Tệp đã chọn không phải MP3/MP4 hoặc media được hỗ trợ.", Toast.LENGTH_SHORT).show()
+            publishNativeMediaState(nativeMediaController)
+            return@registerForActivityResult
+        }
+        playNativeMedia(uri, displayName, mimeType, sourceKind = "file")
     }
 
     private val permissionLauncher = registerForActivityResult(
@@ -366,11 +427,243 @@ class MainActivity : AppCompatActivity() {
                     shellReady = true
                     notifyShellTabsChanged()
                     restoreActiveTabAfterShellLoad()
+                    publishNativeMediaState(nativeMediaController)
                 }
             }
         }
 
         shellWebView.webChromeClient = createChromeClient()
+    }
+
+    // ------------------------------------------------------------------
+    // Media native: file MP3/MP4 + URL media trực tiếp, chạy ngoài nền
+    // ------------------------------------------------------------------
+
+    private fun connectNativeMediaController() {
+        if (nativeMediaController != null || nativeMediaControllerFuture != null) return
+
+        val token = SessionToken(
+            this,
+            ComponentName(this, NativeMediaPlaybackService::class.java)
+        )
+        val future = MediaController.Builder(this, token).buildAsync()
+        nativeMediaControllerFuture = future
+        future.addListener(
+            {
+                if (nativeMediaControllerFuture === future) {
+                    try {
+                        val controller = future.get()
+                        nativeMediaController = controller
+                        controller.addListener(nativeMediaListener)
+                        val pending = pendingNativeMediaActions.toList()
+                        pendingNativeMediaActions.clear()
+                        pending.forEach { action -> action(controller) }
+                        publishNativeMediaState(controller)
+                    } catch (error: Exception) {
+                        pendingNativeMediaActions.clear()
+                        nativeMediaControllerFuture = null
+                        lastNativeMediaError = error.localizedMessage
+                            ?: "Không kết nối được trình phát Android."
+                        publishNativeMediaState(null)
+                    }
+                }
+            },
+            ContextCompat.getMainExecutor(this)
+        )
+    }
+
+    private fun releaseNativeMediaController() {
+        nativeMediaController?.removeListener(nativeMediaListener)
+        nativeMediaController = null
+        nativeMediaControllerFuture?.let { MediaController.releaseFuture(it) }
+        nativeMediaControllerFuture = null
+    }
+
+    private fun withNativeMediaController(action: (MediaController) -> Unit) {
+        val controller = nativeMediaController
+        if (controller != null) {
+            action(controller)
+            return
+        }
+        pendingNativeMediaActions += action
+        connectNativeMediaController()
+    }
+
+    fun launchNativeMediaFilePicker() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("audio/*", "video/*"))
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+        try {
+            nativeMediaFileLauncher.launch(intent)
+        } catch (_: Exception) {
+            Toast.makeText(this, "Không mở được trình chọn tệp.", Toast.LENGTH_SHORT).show()
+            publishNativeMediaState(nativeMediaController)
+        }
+    }
+
+    fun playNativeMediaUrl(url: String, title: String, mimeType: String) {
+        val uri = try { Uri.parse(url.trim()) } catch (_: Exception) { null }
+        if (uri == null || (uri.scheme != "http" && uri.scheme != "https")) {
+            Toast.makeText(this, "Liên kết media không hợp lệ.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val safeTitle = title.ifBlank {
+            uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+                ?: "Media trực tiếp"
+        }
+        playNativeMedia(
+            uri,
+            safeTitle,
+            inferMediaMimeType(mimeType, safeTitle),
+            sourceKind = "url"
+        )
+    }
+
+    private fun playNativeMedia(
+        uri: Uri,
+        title: String,
+        mimeType: String,
+        sourceKind: String
+    ) {
+        lastNativeMediaError = ""
+        withNativeMediaController { controller ->
+            val subtitle = if (sourceKind == "file") {
+                "Tệp trong máy • phát nền Android"
+            } else {
+                "Liên kết media trực tiếp • phát nền Android"
+            }
+            val metadata = MediaMetadata.Builder()
+                .setTitle(title.ifBlank { "Nội dung đang phát" })
+                .setArtist("lqlq Browser")
+                .setAlbumTitle(subtitle)
+                .build()
+            val itemBuilder = MediaItem.Builder()
+                .setMediaId(uri.toString())
+                .setUri(uri)
+                .setMediaMetadata(metadata)
+            if (mimeType.isNotBlank()) itemBuilder.setMimeType(mimeType)
+
+            controller.setMediaItem(itemBuilder.build())
+            controller.prepare()
+            controller.play()
+            publishNativeMediaState(controller)
+        }
+    }
+
+    fun nativeMediaCommand(command: String) {
+        withNativeMediaController { controller ->
+            when (command.lowercase()) {
+                "play" -> controller.play()
+                "pause" -> controller.pause()
+                "toggle" -> if (controller.isPlaying) controller.pause() else controller.play()
+                "stop" -> {
+                    controller.stop()
+                    controller.clearMediaItems()
+                    lastNativeMediaError = ""
+                }
+                "seekback" -> controller.seekBack()
+                "seekforward" -> controller.seekForward()
+            }
+            publishNativeMediaState(controller)
+        }
+    }
+
+    fun setNativeMediaVolume(value: Float) {
+        withNativeMediaController { controller ->
+            controller.volume = value.coerceIn(0f, 1f)
+            publishNativeMediaState(controller)
+        }
+    }
+
+    fun getNativeMediaStateJson(): String = lastNativeMediaStateJson
+
+    private fun publishNativeMediaState(player: Player?) {
+        lastNativeMediaStateJson = buildNativeMediaStateJson(player)
+        if (!shellReady || !::shellWebView.isInitialized || isDestroyed) return
+        val quoted = JSONObject.quote(lastNativeMediaStateJson)
+        shellWebView.evaluateJavascript(
+            "window.ShieldMedia && window.ShieldMedia.onNativeState($quoted);",
+            null
+        )
+    }
+
+    private fun buildNativeMediaStateJson(player: Player?): String {
+        val item = player?.currentMediaItem
+        val local = item?.localConfiguration
+        val source = local?.uri?.toString().orEmpty()
+        val mime = local?.mimeType.orEmpty()
+        val title = item?.mediaMetadata?.title?.toString().orEmpty()
+        val subtitle = item?.mediaMetadata?.albumTitle?.toString().orEmpty()
+        val active = item != null && player.mediaItemCount > 0
+        val duration = player?.duration?.takeIf { it != C.TIME_UNSET && it >= 0L } ?: -1L
+        val kind = if (
+            mime.startsWith("video/", ignoreCase = true) ||
+            source.substringBefore('?').substringBefore('#')
+                .lowercase().matches(Regex(".*\\.(mp4|webm|mkv|mov|3gp|m4v)$"))
+        ) "video" else "audio"
+
+        return JSONObject()
+            .put("backend", "native")
+            .put("active", active)
+            .put("playing", active && player?.isPlaying == true)
+            .put("loading", active && player?.playbackState == Player.STATE_BUFFERING)
+            .put("title", title)
+            .put("text", subtitle)
+            .put("source", source)
+            .put("mime", mime)
+            .put("kind", kind)
+            .put("volume", player?.volume?.toDouble() ?: 1.0)
+            .put("positionMs", player?.currentPosition ?: 0L)
+            .put("durationMs", duration)
+            .put("error", lastNativeMediaError)
+            .toString()
+    }
+
+    private fun queryOpenableDisplayName(uri: Uri): String {
+        return try {
+            contentResolver.query(
+                uri,
+                arrayOf(OpenableColumns.DISPLAY_NAME),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                if (!cursor.moveToFirst()) return@use ""
+                val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (index >= 0) cursor.getString(index).orEmpty() else ""
+            }.orEmpty()
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
+    private fun inferMediaMimeType(rawMime: String, nameOrUrl: String): String {
+        val normalized = rawMime.substringBefore(';').trim().lowercase()
+        if (normalized.startsWith("audio/") || normalized.startsWith("video/")) {
+            return normalized
+        }
+        val extension = nameOrUrl.substringBefore('?').substringBefore('#')
+            .substringAfterLast('.', "").lowercase()
+        return when (extension) {
+            "mp3" -> "audio/mpeg"
+            "m4a", "m4b" -> "audio/mp4"
+            "aac" -> "audio/aac"
+            "ogg", "oga" -> "audio/ogg"
+            "wav" -> "audio/wav"
+            "flac" -> "audio/flac"
+            "mp4", "m4v" -> "video/mp4"
+            "webm" -> "video/webm"
+            "mkv" -> "video/x-matroska"
+            "mov" -> "video/quicktime"
+            "3gp" -> "video/3gpp"
+            else -> normalized.takeUnless {
+                it.isBlank() || it == "application/octet-stream"
+            }.orEmpty()
+        }
     }
 
     // ------------------------------------------------------------------
@@ -1764,6 +2057,16 @@ $js
     // Vòng đời: KHÔNG tạm dừng WebView khi ra nền để nhạc/TTS tiếp tục
     // ------------------------------------------------------------------
 
+    override fun onStart() {
+        super.onStart()
+        connectNativeMediaController()
+    }
+
+    override fun onStop() {
+        releaseNativeMediaController()
+        super.onStop()
+    }
+
     override fun onPause() {
         super.onPause()
         // Cố ý không gọi webView.onPause()/pauseTimers() để media chạy nền.
@@ -1785,6 +2088,7 @@ $js
     }
 
     override fun onDestroy() {
+        releaseNativeMediaController()
         BridgeHub.jsRunner = null
         ttsBridge?.shutdown()
         if (::faviconStore.isInitialized) faviconStore.shutdown()

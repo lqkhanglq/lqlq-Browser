@@ -459,7 +459,7 @@
             <div>
               <span class="section-kicker">TRÌNH PHÁT TOÀN CỤC</span>
               <h2>Nhạc và video nền</h2>
-              <p>Trình phát tồn tại độc lập nên chuyển thẻ không làm dừng âm thanh.</p>
+              <p>MP3/MP4 trong máy và link media trực tiếp phát bằng Android, tiếp tục khi khóa màn hình.</p>
             </div>
           </div>
 
@@ -486,7 +486,7 @@
                 placeholder="Dán liên kết YouTube hoặc tệp .mp3/.mp4/.webm..."
               />
               <button class="media-primary-button" id="mediaOpenUrlBtn">Mở</button>
-              <label class="media-file-button">
+              <label class="media-file-button" id="mediaChooseFileBtn">
                 Chọn file
                 <input
                   id="mediaFileInput"
@@ -512,8 +512,8 @@
                   <span>♫</span>
                   <b>Chưa có nội dung đang phát</b>
                   <small>
-                    Mở liên kết YouTube bằng trình nhúng chính thức, liên kết media trực tiếp
-                    hoặc file trong máy.
+                    File trong máy và liên kết media trực tiếp dùng trình phát Android;
+                    YouTube vẫn mở bằng trình nhúng chính thức.
                   </small>
                 </div>
 
@@ -538,7 +538,7 @@
                 <span class="media-now-icon" id="mediaNowIcon">♫</span>
                 <div>
                   <b id="mediaNowTitle">Chưa phát nội dung</b>
-                  <small id="mediaNowSubtitle">Âm thanh sẽ tiếp tục khi chuyển thẻ trong prototype.</small>
+                  <small id="mediaNowSubtitle">MP3/MP4 có thể tiếp tục phát khi tắt màn hình hoặc chuyển ứng dụng.</small>
                 </div>
                 <span class="media-playing-pill hidden" id="mediaPlayingPill">Đang phát</span>
               </div>
@@ -559,11 +559,11 @@
                 </button>
                 <button id="mediaAudioModeBtn">
                   <span>♫</span>
-                  <div><b>Chỉ âm thanh</b><small>Dành cho file nhạc hoặc video trực tiếp</small></div>
+                  <div><b>Chỉ âm thanh</b><small>MP4 native tự dùng âm thanh khi phát nền</small></div>
                 </button>
                 <button id="mediaPipBtn">
                   <span>▣</span>
-                  <div><b>Picture-in-Picture</b><small>Dùng cửa sổ nổi hệ thống khi được hỗ trợ</small></div>
+                  <div><b>Picture-in-Picture</b><small>Chỉ áp dụng cho video WebView hỗ trợ PiP</small></div>
                 </button>
                 <button id="mediaStopBtn">
                   <span>■</span>
@@ -582,16 +582,16 @@
               <div class="media-background-status">
                 <span class="media-background-dot"></span>
                 <div>
-                  <b>Phát liên tục giữa các thẻ</b>
+                  <b>Phát ngoài nền Android</b>
                   <small>
-                    Có hiệu lực với các thẻ mô phỏng bên trong lqlq Browser.
+                    File local và link media trực tiếp tiếp tục khi chuyển ứng dụng hoặc khóa màn hình.
                   </small>
                 </div>
               </div>
 
               <p class="media-limit-note">
-                HTML không đảm bảo phát khi ứng dụng bị đưa hẳn xuống nền hoặc khóa màn hình.
-                Bản APK cần MediaSession và foreground service để làm việc đó.
+                YouTube vẫn dùng trình nhúng chính thức và không được trích xuất luồng.
+                Phát nền ổn định áp dụng cho file trong máy và URL media trực tiếp.
               </p>
             </aside>
           </div>

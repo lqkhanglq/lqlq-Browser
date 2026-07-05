@@ -1,0 +1,13 @@
+lqlq Browser v0.26.0 — Native background media
+
+- Thay trình phát file local trong WebView bằng Media3 ExoPlayer.
+- Thêm NativeMediaPlaybackService dạng MediaSessionService.
+- MP3/MP4 và các định dạng phổ biến mở bằng ACTION_OPEN_DOCUMENT.
+- Giữ quyền đọc URI để service tiếp tục phát khi Activity ra nền.
+- URL media trực tiếp được gửi tới player native.
+- Thêm notification/lock-screen/headset controls chuẩn Android.
+- Activity chỉ giữ MediaController; player không bị hủy khi bấm Home.
+- Mở lại ứng dụng sẽ khôi phục trạng thái player đang chạy.
+- Tách backend native/web để không tạo hai notification cùng lúc.
+- Dừng media native sẽ clear playlist và gỡ notification.
+- YouTube vẫn dùng iframe chính thức; không trích xuất luồng YouTube.

@@ -1,60 +1,58 @@
-# lqlq Browser — Android APK (v0.25)
+# lqlq Browser — Android APK (v0.26.0)
 
-Project Android của lqlq Browser, build APK trực tiếp bằng GitHub Actions. Bản v0.25 giữ hệ thống thẻ native và làm lại Dấu trang/Trang đã lưu, cache favicon, lưu ngoại tuyến và các điểm nghẽn hiệu năng của shell Android.
+Project Android của lqlq Browser. Bản v0.26.0 giữ toàn bộ thay đổi của v0.25 và làm lại **Nhạc và video nền** bằng trình phát Android native.
 
-## Cách build trên GitHub
+## Cách build bằng GitHub Actions
 
-1. Tạo repository mới trên GitHub (Public hoặc Private đều được).
-2. Tải toàn bộ thư mục này lên repo (giữ nguyên cấu trúc, **bao gồm cả thư mục ẩn `.github/`**).
-3. Vào tab **Actions** → chọn workflow **Build lqlq Browser APK** → bấm **Run workflow** (hoặc chỉ cần push code là tự chạy).
-4. Chờ build xong (~5-10 phút) → mở lần chạy → kéo xuống mục **Artifacts** → tải `lqlq-browser-apk`.
-5. Trong file zip tải về có 2 APK:
-   - `lqlq-browser-v0.25.0-debug.apk`
-   - `lqlq-browser-v0.25.0-release.apk` ← nên cài bản này.
+1. Đưa toàn bộ thư mục project lên repository GitHub, bao gồm `.github/` và `keystore/`.
+2. Mở **Actions** → **Build lqlq Browser APK** → **Run workflow**.
+3. Tải artifact `lqlq-browser-apk` sau khi build xong.
+4. Gói artifact chứa:
+   - `lqlq-browser-v0.26.0-debug.apk`
+   - `lqlq-browser-v0.26.0-release.apk`
 
-**Chữ ký ổn định:** repo có sẵn `keystore/lqlq-release.keystore`, mọi lần build đều ký cùng một chữ ký, nên cài bản mới đè lên bản cũ được, không phải gỡ ra cài lại.
+Bản release vẫn dùng keystore ổn định của project nên có thể cài đè lên bản cũ cùng chữ ký.
 
-## 3 vấn đề của bản cũ đã được xử lý
+## Nhạc và video nền v0.26.0
 
-### 1. Đọc TXT và phát nhạc có thanh thông báo, chạy nền
+### Nguồn phát native
 
-- `PlaybackService` là foreground service kiểu `mediaPlayback`, hiện thanh thông báo media giống T2S: tên truyện/bài nhạc, câu đang đọc, nút **Câu trước / Phát-Tạm dừng / Câu sau / Đóng**.
-- Khi chuyển sang ứng dụng khác hoặc tắt màn hình, TTS và nhạc vẫn tiếp tục (service + wake lock + không tạm dừng WebView khi ra nền).
-- Quyền thông báo (`POST_NOTIFICATIONS`) được hỏi ngay lần mở đầu tiên trên Android 13+.
+- File trong máy: MP3, M4A, AAC, OGG, WAV, FLAC, MP4, WEBM, MKV, MOV và 3GP.
+- URL media trực tiếp: các liên kết `.mp3`, `.mp4`, `.webm` và định dạng tương ứng.
+- Tệp được chọn qua Android Storage Access Framework; ứng dụng không cần quyền đọc toàn bộ kho ảnh/nhạc/video.
+- MP4 và các file video được dùng như nguồn âm thanh nền khi ứng dụng bị thu nhỏ hoặc màn hình bị khóa.
 
-### 2. Quyền bộ nhớ, âm thanh — sửa lỗi không có tiếng
+### Chạy ngoài nền
 
-Nguyên nhân thường gặp của lỗi "mở nhạc / đọc TXT không có tiếng" ở bản cũ và cách bản này xử lý:
+- Player và `MediaSession` sống trong `NativeMediaPlaybackService`, không nằm trong WebView hay `MainActivity`.
+- Khi bấm Home, chuyển ứng dụng, tắt màn hình hoặc vuốt Activity khỏi màn hình gần đây trong lúc đang phát, service tiếp tục sở hữu player.
+- Android tự hiện thông báo MediaStyle với tiêu đề, nút phát/tạm dừng, tua và dừng; nút tai nghe/Bluetooth và màn hình khóa điều khiển cùng MediaSession.
+- Khi mở lại ứng dụng, giao diện nối lại MediaController và khôi phục đúng trạng thái đang phát mà không mở lại tệp.
+- Nút **Dừng** xóa playlist, nhờ đó notification native được gỡ đúng cách.
 
-- **WebView chặn tự phát media** → đã đặt `mediaPlaybackRequiresUserGesture = false`.
-- **Không có trình chọn tệp** → `onShowFileChooser` đã được cài, nên nút "Mở tệp TXT" và chọn nhạc/video trong máy hoạt động.
-- **TTS phát sai kênh / âm lượng 0** → TTS dùng `AudioAttributes USAGE_MEDIA`, truyền âm lượng từ thanh trượt của giao diện, nút âm lượng vật lý điều khiển đúng kênh media.
-- **Engine Google TTS không có** → tự chuyển sang engine mặc định của máy thay vì im lặng.
-- Quyền `READ_MEDIA_AUDIO/VIDEO/IMAGES` (Android 13+) và `READ_EXTERNAL_STORAGE` (Android 12 trở xuống) được khai báo và hỏi khi mở app.
+### YouTube
 
-### 3. Bỏ chế độ vuốt ẩn/hiện thanh công cụ
+YouTube tiếp tục dùng iframe nhúng chính thức. Bản này không trích xuất luồng âm thanh/video từ YouTube, nên không cam kết phát YouTube khi Activity bị hệ thống tạm dừng. Phát nền ổn định áp dụng cho file local và URL media trực tiếp do Media3 xử lý.
 
-Chế độ "Tự động ẩn khi cuộn" trong v22 đã được **gỡ bỏ** vì gây giật khi cuộn trên một số trang web. Mặc định giờ là **Luôn hiển thị**; vẫn còn tùy chọn "Luôn thu gọn" nếu muốn nhiều không gian màn hình. Cài đặt "auto" cũ lưu trong máy sẽ tự chuyển về "Luôn hiển thị".
+## Kiến trúc chính
 
-## Kiến trúc
+- `NativeMediaPlaybackService.kt`: `MediaSessionService` + `ExoPlayer`.
+- `MainActivity.kt`: kết nối bằng `MediaController`, mở `ACTION_OPEN_DOCUMENT`, chuyển lệnh từ UI tới service và gửi state về shell.
+- `ShellBridge.kt`: API JavaScript riêng cho mở file, phát URL, play/pause/stop và volume; ngăn `PlaybackService` cũ tạo notification media trùng.
+- `v13-media.js`: phân tách rõ backend `native` và `web`; Android không còn dùng `URL.createObjectURL()` cho `content://`.
+- `PlaybackService.kt`: vẫn giữ nguyên cho Đọc truyện TXT và fallback media WebView/YouTube.
 
-- **WebView giao diện (shell):** tải `assets/www/index.html` qua `WebViewAssetLoader` (origin `https://appassets.androidapp.com` — secure context nên `crypto.randomUUID`, `mediaSession`... hoạt động đầy đủ).
-- **Hệ thống thẻ native:** `BrowserTabStore` là nguồn dữ liệu duy nhất cho danh sách thẻ, thẻ đang chọn, URL và tiêu đề. JavaScript chỉ giữ một bản sao để cập nhật thanh địa chỉ và số đếm.
-- **Bộ chuyển thẻ:** `NativeTabSwitcherView` là giao diện Android native dạng lưới hai cột, không còn phụ thuộc overlay HTML, MutationObserver hoặc z-index của shell WebView.
-- **WebView trang web:** chỉ giữ tối đa 4 WebView gần đây trong bộ nhớ. Khi chọn lại một thẻ đã bị giải phóng, WebView được tạo lại và nạp URL đã lưu. Cách này tránh giữ hàng chục renderer cùng lúc.
-- **Cầu nối JavaScript:**
-  - `LqlqTtsBridge` — đúng hợp đồng trong `ANDROID_TTS_BRIDGE_SPEC.md` (ưu tiên `com.google.android.tts`, danh sách giọng từ `textToSpeech.voices`, gọi lại `LqlqReader.onNativeUtteranceDone/Error`).
-  - `LqlqPageBridge` — đúng hợp đồng trong `ANDROID_PAGE_BRIDGE_SPEC.md` kiểu A: inject thuật toán trích chương vào WebView trang web, trả JSON chương cho nút "Lấy chương đang mở" của Đọc truyện TXT và Chapter Clipper.
-  - `LqlqAndroid` — gọi API thẻ native, báo trạng thái đọc/nhạc cho thông báo, lưu tệp (TXT, ảnh đã chỉnh...) vào thư mục Download.
-  - Website bên ngoài chỉ nhận `PageToolsBridge` tối thiểu với `saveTextFile()` để Chapter Clipper xuất TXT; API quản lý thẻ và các quyền đặc biệt chỉ tồn tại trong shell.
-- **`android-glue.js`** (script cuối trong `index.html`): đồng bộ bản sao trạng thái thẻ từ native sang giao diện, nối điều hướng với WebView thật, cập nhật thanh địa chỉ + lịch sử, theo dõi trạng thái Reader/Media và xử lý lưu tệp. Mở bằng trình duyệt máy tính thì file này tự tắt.
+## Các phần từ v0.25 vẫn được giữ
 
-## Icon
+- Hệ thống thẻ native với `BrowserTabStore` là nguồn dữ liệu duy nhất.
+- Cache tối đa 2 WebView trên máy RAM thấp và 4 WebView trên máy thường.
+- Dấu trang/Trang đã lưu đã tách khỏi shortcut mặc định.
+- Favicon cache cục bộ, không tải hàng loạt khi mở thẻ mới.
+- Lưu trang ngoại tuyến bằng MHT, ghi stream thẳng vào Downloads.
+- Safe Browsing, cache WebView mặc định và quyền tệp theo Storage Access Framework.
 
-Dùng đúng bộ icon trong `android-icon-pack/res/` của gói v0.23 (adaptive icon + legacy PNG đầy đủ các mật độ), label `lqlq Browser`. Ảnh gốc 1254px vẫn nằm trong repo tại `art/` để tái tạo sau này.
+## Yêu cầu
 
-## Ghi chú
-
-- Nhạc từ **YouTube embed** không điều khiển được từ thanh thông báo (iframe của YouTube không cho đọc trạng thái); nhạc/video từ tệp trong máy và link trực tiếp thì đầy đủ.
-- Nút "Tạm dừng" TTS: Android TextToSpeech không hỗ trợ pause thật, nên khi bấm "Tiếp tục" sẽ đọc lại **từ đầu câu hiện tại** (không mất nội dung).
-- `minSdk 24` (Android 7.0) → `targetSdk 35`.
+- `minSdk 24`, `targetSdk 35`, Java 17.
+- AndroidX Media3 `1.10.1`.
+- Quyền thông báo cần được cho phép trên Android 13+ để thấy thanh điều khiển trong notification.

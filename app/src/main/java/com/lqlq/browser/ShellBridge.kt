@@ -201,6 +201,31 @@ class ShellBridge(private val activity: MainActivity) {
         handleState("media", json)
     }
 
+    /** Mở trình chọn tài liệu Android để lấy URI bền vững cho MP3/MP4. */
+    @JavascriptInterface
+    fun openNativeMediaFile() {
+        activity.runOnUiThread { activity.launchNativeMediaFilePicker() }
+    }
+
+    /** Phát URL media trực tiếp bằng Media3 thay vì thẻ video trong WebView. */
+    @JavascriptInterface
+    fun playNativeMediaUrl(url: String, title: String, mimeType: String) {
+        activity.runOnUiThread { activity.playNativeMediaUrl(url, title, mimeType) }
+    }
+
+    @JavascriptInterface
+    fun nativeMediaCommand(command: String) {
+        activity.runOnUiThread { activity.nativeMediaCommand(command) }
+    }
+
+    @JavascriptInterface
+    fun setNativeMediaVolume(value: Float) {
+        activity.runOnUiThread { activity.setNativeMediaVolume(value) }
+    }
+
+    @JavascriptInterface
+    fun getNativeMediaState(): String = activity.getNativeMediaStateJson()
+
     /**
      * Việc (v0.23.21): "Nhạc và video nền" giờ là công cụ tiện ích kiểu
      * Chapter Clipper — bật/tắt bằng nút menu ☰, KHÁC với tín hiệu
@@ -222,6 +247,13 @@ class ShellBridge(private val activity: MainActivity) {
         }
         val active = data.optBoolean("active", false)
         Log.d("lqlqPlayback", "handleState kind=$kind active=$active playing=${data.optBoolean("playing", false)} json=$json")
+
+        // Media3/MediaSessionService tự sở hữu notification và nút khóa màn hình.
+        // Không để PlaybackService cũ tạo thêm một thông báo media thứ hai.
+        if (kind == "media" && data.optString("backend") == "native") {
+            PlaybackService.stopKind(activity, kind)
+            return
+        }
 
         if (!active) {
             PlaybackService.stopKind(activity, kind)
