@@ -286,6 +286,7 @@ class MainActivity : AppCompatActivity() {
         // trong CSS (bình thường) đảm bảo không còn khung hình trắng "cũ"
         // nào có thể lộ ra. z-order vẫn do bringChildToFront() quyết định.
         shellWebView.setBackgroundColor(Color.TRANSPARENT)
+        applyBackgroundRendererPriority(shellWebView)
 
         ttsBridge = TtsBridge(applicationContext)
         shellBridge = ShellBridge(this)
@@ -344,6 +345,31 @@ class MainActivity : AppCompatActivity() {
 
         // Cần để mở tệp .mht đã lưu bằng file://... (trang ngoại tuyến).
         settings.allowFileAccess = true
+    }
+
+    /**
+     * Việc "nhạc/video tắt khi rời app" (v0.23.15): khi Activity không còn
+     * hiển thị (ra nền), tiến trình renderer của WebView (Chromium, tách
+     * riêng khỏi tiến trình app) mặc định bị hệ điều hành hạ mức ưu tiên,
+     * khiến JS/âm thanh HTML5 bên trong dễ bị hệ thống tạm dừng dù tiến
+     * trình app chính vẫn sống (nhờ PlaybackService foreground). Giữ mức ưu
+     * tiên renderer ở "IMPORTANT" (như thể đang hiển thị) ngay cả khi ở nền,
+     * để nhạc/video có cơ hội tiếp tục chạy giống hành vi TTS (vốn là service
+     * native, không phụ thuộc renderer của WebView).
+     *
+     * Lưu ý: đây là API tốt nhất WebView cung cấp cho mục đích này — không
+     * đảm bảo tuyệt đối 100% như TTS (TTS dùng engine hệ thống, hoàn toàn
+     * tách khỏi WebView), và không giữ được nếu hệ điều hành/ người dùng
+     * đóng hẳn ứng dụng (vuốt khỏi Recents) vì khi đó Activity/WebView bị
+     * huỷ thật sự, không còn gì để giữ ưu tiên nữa.
+     */
+    private fun applyBackgroundRendererPriority(webView: WebView) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, true)
+            } catch (_: Exception) {
+            }
+        }
     }
 
     private fun currentPageWebView(): WebView? =
@@ -568,6 +594,7 @@ $js
     private fun createPageWebView(tabId: String): WebView {
         val webView = WebView(this)
         applyCommonSettings(webView.settings)
+        applyBackgroundRendererPriority(webView)
 
         // Việc A (v0.23.6): chặn quảng cáo tự mở cửa sổ/tab mới ở tầng
         // WebView (mạnh hơn nhiều so với chỉ override window.open bằng JS,

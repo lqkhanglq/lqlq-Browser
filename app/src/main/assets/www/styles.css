@@ -9647,12 +9647,18 @@ body.lqlq-native-page-open .tools-menu,
 body.lqlq-native-page-open .side-drawer,
 body.lqlq-native-page-open .mobile-menu-backdrop,
 body.lqlq-native-page-open .mobile-tabs-overlay,
+body.lqlq-native-page-open .media-center-overlay,
+body.lqlq-native-page-open .global-media-mini,
+body.lqlq-native-page-open .story-reader-panel,
 html.lqlq-native-page-open .top-shell,
 html.lqlq-native-page-open .chrome-menu,
 html.lqlq-native-page-open .tools-menu,
 html.lqlq-native-page-open .side-drawer,
 html.lqlq-native-page-open .mobile-menu-backdrop,
-html.lqlq-native-page-open .mobile-tabs-overlay {
+html.lqlq-native-page-open .mobile-tabs-overlay,
+html.lqlq-native-page-open .media-center-overlay,
+html.lqlq-native-page-open .global-media-mini,
+html.lqlq-native-page-open .story-reader-panel {
   visibility: visible;
 }
 

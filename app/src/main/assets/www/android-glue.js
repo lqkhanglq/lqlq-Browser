@@ -241,10 +241,17 @@
           return;
         }
         if (cmd === "toggle") {
-          const player = mainAudiblePlayer();
-          if (!player) return;
-          if (player.paused) player.play().catch(() => {});
-          else player.pause();
+          // ShieldMedia.toggle() xử lý thống nhất cho cả YouTube (iframe,
+          // không có thẻ <audio>/<video> để dò) lẫn media trực tiếp.
+          if (typeof window.ShieldMedia?.toggle === "function") {
+            window.ShieldMedia.toggle();
+          } else {
+            const player = mainAudiblePlayer();
+            if (!player) return;
+            if (player.paused) player.play().catch(() => {});
+            else player.pause();
+          }
+          setTimeout(sendMediaState, 100);
         }
       });
     }

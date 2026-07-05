@@ -720,6 +720,26 @@
         setPlaying(false);
       } catch {}
     },
+    // Bấm phát/tạm dừng thống nhất cho CẢ YouTube lẫn media trực tiếp — dùng
+    // cho nút trên thanh thông báo nền. Trước đây thanh thông báo tự dò thẻ
+    // <audio>/<video> thật trong DOM, nhưng YouTube chỉ là iframe (không có
+    // thẻ này) nên nút không có tác dụng gì với YouTube.
+    toggle: () => {
+      if (state.type === "youtube") {
+        // Gửi lệnh cho CẢ 2 khung — khung nào đang câm cũng vô hại vì luôn
+        // bị mute, chỉ khung đang audible mới thực sự nghe được. Không cần
+        // biết chính xác khung nào đang "audible" tại thời điểm gọi.
+        const cmd = state.isPlaying ? "pauseVideo" : "playVideo";
+        retryYoutubeCommand(refs.youtube, cmd);
+        retryYoutubeCommand(refs.miniYoutube, cmd);
+        setPlaying(!state.isPlaying);
+        return;
+      }
+      if (state.type === "audio" || state.type === "video") {
+        if (refs.htmlPlayer.paused) refs.htmlPlayer.play().catch(() => {});
+        else refs.htmlPlayer.pause();
+      }
+    },
     loadYoutube,
     loadDirectSource,
     state
