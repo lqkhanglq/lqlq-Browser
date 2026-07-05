@@ -182,13 +182,13 @@ class MainActivity : AppCompatActivity() {
     private val tabRootDomain = ConcurrentHashMap<String, String>()
 
     /**
-     * Khoảng thời gian ngắn cho chuỗi điều hướng do người dùng chủ động bấm.
-     * Chrome cho phép liên kết sang domain khác và theo redirect của nó; chỉ
-     * những chuyển hướng tự phát, không có gesture, mới bị lớp bảo vệ domain
-     * của ứng dụng chặn. Map concurrent vì shouldInterceptRequest chạy ngoài
-     * luồng giao diện.
+     * Bật/tắt lớp chặn quảng cáo domain đã biết + chặn nhảy trang sang domain
+     * lạ (root-domain guard). Mặc định BẬT. KHÔNG xét gesture: một cú chạm
+     * thật có thể bị lớp phủ quảng cáo vô hình "đánh cắp", nên không dùng làm
+     * căn cứ cho phép nhảy domain — xem ShellBridge.setDomainGuardEnabled().
      */
-    private val tabUserNavigationUntil = ConcurrentHashMap<String, Long>()
+    @Volatile
+    var domainGuardEnabled: Boolean = true
 
 
     /** Lớp phủ của giao diện (menu, panel...) đang mở → phải nổi trên trang web. */
@@ -1468,7 +1468,6 @@ class MainActivity : AppCompatActivity() {
         destroyPageWebView(tabId)
         chapterClipperEnabledTabs.remove(tabId)
         tabRootDomain.remove(tabId)
-        tabUserNavigationUntil.remove(tabId)
         val next = tabStore.closeTab(tabId)
         activeTabId = next.id
         activateTab(next)
@@ -1482,7 +1481,6 @@ class MainActivity : AppCompatActivity() {
             destroyPageWebView(id)
             chapterClipperEnabledTabs.remove(id)
             tabRootDomain.remove(id)
-            tabUserNavigationUntil.remove(id)
         }
         val keep = tabStore.closeOtherTabs(keepId)
         activeTabId = keep.id
@@ -1496,7 +1494,6 @@ class MainActivity : AppCompatActivity() {
             destroyPageWebView(id)
             chapterClipperEnabledTabs.remove(id)
             tabRootDomain.remove(id)
-            tabUserNavigationUntil.remove(id)
         }
         val blank = tabStore.closeAllTabs()
         activeTabId = blank.id
@@ -1963,13 +1960,14 @@ $js
                 }
 
                 // Việc (v0.23.11 + v0.23.20): chặn TUYỆT ĐỐI domain quảng
-                // cáo/redirect đã biết, không cần xét gesture — giống hệt
-                // cách metruyenchu_clipper_android_project chặn cứng bằng
-                // danh sách domain (rules.json), nên trang web không hề bị
-                // đổi/nhảy. TRỪ KHI đang ở trang tìm kiếm/AI (Google có thể
-                // tự dùng doubleclick.net cho quảng cáo tìm kiếm CHÍNH THỐNG
-                // của nó — không nên chặn, tránh phá chức năng thật).
-                if (!isSearchOrAiToolHost(tabRootDomain[tabId]) &&
+                // cáo/redirect đã biết, không xét gesture — một cú chạm thật
+                // có thể bị lớp phủ quảng cáo vô hình "đánh cắp", nên gesture
+                // không phải căn cứ đáng tin để cho qua (xem domainGuardEnabled
+                // ở trên). TRỪ KHI đang ở trang tìm kiếm/AI (Google có thể tự
+                // dùng doubleclick.net cho quảng cáo tìm kiếm CHÍNH THỐNG của
+                // nó — không nên chặn, tránh phá chức năng thật).
+                if (domainGuardEnabled &&
+                    !isSearchOrAiToolHost(tabRootDomain[tabId]) &&
                     isBlockedAdHost(request.url.host)
                 ) {
                     Toast.makeText(
@@ -1980,27 +1978,15 @@ $js
                     return true
                 }
 
-                // Liên kết main-frame có gesture là thao tác thật của người
-                // dùng. Cho phép chuyển domain và cả chuỗi redirect ngắn sau
-                // đó, thay vì khoá mọi liên kết ngoài như bản cũ. Đây là hành
-                // vi gần trình duyệt Android/Chrome hơn nhưng vẫn giữ chặn cứng
-                // các host quảng cáo ở phía trên.
-                if (request.isForMainFrame && request.hasGesture()) {
-                    tabUserNavigationUntil[tabId] = System.currentTimeMillis() + 8_000L
-                    request.url.host?.let { tabRootDomain[tabId] = it }
-                    return false
-                }
-
-                // Chặn điều hướng main-frame tự phát sang domain khác. Chỉ
-                // áp dụng cho khung chính; iframe/tài nguyên con không bị lớp
-                // này can thiệp. Công cụ tìm kiếm/AI được miễn trừ để kết quả
-                // tìm kiếm hoạt động bình thường. Điều hướng chủ động từ thanh
-                // địa chỉ/trang chủ đi qua openPage() và cập nhật domain trước.
+                // Chặn TUYỆT ĐỐI mọi điều hướng main-frame tự phát sang domain
+                // khác domain gốc hiện tại của tab, KHÔNG xét gesture. Chỉ áp
+                // dụng cho khung chính; iframe/tài nguyên con không bị lớp này
+                // can thiệp. Công cụ tìm kiếm/AI được miễn trừ để kết quả tìm
+                // kiếm hoạt động bình thường. Điều hướng chủ động từ thanh địa
+                // chỉ/trang chủ đi qua openPage() và cập nhật domain trước.
                 val safeHost = tabRootDomain[tabId]
                 val targetHost = request.url.host
-                val userNavigationActive =
-                    (tabUserNavigationUntil[tabId] ?: 0L) >= System.currentTimeMillis()
-                if (request.isForMainFrame && !userNavigationActive &&
+                if (domainGuardEnabled && request.isForMainFrame &&
                     !isSearchOrAiToolHost(safeHost) && !isSearchOrAiToolHost(targetHost) &&
                     !safeHost.isNullOrEmpty() && !targetHost.isNullOrEmpty() &&
                     !isSameRootDomain(safeHost, targetHost)
@@ -2015,9 +2001,9 @@ $js
                 return false
             }
 
-            // shouldInterceptRequest() còn kiểm tra từng bước redirect
-            // phía server. Danh sách host quảng cáo luôn bị chặn; guard domain
-            // chỉ chặn chuyển hướng main-frame tự phát ngoài cửa sổ gesture.
+            // shouldInterceptRequest() còn kiểm tra từng bước redirect phía
+            // server. Cả 2 lớp chặn (danh sách host quảng cáo + root-domain
+            // guard) đều tắt hoàn toàn khi domainGuardEnabled = false.
             override fun shouldInterceptRequest(
                 view: WebView,
                 request: WebResourceRequest
@@ -2028,14 +2014,13 @@ $js
                 // cáo đã biết) khi đang ở trang tìm kiếm/AI — trang đó có
                 // thể tự dùng hạ tầng quảng cáo của chính nó cho chức năng
                 // thật (vd kết quả quảng cáo tìm kiếm của Google).
+                if (!domainGuardEnabled) return null
                 if (isSearchOrAiToolHost(tabRootDomain[tabId])) return null
 
                 val blockedByList = isBlockedAdHost(targetHost)
-                val userNavigationActive =
-                    (tabUserNavigationUntil[tabId] ?: 0L) >= System.currentTimeMillis()
                 var blockedByRootDomainGuard = false
 
-                if (!blockedByList && !userNavigationActive && request.isForMainFrame) {
+                if (!blockedByList && request.isForMainFrame) {
                     val safeHost = tabRootDomain[tabId]
                     if (!isSearchOrAiToolHost(safeHost) && !isSearchOrAiToolHost(targetHost) &&
                         !safeHost.isNullOrEmpty() && !targetHost.isNullOrEmpty() &&
@@ -2082,7 +2067,6 @@ $js
                 // chỉ khi 1 trang THẬT SỰ tải xong (không phải bị chặn giữa
                 // chừng), làm cơ sở để chặn tuyệt đối điều hướng lạ sau này.
                 Uri.parse(url).host?.let { tabRootDomain[tabId] = it }
-                tabUserNavigationUntil.remove(tabId)
 
                 // Việc C (v0.23.6): ẩn quảng cáo DOM LUÔN BẬT cho MỌI trang,
                 // độc lập với Chapter Clipper (không đi qua chapterClipperEnabledTabs).

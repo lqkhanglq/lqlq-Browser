@@ -47,6 +47,36 @@
   // native cũng để tắt — chỉ cần đồng bộ khi người dùng đã từng bật trước đó.
   safeCall(() => native.setAdblockDomEnabled?.(window.lqlqGetAdblockDomEnabled()));
 
+  // ==================================================================
+  // 0b2. Bật/tắt lớp chặn domain quảng cáo/redirect + chặn nhảy trang sang
+  //      domain lạ — MẶC ĐỊNH BẬT. Đây là lớp chặn ở tầng mạng native
+  //      (shouldOverrideUrlLoading/shouldInterceptRequest), khác với lớp ẩn
+  //      quảng cáo DOM ở trên. Không xét gesture: một cú chạm thật có thể bị
+  //      lớp phủ quảng cáo vô hình "đánh cắp", nên tắt hẳn khi người dùng
+  //      chủ động chọn, không dựa vào gesture để tự nới lỏng.
+  // ==================================================================
+  const DOMAIN_GUARD_KEY = "lqlqDomainGuardEnabledV1";
+
+  window.lqlqGetDomainGuardEnabled = () => {
+    try {
+      const raw = localStorage.getItem(DOMAIN_GUARD_KEY);
+      return raw === null ? true : raw === "1";
+    } catch {
+      return true;
+    }
+  };
+
+  window.lqlqSetDomainGuardEnabled = enabled => {
+    safeCall(() => {
+      try {
+        localStorage.setItem(DOMAIN_GUARD_KEY, enabled ? "1" : "0");
+      } catch {}
+      native.setDomainGuardEnabled?.(Boolean(enabled));
+    });
+  };
+
+  safeCall(() => native.setDomainGuardEnabled?.(window.lqlqGetDomainGuardEnabled()));
+
   // Android Chrome không hiện Tiện ích/Task Manager/DevTools trong menu di
   // động. Tab groups chưa có model native nên ẩn thay vì để nút bấm không làm
   // gì — mọi mục còn hiển thị đều phải có hành vi thật.

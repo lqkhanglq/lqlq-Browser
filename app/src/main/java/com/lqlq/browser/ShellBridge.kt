@@ -168,6 +168,21 @@ class ShellBridge(private val activity: MainActivity) {
     }
 
     /**
+     * Bật/tắt lớp chặn domain quảng cáo đã biết + chặn nhảy trang sang domain
+     * lạ (MainActivity.domainGuardEnabled, mặc định BẬT). Khác với
+     * setAdblockDomEnabled() ở trên — đây là lớp chặn ở tầng mạng
+     * (shouldOverrideUrlLoading/shouldInterceptRequest), không liên quan tới
+     * việc ẩn quảng cáo trong DOM.
+     */
+    @JavascriptInterface
+    fun setDomainGuardEnabled(enabled: Boolean) {
+        activity.domainGuardEnabled = enabled
+    }
+
+    @JavascriptInterface
+    fun isDomainGuardEnabled(): Boolean = activity.domainGuardEnabled
+
+    /**
      * Đồng bộ (không cần runOnUiThread callback riêng) vì WebView JS→Java
      * hỗ trợ giá trị trả về ngay khi gọi cùng luồng UI; dùng để cập nhật
      * trạng thái nút menu (bật/tắt) mỗi khi mở menu hoặc chuyển tab.

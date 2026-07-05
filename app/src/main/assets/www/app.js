@@ -398,15 +398,19 @@ function openDrawer(type) {
     if (type === "adblock") {
       els.drawerTitle.textContent = "Bộ lọc quảng cáo";
       // Việc (v0.23.28): tách 2 lớp chặn khác nhau — (1) chặn domain quảng
-      // cáo/nhảy trang LUÔN BẬT, không tắt được (đây là phần chính, đủ dùng
-      // để chặn quảng cáo tự chuyển hướng) — và (2) ẩn quảng cáo hiển thị
-      // trong DOM bằng MutationObserver, có thể TỐN CPU trên trang nhiều
-      // quảng cáo động, nên cho bật/tắt riêng, MẶC ĐỊNH TẮT cho mượt hơn.
+      // cáo/nhảy trang, và (2) ẩn quảng cáo hiển thị trong DOM bằng
+      // MutationObserver, có thể TỐN CPU trên trang nhiều quảng cáo động,
+      // nên cho bật/tắt riêng, MẶC ĐỊNH TẮT cho mượt hơn.
       const domEnabled = window.lqlqGetAdblockDomEnabled?.() ?? false;
+      const domainGuardEnabled = window.lqlqGetDomainGuardEnabled?.() ?? true;
       els.drawerContent.innerHTML = `
         <div class="info-panel">
-          <h3>Chặn quảng cáo/chuyển hướng — luôn bật</h3>
-          <p>Chặn tự động nhảy sang domain lạ, tab/cửa sổ quảng cáo tự mở, và các miền quảng cáo phổ biến. Đây là phần chính, luôn hoạt động, không tắt được.</p>
+          <h3>Chặn quảng cáo/chuyển hướng</h3>
+          <p>Chặn tự động nhảy sang domain lạ, tab/cửa sổ quảng cáo tự mở, và các miền quảng cáo phổ biến. Đây là phần chính, mặc định bật.</p>
+          <label class="reader-toggle-row" style="cursor:pointer">
+            <span class="reader-toggle-copy"><b>Chặn nhảy trang quảng cáo/domain lạ</b><small>Mặc định bật</small></span>
+            <input type="checkbox" id="domainGuardToggle" ${domainGuardEnabled ? "checked" : ""} onchange="window.lqlqSetDomainGuardEnabled(this.checked)">
+          </label>
         </div>
         <div class="info-panel">
           <h3>Ẩn quảng cáo hiển thị trong trang (DOM)</h3>
