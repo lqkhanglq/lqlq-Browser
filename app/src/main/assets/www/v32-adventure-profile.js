@@ -467,7 +467,7 @@
   function renderSubView(view) {
     if (!elements.subContent || !activeSubView) return;
     const titles = {
-      collection: "Đồ Giám Vạn Giới",
+      collection: "Vạn Giới Đồ Giám",
       inventory: "Túi Hành Trang",
       shop: "Cửa Hàng Linh Thạch",
       share: "Thẻ Khoe Thành Tích"
@@ -591,7 +591,7 @@
         </div>
         <div class="share-rare dynamic"><small>Kỳ Vật nổi bật</small><div>${dynamicHighlights || icons}</div></div>
         <div class="share-rare"><small>Linh Thú nổi bật</small><div>${icons}</div></div>
-        <footer>lqlq Browser · Đồ Giám Vạn Giới</footer>
+        <footer>lqlq Browser · Vạn Giới Đồ Giám</footer>
       </div>
       <div class="adventure-guide-card"><b>Sẵn sàng để khoe</b><small>Thẻ này được bố trí riêng để bạn chụp màn hình và chia sẻ bộ sưu tập với bạn bè. Các bản sau có thể thêm nút xuất ảnh trực tiếp.</small></div>`;
   }
