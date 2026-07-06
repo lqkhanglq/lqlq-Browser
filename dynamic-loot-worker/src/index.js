@@ -205,7 +205,59 @@ async function fetchPageByTitle(language, title) {
   return page;
 }
 
+// Nhân vật anime/game/pop-culture RẤT nổi tiếng nhưng hiếm khi lọt vào top
+// lượt xem CHUNG của Wikipedia (vì đó bị tin tức/chính trị/thể thao chiếm
+// hết) — cho một danh sách biết trước, thỉnh thoảng chọn thẳng từ đây để
+// nhóm "gần gũi, quen thuộc" này vẫn xuất hiện đều đặn thay vì gần như không
+// bao giờ ra được.
+const ANIME_POOL_CHANCE = 0.22;
+const ANIME_POOL = [
+  "Goku", "Monkey D. Luffy", "Naruto Uzumaki", "Sasuke Uchiha", "Pikachu",
+  "Doraemon", "Sailor Moon (character)", "Edward Elric", "Levi Ackerman",
+  "Eren Yeager", "Mikasa Ackerman", "Light Yagami", "L (Death Note)",
+  "Vegeta", "Roronoa Zoro", "Tanjiro Kamado", "Ichigo Kurosaki",
+  "Spike Spiegel", "Hatsune Miku", "Totoro", "Astro Boy", "Kirito",
+  "Sonic the Hedgehog (character)", "Mario (franchise)",
+  "Link (The Legend of Zelda)", "Hello Kitty", "Pac-Man",
+  "Kirby (character)", "Lara Croft", "Cloud Strife"
+];
+
+async function fetchAnimePoolLoot({ rarity, seed }) {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const index = Math.floor(seededFraction(`${seed}|anime|${attempt}`) * ANIME_POOL.length);
+    const title = ANIME_POOL[Math.min(index, ANIME_POOL.length - 1)];
+    const page = await fetchPageByTitle("en", title);
+    if (!page) continue;
+
+    const cleanTitle = sanitize(page.title, 100) || "Thẻ Kỳ Vật Vô Danh";
+    const description = sanitize(page.extract, 420) || "Một nhân vật nổi tiếng trong anime/game/pop-culture.";
+    const qid = page?.pageprops?.wikibase_item || "";
+    const pageId = Number(page.pageid || 0);
+
+    return {
+      id: qid ? `wikidata-${qid}` : `wikipedia-en-${pageId}`,
+      name: cleanTitle,
+      category: "Nhân vật hư cấu",
+      description,
+      rarity,
+      stars: starsForRarity(rarity),
+      imageUrl: page.thumbnail.source,
+      sourceType: "wikimedia",
+      sourceUrl: `https://en.wikipedia.org/?curid=${pageId}`,
+      attribution: "Wikipedia / Wikimedia Commons",
+      license: "See the source page for image-specific license and attribution",
+      generated: false
+    };
+  }
+  return null;
+}
+
 async function fetchKnowledgeLoot({ rarity, locale, seed }) {
+  if (seededFraction(`${seed}|anime-pool`) < ANIME_POOL_CHANCE) {
+    const animeItem = await fetchAnimePoolLoot({ rarity, seed });
+    if (animeItem) return animeItem;
+  }
+
   const languages = locale === "vi" ? ["vi", "en"] : ["en", "vi"];
   const [bandStart, bandEnd] = FAME_RANK_BANDS[rarity] || FAME_RANK_BANDS["Thường"];
   let lastError;
