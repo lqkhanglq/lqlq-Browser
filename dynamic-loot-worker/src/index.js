@@ -229,7 +229,11 @@ const ANIME_POOL = [
   "Doctor Strange (Marvel Comics character)",
   // Nhân vật kinh điển/võ hiệp Trung Quốc được yêu thích.
   "Sun Wukong", "Zhuge Liang", "Guan Yu", "Wei Xiaobao", "Yang Guo",
-  "Linghu Chong", "Zhang Wuji", "Nezha"
+  "Linghu Chong", "Zhang Wuji", "Nezha",
+  // Tiểu thuyết mạng Trung Quốc nổi tiếng vài năm gần đây (Klein/"Quỷ Bí
+  // Chi Chủ" chưa có trang riêng trên Wikipedia nên dùng trang bộ truyện).
+  "Lord of the Mysteries", "Zhou Zhiruo", "Xiao Yan",
+  "Wei Wuxian (Mo Dao Zu Shi)", "Wu Xie", "The King's Avatar"
 ];
 
 async function fetchAnimePoolLoot({ rarity, seed }) {
