@@ -220,7 +220,16 @@ const ANIME_POOL = [
   "Spike Spiegel", "Hatsune Miku", "Totoro", "Astro Boy", "Kirito",
   "Sonic the Hedgehog (character)", "Mario (franchise)",
   "Link (The Legend of Zelda)", "Hello Kitty", "Pac-Man",
-  "Kirby (character)", "Lara Croft", "Cloud Strife"
+  "Kirby (character)", "Lara Croft", "Cloud Strife",
+  // Truyện tranh phương Tây (Marvel/DC) được yêu thích.
+  "Spider-Man", "Batman", "Superman", "Iron Man", "Wonder Woman",
+  "Wolverine (character)", "Deadpool", "Joker (character)",
+  "Hulk (character)", "Captain America", "Thor (Marvel Comics)",
+  "Black Panther (character)", "Harley Quinn",
+  "Doctor Strange (Marvel Comics character)",
+  // Nhân vật kinh điển/võ hiệp Trung Quốc được yêu thích.
+  "Sun Wukong", "Zhuge Liang", "Guan Yu", "Wei Xiaobao", "Yang Guo",
+  "Linghu Chong", "Zhang Wuji", "Nezha"
 ];
 
 async function fetchAnimePoolLoot({ rarity, seed }) {
