@@ -1,6 +1,7 @@
 package com.lqlq.browser
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.Typeface
@@ -13,6 +14,7 @@ import android.view.ViewGroup
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.PopupMenu
 import android.widget.TextView
@@ -41,6 +43,10 @@ class NativeTabSwitcherView(
         fun onCloseOtherTabs()
         fun onCloseAllTabs()
         fun onDismiss()
+        /** Favicon đã lưu cục bộ cho URL này, hoặc null nếu chưa có — dùng để
+         * hiện icon website thật (kiểu Chrome) thay vì chấm màu, không chụp
+         * ảnh trang (đã bỏ hẳn từ v0.23.34 vì gây lag/màn hình trắng). */
+        fun getFaviconBitmap(url: String): Bitmap?
     }
 
     private data class Palette(
@@ -342,6 +348,7 @@ class NativeTabSwitcherView(
 
         inner class TabViewHolder(private val card: LinearLayout) : RecyclerView.ViewHolder(card) {
             private val icon: TextView
+            private val iconImage: ImageView
             private val title: TextView
             private val close: TextView
             private val preview: FrameLayout
@@ -363,7 +370,14 @@ class NativeTabSwitcherView(
                     textSize = 13f
                     gravity = Gravity.CENTER
                 }
-                header.addView(icon, LinearLayout.LayoutParams(dp(28), dp(36)))
+                iconImage = ImageView(context).apply {
+                    visibility = View.GONE
+                }
+                val iconSlot = FrameLayout(context).apply {
+                    addView(icon, FrameLayout.LayoutParams(dp(28), dp(28), Gravity.CENTER))
+                    addView(iconImage, FrameLayout.LayoutParams(dp(20), dp(20), Gravity.CENTER))
+                }
+                header.addView(iconSlot, LinearLayout.LayoutParams(dp(28), dp(36)))
 
                 title = TextView(context).apply {
                     textSize = 16f
@@ -432,6 +446,16 @@ class NativeTabSwitcherView(
                 previewLetter.text = title.text.toString().trim().firstOrNull()?.uppercase() ?: "T"
                 previewDomain.text = domainOf(tab.url).ifBlank { "Trang chủ lqlq" }
                 previewUrl.text = tab.url.ifBlank { "Nhấn để nhập địa chỉ hoặc tìm kiếm" }
+
+                val favicon = if (tab.url.isNotBlank()) callbacks.getFaviconBitmap(tab.url) else null
+                if (favicon != null) {
+                    iconImage.setImageBitmap(favicon)
+                    iconImage.visibility = View.VISIBLE
+                    icon.visibility = View.GONE
+                } else {
+                    iconImage.visibility = View.GONE
+                    icon.visibility = View.VISIBLE
+                }
 
                 icon.setTextColor(palette.accent)
                 title.setTextColor(palette.text)

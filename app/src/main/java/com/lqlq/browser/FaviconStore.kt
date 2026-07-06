@@ -2,6 +2,7 @@ package com.lqlq.browser
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Base64
 import android.util.LruCache
@@ -86,6 +87,28 @@ class FaviconStore(context: Context) {
             toDataUrl(bytes).also { memory.put(key, it) }
         } catch (_: Exception) {
             ""
+        }
+    }
+
+    /**
+     * Bitmap trực tiếp cho UI native (bộ chuyển thẻ) — tránh vòng mã hoá/giải
+     * mã base64 không cần thiết mà getDataUrl()/JS phải dùng. Có thể đọc tệp
+     * cache nên KHÔNG gọi trên luồng UI.
+     */
+    fun getBitmap(url: String?): Bitmap? {
+        val key = keyFor(url) ?: return null
+        return try {
+            val bytes = memory.get(key)?.let { dataUrl ->
+                Base64.decode(dataUrl.substringAfter(",", ""), Base64.DEFAULT)
+            } ?: run {
+                val file = fileFor(key)
+                if (!file.isFile) return null
+                file.readBytes()
+            }
+            if (bytes.isEmpty()) return null
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        } catch (_: Exception) {
+            null
         }
     }
 
