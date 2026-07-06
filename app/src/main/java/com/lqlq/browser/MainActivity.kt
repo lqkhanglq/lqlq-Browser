@@ -26,8 +26,11 @@ import android.provider.MediaStore
 import android.print.PrintAttributes
 import android.print.PrintManager
 import android.util.Rational
+import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.widget.TextView
 import android.webkit.CookieManager
 import android.webkit.MimeTypeMap
 import android.webkit.URLUtil
@@ -46,6 +49,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -375,9 +380,17 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.RequestMultiplePermissions()
     ) { }
 
-    // Video toàn màn hình
+    // Video toàn màn hình (onShowCustomView của WebChromeClient — video HTML5
+    // fullscreen của BẤT KỲ website nào, khác với "Nhạc và video nền" của
+    // riêng app). Trước đây chỉ MATCH_PARENT view của trang, không ẩn thanh
+    // trạng thái/điều hướng Android và không có nút xoay/khoá.
     private var customView: View? = null
     private var customViewCallback: WebChromeClient.CustomViewCallback? = null
+    private var fullscreenControlsOverlay: FrameLayout? = null
+    private var fullscreenLockOverlay: View? = null
+    private var fullscreenLocked = false
+    private var fullscreenUnlockRunnable: Runnable? = null
+    private val fullscreenHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -2599,6 +2612,8 @@ $js
                 )
             )
             view.setBackgroundColor(Color.BLACK)
+            enterImmersiveFullscreen()
+            addFullscreenControls()
         }
 
         override fun onHideCustomView() {
@@ -2650,10 +2665,147 @@ $js
     }
 
     private fun exitCustomView() {
+        removeFullscreenControls()
+        exitImmersiveFullscreen()
+        requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         customView?.let { root.removeView(it) }
         customView = null
         customViewCallback?.onCustomViewHidden()
         customViewCallback = null
+    }
+
+    // ------------------------------------------------------------------
+    // Video toàn màn hình (bất kỳ website nào): ẩn thật sự thanh trạng
+    // thái/điều hướng Android, không chỉ lấp đầy layout — trước đây video
+    // "toàn màn hình" vẫn bị 2 thanh hệ thống che vì không có phần này.
+    // ------------------------------------------------------------------
+
+    private fun enterImmersiveFullscreen() {
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        WindowInsetsControllerCompat(window, root).apply {
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            hide(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+
+    private fun exitImmersiveFullscreen() {
+        WindowInsetsControllerCompat(window, root).show(WindowInsetsCompat.Type.systemBars())
+        WindowCompat.setDecorFitsSystemWindows(window, true)
+    }
+
+    private fun fullscreenDp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    private fun addFullscreenControls() {
+        fullscreenLocked = false
+
+        val rotateBtn = TextView(this).apply {
+            text = "⟳"
+            textSize = 22f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.argb(140, 0, 0, 0))
+            setOnClickListener {
+                requestedOrientation = if (
+                    resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+                ) {
+                    android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                } else {
+                    android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                }
+            }
+        }
+
+        val lockBtn = TextView(this).apply {
+            text = "🔒"
+            textSize = 22f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.argb(140, 0, 0, 0))
+            setOnClickListener { setFullscreenLocked(true) }
+        }
+
+        val overlay = FrameLayout(this).apply {
+            addView(
+                rotateBtn,
+                FrameLayout.LayoutParams(fullscreenDp(44), fullscreenDp(44)).apply {
+                    gravity = Gravity.TOP or Gravity.END
+                    topMargin = fullscreenDp(16)
+                    rightMargin = fullscreenDp(68)
+                }
+            )
+            addView(
+                lockBtn,
+                FrameLayout.LayoutParams(fullscreenDp(44), fullscreenDp(44)).apply {
+                    gravity = Gravity.TOP or Gravity.END
+                    topMargin = fullscreenDp(16)
+                    rightMargin = fullscreenDp(16)
+                }
+            )
+        }
+
+        fullscreenControlsOverlay = overlay
+        root.addView(
+            overlay,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        )
+    }
+
+    private fun removeFullscreenControls() {
+        setFullscreenLocked(false)
+        fullscreenControlsOverlay?.let { root.removeView(it) }
+        fullscreenControlsOverlay = null
+    }
+
+    /**
+     * "Khoá màn hình" trong lúc xem video toàn màn hình: chặn mọi thao tác
+     * chạm (tránh bấm nhầm khi để trong túi/trẻ con nghịch), giữ 1,2 giây lên
+     * dòng chữ để mở khoá lại — cùng cách "giữ để mở khóa" đã dùng ở panel
+     * Nhạc và video nền, chỉ khác là cài đặt bằng View native thay vì HTML.
+     */
+    private fun setFullscreenLocked(locked: Boolean) {
+        fullscreenLocked = locked
+        fullscreenUnlockRunnable?.let { fullscreenHandler.removeCallbacks(it) }
+        fullscreenUnlockRunnable = null
+
+        fullscreenLockOverlay?.let { root.removeView(it) }
+        fullscreenLockOverlay = null
+
+        if (!locked) return
+
+        val hint = TextView(this).apply {
+            text = "Đang khoá màn hình · Giữ để mở khoá"
+            textSize = 15f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.argb(90, 0, 0, 0))
+            setOnTouchListener { _, event ->
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        text = "Đang giữ..."
+                        val runnable = Runnable { setFullscreenLocked(false) }
+                        fullscreenUnlockRunnable = runnable
+                        fullscreenHandler.postDelayed(runnable, 1200)
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        fullscreenUnlockRunnable?.let { fullscreenHandler.removeCallbacks(it) }
+                        fullscreenUnlockRunnable = null
+                        text = "Đang khoá màn hình · Giữ để mở khoá"
+                    }
+                }
+                true
+            }
+        }
+        fullscreenLockOverlay = hint
+        root.addView(
+            hint,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        )
     }
 
     // ------------------------------------------------------------------
