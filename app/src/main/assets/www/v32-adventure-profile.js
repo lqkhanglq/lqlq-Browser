@@ -35,6 +35,7 @@
     summaryCrystals: $("adventureSummaryCrystals"),
     overlay: $("adventureProfileOverlay"),
     close: $("adventureProfileClose"),
+    back: $("adventureProfileBack"),
     createView: $("adventureCreateView"),
     dashboardView: $("adventureDashboardView"),
     subView: $("adventureSubView"),
@@ -58,6 +59,14 @@
     portraitEmpty: $("adventurePortraitEmpty"),
     portraitUpload: $("adventurePortraitUpload"),
     cardSlots: $("adventureCardSlots"),
+    cardModal: $("adventureCardModal"),
+    cardModalClose: $("adventureCardModalClose"),
+    cardModalImage: $("adventureCardModalImage"),
+    cardModalName: $("adventureCardModalName"),
+    cardModalMeta: $("adventureCardModalMeta"),
+    cardModalEquip: $("adventureCardModalEquip"),
+    cardModalUnequip: $("adventureCardModalUnequip"),
+    cardModalDelete: $("adventureCardModalDelete"),
     charHp: $("adventureCharHp"),
     charAtk: $("adventureCharAtk"),
     charMana: $("adventureCharMana"),
@@ -121,8 +130,11 @@
     slotUsed: 0,
     slotPriceCrystals: 10,
     identityChangeCredits: 0,
-    portraitChangeCredits: 0
+    portraitChangeCredits: 0,
+    equippedCardIds: []
   };
+
+  let activeCardId = "";
 
   let selectedAvatarId = "guardian";
   let selectedCustomAvatar = "";
@@ -246,24 +258,84 @@
 
   const CARD_SLOT_COUNT = 10;
 
-  function renderCardSlots() {
-    if (!elements.cardSlots) return;
-    const top = [...(state.dynamicCollection || [])]
-      .sort((a, b) => rarityScore(b.rarity) - rarityScore(a.rarity))
-      .slice(0, CARD_SLOT_COUNT);
+  function cardById(id) {
+    return (state.dynamicCollection || []).find(entry => entry.id === id) || null;
+  }
+
+  function cardSlotGridHtml(items, capacity) {
     const slots = [];
-    for (let i = 0; i < CARD_SLOT_COUNT; i++) {
-      const entry = top[i];
+    for (let i = 0; i < capacity; i++) {
+      const entry = items[i];
       if (!entry) {
         slots.push(`<div class="adventure-gear-slot empty"></div>`);
         continue;
       }
       const image = entry.displayImageUrl || entry.imageUrl || "";
-      slots.push(`<div class="adventure-gear-slot filled ${rarityClass(entry.rarity)}" title="${escapeHtml(entry.name || "Thẻ Kỳ Vật")}">
+      slots.push(`<div class="adventure-gear-slot filled ${rarityClass(entry.rarity)}" data-card-id="${escapeHtml(entry.id)}" title="${escapeHtml(entry.name || "Thẻ Kỳ Vật")}">
         ${image ? `<img src="${escapeHtml(image)}" alt="${escapeHtml(entry.name || "")}" loading="lazy" />` : "<span>?</span>"}
       </div>`);
     }
-    elements.cardSlots.innerHTML = slots.join("");
+    return slots.join("");
+  }
+
+  function renderCardSlots() {
+    if (!elements.cardSlots) return;
+    const equipped = (state.equippedCardIds || []).map(cardById).filter(Boolean);
+    elements.cardSlots.innerHTML = cardSlotGridHtml(equipped, CARD_SLOT_COUNT);
+  }
+
+  function openCardModal(cardId) {
+    const entry = cardById(cardId);
+    if (!entry || !elements.cardModal) return;
+    activeCardId = cardId;
+    const image = entry.displayImageUrl || entry.imageUrl || "";
+    if (elements.cardModalImage) {
+      if (image) { elements.cardModalImage.src = image; elements.cardModalImage.classList.remove("hidden"); }
+      else elements.cardModalImage.classList.add("hidden");
+    }
+    if (elements.cardModalName) elements.cardModalName.textContent = entry.name || "Thẻ Kỳ Vật";
+    if (elements.cardModalMeta) {
+      elements.cardModalMeta.textContent = `${entry.rarity || "Thường"} · +${entry.statValue || 1} ${entry.statType || "ATK"}`;
+    }
+    const isEquipped = (state.equippedCardIds || []).includes(cardId);
+    elements.cardModalEquip?.classList.toggle("hidden", isEquipped);
+    elements.cardModalUnequip?.classList.toggle("hidden", !isEquipped);
+    elements.cardModal.classList.remove("hidden");
+  }
+
+  function closeCardModal() {
+    activeCardId = "";
+    elements.cardModal?.classList.add("hidden");
+  }
+
+  function equipActiveCard() {
+    if (!activeCardId) return;
+    const result = callMutation("equipCard", activeCardId);
+    if (!result?.ok) { window.toast?.(result?.error || "Không gắn được thẻ."); return; }
+    applyNativeState(result.state);
+    window.toast?.("Đã gắn Thẻ Kỳ Vật vào nhân vật.");
+    closeCardModal();
+  }
+
+  function unequipActiveCard() {
+    if (!activeCardId) return;
+    const result = callMutation("unequipCard", activeCardId);
+    if (!result?.ok) { window.toast?.(result?.error || "Không tháo được thẻ."); return; }
+    applyNativeState(result.state);
+    window.toast?.("Đã tháo Thẻ Kỳ Vật.");
+    closeCardModal();
+  }
+
+  function deleteActiveCard() {
+    if (!activeCardId) return;
+    if (!window.confirm("Xóa hẳn Thẻ Kỳ Vật này? Không thể khôi phục lại.")) return;
+    const result = callMutation("deleteCard", activeCardId);
+    if (!result?.ok) { window.toast?.(result?.error || "Không xóa được thẻ."); return; }
+    applyNativeState(result.state);
+    window.toast?.("Đã xóa Thẻ Kỳ Vật.");
+    closeCardModal();
+    if (activeSubView === "inventory") renderInventory();
+    if (activeSubView === "collection") renderCollection();
   }
 
   function renderPortrait() {
@@ -401,7 +473,7 @@
     applyNativeState(result.state);
     editing = false;
     showView("dashboard");
-    window.toast?.("Đã lưu Hồ sơ Phiêu lưu trên thiết bị.");
+    window.toast?.("Đã lưu Hồ sơ Phiêu lưu.");
   }
 
   function deleteProfile() {
@@ -642,6 +714,7 @@
           <button type="button" id="adventureBuySlotBtn">◆ ${state.slotPriceCrystals || 10}</button>
         </article>
       </div>
+      <div class="adventure-gear-row wide" id="adventureInventoryCardSlots">${cardSlotGridHtml(state.dynamicCollection || [], capacity)}</div>
       <div class="adventure-inventory-grid">
         <article class="orb-card basic"><span>◉</span><div><b>Linh Cầu Thô</b><strong>×${state.orbBasic || 0}</strong><small>Dùng cho Linh Thú thường và những lần thử cơ bản.</small></div></article>
         <article class="orb-card silver"><span>◉</span><div><b>Linh Cầu Bạc</b><strong>×${state.orbSilver || 0}</strong><small>Tăng tỷ lệ thu phục sinh vật hiếm.</small></div></article>
@@ -668,7 +741,7 @@
         <button type="button" data-shop-item="${escapeHtml(item.id)}">◆ ${item.cost}</button>
       </article>`).join("");
     elements.subContent.innerHTML = `
-      <div class="adventure-sub-summary shop-balance"><b>◆ ${state.crystals || 0} Linh Thạch</b><small>Mọi giao dịch chỉ lưu offline trong Hồ sơ Phiêu lưu.</small></div>
+      <div class="adventure-sub-summary shop-balance"><b>◆ ${state.crystals || 0} Linh Thạch</b></div>
       <div class="adventure-shop-list">${shopCards}</div>`;
     elements.subContent.querySelectorAll("button[data-shop-item]").forEach(button => {
       button.addEventListener("click", () => purchaseShopItem(button.dataset.shopItem));
@@ -730,6 +803,10 @@
     if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openProfile(); }
   });
   elements.close.addEventListener("click", closeProfile);
+  elements.back?.addEventListener("click", () => {
+    if (activeSubView) showView("dashboard");
+    else closeProfile();
+  });
   elements.createLater.addEventListener("click", () => {
     if (editing) { editing = false; showView("dashboard"); }
     else closeProfile();
@@ -778,6 +855,15 @@
       setFormError(error?.message || "Không xử lý được ảnh đại diện.");
     }
   });
+  document.addEventListener("click", event => {
+    const slot = event.target.closest(".adventure-gear-slot.filled[data-card-id]");
+    if (slot) openCardModal(slot.dataset.cardId);
+  });
+  elements.cardModalClose?.addEventListener("click", closeCardModal);
+  elements.cardModal?.addEventListener("click", event => { if (event.target === elements.cardModal) closeCardModal(); });
+  elements.cardModalEquip?.addEventListener("click", equipActiveCard);
+  elements.cardModalUnequip?.addEventListener("click", unequipActiveCard);
+  elements.cardModalDelete?.addEventListener("click", deleteActiveCard);
   elements.portraitButton?.addEventListener("click", () => {
     if (state.portraitSet) {
       window.toast?.("Đổi ngoại hình cần tốn Linh Thạch — tính năng đổi trả phí sẽ có sau.");

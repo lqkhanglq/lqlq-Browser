@@ -256,6 +256,7 @@
         <div class="adventure-summary-chip crystal-only">
           <img src="assets/adventure/crystal_loot.png" alt="Linh Thạch" />
           <b id="adventureSummaryCrystals">0</b>
+          <span>Linh Thạch</span>
         </div>
       </div>
 
@@ -1709,10 +1710,10 @@
     <div class="adventure-profile-overlay hidden" id="adventureProfileOverlay" aria-hidden="true">
       <section class="adventure-profile-card" role="dialog" aria-modal="true" aria-labelledby="adventureProfileTitle">
         <header class="adventure-profile-head">
+          <button type="button" class="adventure-back-button" id="adventureProfileBack" aria-label="Quay lại Menu chức năng">‹</button>
           <div>
             <span class="adventure-kicker">LQLQ SHIELD</span>
             <h2 id="adventureProfileTitle">Hồ sơ Phiêu lưu</h2>
-            <p>Lưu trên thiết bị · Không bắt buộc đăng nhập</p>
           </div>
           <button type="button" id="adventureProfileClose" aria-label="Đóng">×</button>
         </header>
@@ -1787,7 +1788,7 @@
 
           <div class="adventure-stat-grid three-up">
             <div class="adventure-stat-card crystal">
-              <span>◆</span>
+              <img class="adventure-stat-crystal-icon" src="assets/adventure/crystal_loot.png" alt="" />
               <div><b id="adventureCrystalCount">0</b><small>Linh Thạch</small></div>
             </div>
             <div class="adventure-stat-card realm">
@@ -1882,6 +1883,22 @@
             </div>
           </div>
           <div class="adventure-sub-content" id="adventureSubContent"></div>
+        </div>
+
+        <div class="adventure-card-modal hidden" id="adventureCardModal">
+          <div class="adventure-card-modal-sheet">
+            <button type="button" class="adventure-back-button" id="adventureCardModalClose" aria-label="Đóng">×</button>
+            <div class="adventure-card-modal-image-wrap">
+              <img id="adventureCardModalImage" alt="" />
+            </div>
+            <b id="adventureCardModalName">Thẻ Kỳ Vật</b>
+            <span id="adventureCardModalMeta"></span>
+            <div class="adventure-card-modal-actions">
+              <button type="button" id="adventureCardModalEquip">Gắn vào nhân vật</button>
+              <button type="button" id="adventureCardModalUnequip">Tháo ra</button>
+              <button type="button" class="danger" id="adventureCardModalDelete">Xóa thẻ</button>
+            </div>
+          </div>
         </div>
       </section>
     </div>

@@ -53,6 +53,26 @@ class AdventureProfileBridge(
     }
 
     @JavascriptInterface
+    fun equipCard(cardId: String): String = mutate { store.equipCard(cardId) }
+
+    @JavascriptInterface
+    fun unequipCard(cardId: String): String = mutate { store.unequipCard(cardId) }
+
+    @JavascriptInterface
+    fun deleteCard(cardId: String): String {
+        return try {
+            dynamicLootStore.delete(cardId)
+            mutate { store.unequipCard(cardId) }
+        } catch (error: Exception) {
+            JSONObject().apply {
+                put("ok", false)
+                put("error", error.message ?: "Không xóa được thẻ.")
+                put("state", dynamicLootStore.appendTo(store.snapshot().toJson()))
+            }.toString()
+        }
+    }
+
+    @JavascriptInterface
     fun purchaseInventorySlot(): String {
         return try {
             if (!store.spendCrystals(DynamicLootStore.SLOT_PRICE_CRYSTALS)) {

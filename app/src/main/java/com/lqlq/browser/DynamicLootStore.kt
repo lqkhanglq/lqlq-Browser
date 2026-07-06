@@ -127,6 +127,15 @@ class DynamicLootStore(context: Context) {
     }
 
     @Synchronized
+    fun delete(itemId: String): Boolean {
+        val collection = readCollectionObject()
+        if (!collection.has(itemId)) return false
+        collection.remove(itemId)
+        prefs.edit().putString(KEY_COLLECTION, collection.toString()).apply()
+        return true
+    }
+
+    @Synchronized
     fun stateJson(): JSONObject {
         val collection = readCollection()
         var hp = BASE_HP

@@ -220,7 +220,7 @@ async function fetchKnowledgeLoot({ rarity, locale, seed }) {
         return {
           id: qid ? `wikidata-${qid}` : `wikipedia-${language}-${pageId}`,
           name: cleanTitle,
-          category: classify(cleanTitle, description),
+          category: await classify(cleanTitle, description, qid),
           description,
           rarity,
           stars: starsForRarity(rarity),
@@ -240,21 +240,52 @@ async function fetchKnowledgeLoot({ rarity, locale, seed }) {
   throw lastError || new Error("Knowledge source unavailable.");
 }
 
-function classify(title, description) {
+// Wikidata "instance of" (P31) cho biết chắc chắn đây là NGƯỜI (Q5) hay
+// KHÔNG PHẢI người — tránh lỗi phân loại nhầm nhân vật/tỷ phú/vận động viên
+// thành "Động vật" chỉ vì trong mô tả có từ như "loài" hay "species".
+async function wikidataIsHuman(qid) {
+  if (!qid) return null;
+  try {
+    const api = `https://www.wikidata.org/w/api.php?action=wbgetclaims&entity=${encodeURIComponent(qid)}&property=P31&format=json&origin=*`;
+    const response = await fetch(api, { headers: { "user-agent": "lqlq-dynamic-loot/0.32" } });
+    if (!response.ok) return null;
+    const root = await response.json();
+    const claims = root?.claims?.P31 || [];
+    return claims.some((claim) => claim?.mainsnak?.datavalue?.value?.id === "Q5");
+  } catch {
+    return null;
+  }
+}
+
+async function classify(title, description, qid) {
   const text = `${title} ${description}`.toLowerCase();
   const has = (...terms) => terms.some((term) => text.includes(term));
-  if (has("sinh năm", "mất năm", "nhà văn", "họa sĩ", "scientist", "born", "actor", "politician")) return "Nhân vật";
-  if (has("loài", "động vật", "chim", "cá", "species", "animal", "bird", "mammal", "fish")) return "Động vật";
-  if (has("thực vật", "cây", "hoa", "plant", "tree", "flower")) return "Thực vật";
+
+  // 1) Kiểm tra chắc chắn bằng Wikidata trước — đáng tin hơn nhiều so với
+  // dò từ khóa trong mô tả (vốn hay gây nhầm người ↔ động vật ↔ thực vật).
+  const isHuman = await wikidataIsHuman(qid);
+  if (isHuman === true) return "Nhân vật";
+
+  // 2) Các nhóm CÓ TỪ KHÓA RIÊNG, ít nhập nhằng — kiểm tra trước nhóm
+  // động vật/thực vật vốn dễ đụng từ chung ("loài", "species").
   if (has("tỷ phú", "giàu nhất", "billionaire", "net worth", "forbes")) return "Nhân vật";
   if (has("cầu thủ", "vận động viên", "bóng đá", "footballer", "athlete", "olympic")) return "Nhân vật";
+  if (has("sinh năm", "mất năm", "nhà văn", "họa sĩ", "scientist", "born", "actor", "politician")) return "Nhân vật";
   if (has("anime", "manga", "nhân vật hoạt hình", "fictional character")) return "Nhân vật hư cấu";
-  if (has("bản đồ", "thành phố", "quốc gia", "núi", "sông", "đảo", "thủ đô", "map", "city", "country", "capital", "mountain", "river", "island")) return "Địa Danh / Bản Đồ";
+  if (has("bản đồ", "thủ đô", "map", "capital")) return "Địa Danh / Bản Đồ";
   if (has("di sản thế giới", "world heritage", "kỳ quan", "landmark")) return "Địa Danh / Bản Đồ";
+  if (has("thành phố", "quốc gia", "núi", "sông", "đảo", "city", "country", "mountain", "river", "island")) return "Địa Danh / Bản Đồ";
   if (has("tòa nhà", "công trình", "nhà thờ", "building", "bridge", "temple")) return "Công trình";
   if (has("tranh", "tượng", "tác phẩm", "painting", "sculpture", "film", "novel")) return "Tác phẩm";
   if (has("hành tinh", "ngôi sao", "thiên hà", "planet", "star", "galaxy", "asteroid")) return "Thiên thể";
   if (has("thiết bị", "máy", "vũ khí", "tàu", "xe", "device", "machine", "weapon", "ship", "vehicle")) return "Đồ vật";
+
+  // 3) Thực vật kiểm tra TRƯỚC động vật, vì "loài"/"species" xuất hiện ở
+  // cả hai — chỉ nhóm động vật mới dùng những từ chung đó, nhóm thực vật
+  // luôn có từ khóa riêng rõ ràng hơn.
+  if (has("thực vật", "loài cây", "loài hoa", "cây", "hoa", "plant", "tree", "flower")) return "Thực vật";
+  if (has("động vật", "loài", "chim", "cá", "species", "animal", "bird", "mammal", "fish")) return "Động vật";
+
   return "Kỳ Vật";
 }
 

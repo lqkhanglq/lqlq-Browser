@@ -85,6 +85,23 @@ class MainActivity : AppCompatActivity() {
         private const val SHELL_HOST = "appassets.androidapp.com"
         private const val SHELL_URL = "https://$SHELL_HOST/assets/www/index.html"
 
+        // Các trang công cụ tìm kiếm/chatbot AI mà người dùng chủ yếu vào để
+        // TRA CỨU — không phù hợp để Linh Thạch/Linh Thú/Thẻ Kỳ Vật xuất hiện
+        // (khác với các trang đọc truyện/tin tức thông thường).
+        private val ADVENTURE_LOOT_EXCLUDED_DOMAINS = setOf(
+            "google.com", "google.com.vn", "bing.com", "duckduckgo.com",
+            "search.yahoo.com", "yandex.com", "baidu.com", "you.com",
+            "chatgpt.com", "chat.openai.com", "openai.com",
+            "claude.ai", "anthropic.com",
+            "gemini.google.com", "bard.google.com",
+            "copilot.microsoft.com", "perplexity.ai", "poe.com"
+        )
+
+        private fun isAdventureLootExcludedUrl(url: String): Boolean {
+            val host = runCatching { android.net.Uri.parse(url).host }.getOrNull()?.lowercase(Locale.ROOT) ?: return false
+            return ADVENTURE_LOOT_EXCLUDED_DOMAINS.any { domain -> host == domain || host.endsWith(".$domain") }
+        }
+
         // Việc "chặn quảng cáo/nhảy trang giống metruyenchu_clipper_android_project"
         // (v0.23.11): project tham khảo chặn TUYỆT ĐỐI theo danh sách domain quảng
         // cáo/redirect đã biết (rules.json của Chapter Clipper gốc), không phụ
@@ -804,6 +821,10 @@ class MainActivity : AppCompatActivity() {
             hideAdventureLoot()
             return
         }
+        if (isAdventureLootExcludedUrl(url)) {
+            hideAdventureLoot()
+            return
+        }
         val normalized = url.trim()
         if (lastAdventureLootUrlByTab[tabId] == normalized) {
             hideAdventureLoot()
@@ -928,6 +949,10 @@ class MainActivity : AppCompatActivity() {
             return false
         }
         if (!pageVisible || activeTabId != tabId || (!url.startsWith("http://") && !url.startsWith("https://"))) {
+            hideDynamicLootEncounter()
+            return false
+        }
+        if (isAdventureLootExcludedUrl(url)) {
             hideDynamicLootEncounter()
             return false
         }
@@ -1146,6 +1171,10 @@ class MainActivity : AppCompatActivity() {
             return
         }
         if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            hideSpiritBeastEncounter()
+            return
+        }
+        if (isAdventureLootExcludedUrl(url)) {
             hideSpiritBeastEncounter()
             return
         }

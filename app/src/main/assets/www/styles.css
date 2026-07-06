@@ -10091,6 +10091,16 @@ html.lqlq-native-page-open .story-reader-panel {
   color: #0b9951;
 }
 
+.adventure-stat-crystal-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: #e4f7ee;
+  object-fit: contain;
+  padding: 5px;
+  flex-shrink: 0;
+}
+
 .adventure-stat-card.shield > span {
   background: #eaf1ff;
   color: #4169aa;
@@ -10355,6 +10365,12 @@ html[data-theme="dark"] .adventure-name-input {
   line-height: 1.05;
 }
 
+.adventure-summary-chip.crystal-only span {
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(51, 88, 72, 0.8);
+}
+
 .adventure-avatar-image {
   width: 100%;
   height: 100%;
@@ -10517,6 +10533,10 @@ html[data-theme="dark"] .adventure-name-input {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
+}
+
+.adventure-gear-row.wide {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .adventure-gear-slot {
@@ -11075,6 +11095,81 @@ html[data-theme="dark"] .adventure-shop-card small {
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.adventure-card-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 20, 15, 0.55);
+  padding: 20px;
+}
+
+.adventure-card-modal-sheet {
+  position: relative;
+  width: 100%;
+  max-width: 320px;
+  background: #fff;
+  border-radius: 20px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.adventure-card-modal-sheet #adventureCardModalClose {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+}
+
+.adventure-card-modal-image-wrap {
+  width: 140px;
+  height: 140px;
+  border-radius: 16px;
+  overflow: hidden;
+  background: rgba(21, 140, 88, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.adventure-card-modal-image-wrap img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.adventure-card-modal-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  margin-top: 8px;
+}
+
+.adventure-card-modal-actions button {
+  border: none;
+  border-radius: 12px;
+  padding: 10px;
+  font-weight: 700;
+  background: #158c58;
+  color: #fff;
+}
+
+.adventure-card-modal-actions button#adventureCardModalUnequip {
+  background: rgba(21, 140, 88, 0.12);
+  color: #158c58;
+}
+
+.adventure-card-modal-actions button.danger {
+  background: rgba(214, 68, 68, 0.12);
+  color: #c23a3a;
 }
 
 .dynamic-loot-stat-badge {
