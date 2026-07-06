@@ -2762,6 +2762,16 @@ $js
             root.bringChildToFront(shellWebView)
         }
 
+        // Linh Thạch/Linh Thú/Kỳ Vật (adventureLootLayer) chỉ được thêm vào
+        // root MỘT LẦN lúc khởi động — mỗi lần trang web thật được đưa lên
+        // trên (bringChildToFront(pageContainer) ở trên) sẽ đè luôn lớp này
+        // xuống dưới, nên icon/thẻ dù có hiện (visibility = VISIBLE) vẫn bị
+        // trang web che kín, không bao giờ thấy được. Phải tự đưa lên lại
+        // mỗi lần, giống cách mediaBubble đã làm đúng bên dưới.
+        if (::adventureLootLayer.isInitialized) {
+            root.bringChildToFront(adventureLootLayer)
+        }
+
         if (::nativeTabSwitcher.isInitialized && nativeTabSwitcher.isOpen) {
             // Bộ chuyển thẻ là View native toàn màn hình, luôn đứng trên WebView
             // và cả bọt media để không xảy ra lỗi chạm xuyên/z-index như bản cũ.
