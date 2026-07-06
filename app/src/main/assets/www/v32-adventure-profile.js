@@ -32,9 +32,6 @@
     avatarMark: $("adventureAvatarMark"),
     profileName: $("adventureProfileName"),
     profileStatus: $("adventureProfileStatus"),
-    summaryLevel: $("adventureSummaryLevel"),
-    summaryRank: $("adventureSummaryRank"),
-    summaryHint: $("adventureSummaryHint"),
     summaryCrystals: $("adventureSummaryCrystals"),
     overlay: $("adventureProfileOverlay"),
     close: $("adventureProfileClose"),
@@ -60,6 +57,10 @@
     portraitImage: $("adventurePortraitImage"),
     portraitEmpty: $("adventurePortraitEmpty"),
     portraitUpload: $("adventurePortraitUpload"),
+    cardSlots: $("adventureCardSlots"),
+    charHp: $("adventureCharHp"),
+    charAtk: $("adventureCharAtk"),
+    charMana: $("adventureCharMana"),
     crystalCount: $("adventureCrystalCount"),
     discoverCount: $("adventureDiscoverCount"),
     protectCount: $("adventureProtectCount"),
@@ -112,7 +113,15 @@
     dynamicCollection: [],
     storage: "device",
     portraitSet: false,
-    portraitVersion: 0
+    portraitVersion: 0,
+    characterHp: 100,
+    characterAtk: 10,
+    characterMana: 10,
+    slotCapacity: 20,
+    slotUsed: 0,
+    slotPriceCrystals: 10,
+    identityChangeCredits: 0,
+    portraitChangeCredits: 0
   };
 
   let selectedAvatarId = "guardian";
@@ -204,18 +213,8 @@
   }
 
   function renderSummary() {
-    if (!elements.summaryLevel) return;
-    if (!state.exists) {
-      elements.summaryLevel.textContent = "1";
-      elements.summaryRank.textContent = "Khách lữ hành";
-      elements.summaryHint.textContent = "Tạo Hồ sơ Phiêu lưu để mở hành trình khám phá, nhặt Linh Thạch và sưu tập Linh Thú.";
-      elements.summaryCrystals.textContent = "0";
-      return;
-    }
-    elements.summaryLevel.textContent = String(state.level || 1);
-    elements.summaryRank.textContent = state.rankTitle || "Khám Phá Giả";
-    elements.summaryHint.textContent = `${state.dynamicCollectionCount || 0} Kỳ Vật · ${state.collectionCount || 0}/${state.catalogCount || 0} Linh Thú · ${state.totalDiscoveries || 0} vùng đất.`;
-    elements.summaryCrystals.textContent = String(state.crystals || 0);
+    if (!elements.summaryCrystals) return;
+    elements.summaryCrystals.textContent = String(state.exists ? (state.crystals || 0) : 0);
   }
 
   function renderDashboard() {
@@ -239,6 +238,32 @@
     if (elements.beastsToggle) elements.beastsToggle.checked = state.spiritBeastsEnabled !== false;
     if (elements.dynamicLootToggle) elements.dynamicLootToggle.checked = state.dynamicLootEnabled !== false;
     renderPortrait();
+    renderCardSlots();
+    if (elements.charHp) elements.charHp.textContent = String(state.characterHp || 100);
+    if (elements.charAtk) elements.charAtk.textContent = String(state.characterAtk || 10);
+    if (elements.charMana) elements.charMana.textContent = String(state.characterMana || 10);
+  }
+
+  const CARD_SLOT_COUNT = 10;
+
+  function renderCardSlots() {
+    if (!elements.cardSlots) return;
+    const top = [...(state.dynamicCollection || [])]
+      .sort((a, b) => rarityScore(b.rarity) - rarityScore(a.rarity))
+      .slice(0, CARD_SLOT_COUNT);
+    const slots = [];
+    for (let i = 0; i < CARD_SLOT_COUNT; i++) {
+      const entry = top[i];
+      if (!entry) {
+        slots.push(`<div class="adventure-gear-slot empty"></div>`);
+        continue;
+      }
+      const image = entry.displayImageUrl || entry.imageUrl || "";
+      slots.push(`<div class="adventure-gear-slot filled ${rarityClass(entry.rarity)}" title="${escapeHtml(entry.name || "Thẻ Kỳ Vật")}">
+        ${image ? `<img src="${escapeHtml(image)}" alt="${escapeHtml(entry.name || "")}" loading="lazy" />` : "<span>?</span>"}
+      </div>`);
+    }
+    elements.cardSlots.innerHTML = slots.join("");
   }
 
   function renderPortrait() {
@@ -311,12 +336,18 @@
     showView(state.exists ? "dashboard" : "create");
   }
 
+  /**
+   * Thoát Hồ sơ Phiêu lưu (nút X hoặc back) quay về Menu chức năng
+   * (chromeMenu) thay vì đóng thẳng ra trang web — vì hồ sơ được mở
+   * từ trong menu đó, "thoát 1 lần" nên lùi lại đúng 1 cấp menu.
+   */
   function closeProfile() {
     editing = false;
     activeSubView = "";
     elements.overlay.classList.add("hidden");
     elements.overlay.setAttribute("aria-hidden", "true");
     setFormError("");
+    $("chromeMenu")?.classList.remove("hidden");
   }
 
   /**
@@ -427,7 +458,7 @@
     if (result.state) applyNativeState(result.state);
     const entry = result.entry;
     if (result.ok && entry) {
-      window.toast?.(`Đã thêm ${entry.name || "Kỳ Vật"} vào Vạn Giới Đồ Giám!`);
+      window.toast?.(`Đã thêm ${entry.name || "Thẻ Kỳ Vật"} vào Vạn Giới Đồ Giám!`);
     }
   }
 
@@ -551,9 +582,10 @@
           ${image ? `<img src="${escapeHtml(image)}" alt="${escapeHtml(entry.name)}" loading="lazy" />` : `<span>?</span>`}
           <em>${escapeHtml(entry.rarity || "Thường")}</em>
         </div>
-        <b>${escapeHtml(entry.name || "Kỳ Vật Vô Danh")}</b>
-        <span>${escapeHtml(entry.category || "Kỳ Vật")} · ${"★".repeat(Math.max(1, Math.min(5, Number(entry.stars) || 1)))}</span>
+        <b>${escapeHtml(entry.name || "Thẻ Kỳ Vật Vô Danh")}</b>
+        <span>${escapeHtml(entry.category || "Thẻ Kỳ Vật")} · ${"★".repeat(Math.max(1, Math.min(5, Number(entry.stars) || 1)))}</span>
         <small>${escapeHtml(entry.description || "Một phát hiện bí ẩn từ Vạn Giới.")}</small>
+        <div class="dynamic-loot-stat-badge">+${entry.statValue || 1} ${entry.statType || "ATK"}</div>
         <footer><span>${source}</span><span>×${entry.count || 1}</span></footer>
       </article>`;
     }).join("");
@@ -573,10 +605,10 @@
 
     elements.subContent.innerHTML = `
       <div class="adventure-sub-summary dynamic-summary">
-        <b>${state.dynamicCollectionCount || 0} Kỳ Vật động</b>
+        <b>${state.dynamicCollectionCount || 0} Thẻ Kỳ Vật</b>
         <small>Nội dung gần như không cạn: ảnh và mô tả đến từ Dynamic Loot Engine; khi AI chưa cấu hình, ứng dụng dùng Wikipedia/Wikimedia làm nguồn miễn phí.</small>
       </div>
-      <div class="dynamic-loot-grid">${dynamicCards || `<div class="adventure-empty-collection"><b>Chưa có Kỳ Vật động</b><small>Tiếp tục đi đến các trang web mới. Kỳ Vật đầu tiên có tỷ lệ xuất hiện cao để bạn thử hệ thống.</small></div>`}</div>
+      <div class="dynamic-loot-grid">${dynamicCards || `<div class="adventure-empty-collection"><b>Chưa có Thẻ Kỳ Vật</b><small>Tiếp tục đi đến các trang web mới. Kỳ Vật đầu tiên có tỷ lệ xuất hiện cao để bạn thử hệ thống.</small></div>`}</div>
       <div class="adventure-sub-summary">
         <b>${state.collectionCount || 0}/${state.catalogCount || catalog.length} Linh Thú nguyên bản</b>
         <small>Bộ Linh Thú offline vẫn được giữ làm nội dung dự phòng khi mất mạng.</small>
@@ -584,8 +616,32 @@
       <div class="spirit-beast-grid">${beastCards || "<p>Chưa tải được danh mục.</p>"}</div>`;
   }
 
+  function purchaseInventorySlot() {
+    const result = callMutation("purchaseInventorySlot");
+    if (!result?.ok) {
+      window.toast?.(result?.error || "Không mở được ô hành trang.");
+      return;
+    }
+    applyNativeState(result.state);
+    window.toast?.("Đã mở thêm 1 ô hành trang.");
+    renderInventory();
+  }
+
   function renderInventory() {
+    const used = state.slotUsed || 0;
+    const capacity = state.slotCapacity || 20;
     elements.subContent.innerHTML = `
+      <div class="adventure-sub-summary">
+        <b>Túi hành trang · ${used}/${capacity} ô Thẻ Kỳ Vật</b>
+        <small>Đầy ô? Mua thêm bằng Linh Thạch để tiếp tục sưu tập.</small>
+      </div>
+      <div class="adventure-shop-list">
+        <article class="adventure-shop-card">
+          <span class="shop-icon">🎒</span>
+          <div><b>Mở thêm 1 ô hành trang</b><small>Tăng vĩnh viễn giới hạn lưu Thẻ Kỳ Vật.</small></div>
+          <button type="button" id="adventureBuySlotBtn">◆ ${state.slotPriceCrystals || 10}</button>
+        </article>
+      </div>
       <div class="adventure-inventory-grid">
         <article class="orb-card basic"><span>◉</span><div><b>Linh Cầu Thô</b><strong>×${state.orbBasic || 0}</strong><small>Dùng cho Linh Thú thường và những lần thử cơ bản.</small></div></article>
         <article class="orb-card silver"><span>◉</span><div><b>Linh Cầu Bạc</b><strong>×${state.orbSilver || 0}</strong><small>Tăng tỷ lệ thu phục sinh vật hiếm.</small></div></article>
@@ -599,12 +655,15 @@
         <b>Hành trang đang mở rộng</b>
         <small>Các bản sau sẽ thêm mảnh bản đồ, trứng Linh Thú, khung avatar, vật phẩm hiếm và trang bị nhà mạo hiểm.</small>
       </div>`;
+    $("adventureBuySlotBtn")?.addEventListener("click", purchaseInventorySlot);
   }
+
+  const SHOP_ICONS = { gold: "🟡", silver: "⚪", basic: "🟢", identity: "🪪", portrait: "🖼️" };
 
   function renderShop() {
     const shopCards = (state.shop || []).map(item => `
       <article class="adventure-shop-card">
-        <span class="shop-icon">${item.orbType === "gold" ? "🟡" : item.orbType === "silver" ? "⚪" : "🟢"}</span>
+        <span class="shop-icon">${SHOP_ICONS[item.orbType] || "🟢"}</span>
         <div><b>${escapeHtml(item.name)}</b><small>${escapeHtml(item.description)}</small></div>
         <button type="button" data-shop-item="${escapeHtml(item.id)}">◆ ${item.cost}</button>
       </article>`).join("");
@@ -649,10 +708,10 @@
         </div>
         <div class="share-stats">
           <div><b>${state.crystals || 0}</b><small>Linh Thạch</small></div>
-          <div><b>${state.dynamicCollectionCount || 0}</b><small>Kỳ Vật</small></div>
+          <div><b>${state.dynamicCollectionCount || 0}</b><small>Thẻ Kỳ Vật</small></div>
           <div><b>${state.totalDiscoveries || 0}</b><small>Vùng đất</small></div>
         </div>
-        <div class="share-rare dynamic"><small>Kỳ Vật nổi bật</small><div>${dynamicHighlights || icons}</div></div>
+        <div class="share-rare dynamic"><small>Thẻ Kỳ Vật nổi bật</small><div>${dynamicHighlights || icons}</div></div>
         <div class="share-rare"><small>Linh Thú nổi bật</small><div>${icons}</div></div>
         <footer>lqlq Browser · Vạn Giới Đồ Giám</footer>
       </div>

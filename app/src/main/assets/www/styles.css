@@ -10329,58 +10329,30 @@ html[data-theme="dark"] .adventure-name-input {
 
 /* v0.30.0 — Adventure profile refinements */
 .adventure-menu-summary {
-  display: grid;
-  grid-template-columns: 56px minmax(0, 1fr) 56px;
-  gap: 7px;
+  display: flex;
   padding: 0 16px 12px;
 }
 
-.adventure-summary-chip {
+.adventure-summary-chip.crystal-only {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   border: 1px solid rgba(36, 120, 82, 0.14);
   background: linear-gradient(180deg, rgba(234, 248, 240, 0.94), rgba(246, 250, 247, 0.98));
   border-radius: 13px;
-  padding: 6px 8px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 1px;
-  min-height: 46px;
+  padding: 6px 12px;
 }
 
-.adventure-summary-chip.compact {
-  align-items: center;
-  text-align: center;
+.adventure-summary-chip.crystal-only img {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
 }
 
-.adventure-summary-chip span {
-  font-size: 9.5px;
-  color: rgba(51, 88, 72, 0.74);
-  font-weight: 700;
-}
-
-.adventure-summary-chip b {
-  font-size: 14px;
-  color: #214734;
-  line-height: 1.05;
-}
-
-.adventure-summary-chip small {
-  color: rgba(58, 74, 67, 0.78);
-  font-size: 10px;
-  line-height: 1.25;
-}
-
-.adventure-summary-chip.wide {
-  align-items: flex-start;
-}
-
-.adventure-summary-chip.wide span {
-  font-size: 10px;
-  letter-spacing: .02em;
-}
-
-.adventure-summary-chip.crystal b {
+.adventure-summary-chip.crystal-only b {
+  font-size: 15px;
   color: #158c58;
+  line-height: 1.05;
 }
 
 .adventure-avatar-image {
@@ -10543,20 +10515,33 @@ html[data-theme="dark"] .adventure-name-input {
 
 .adventure-gear-row {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
 }
 
 .adventure-gear-slot {
   width: 100%;
   aspect-ratio: 1 / 1;
-  border-radius: 16px;
+  border-radius: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
   border: 1px dashed rgba(54, 126, 90, 0.28);
   background: rgba(255, 255, 255, 0.8);
-  font-size: 22px;
+  font-size: 18px;
+  overflow: hidden;
+}
+
+.adventure-gear-slot.filled {
+  border-style: solid;
+  padding: 0;
+}
+
+.adventure-gear-slot img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .adventure-edit-button.overlay {
@@ -10568,6 +10553,41 @@ html[data-theme="dark"] .adventure-name-input {
 .adventure-stat-grid.three-up {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
+
+.adventure-char-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.adventure-char-stat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 16px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(36, 120, 82, 0.14);
+}
+
+.adventure-char-stat span {
+  font-size: 18px;
+}
+
+.adventure-char-stat b {
+  font-size: 15px;
+  display: block;
+  color: #214734;
+}
+
+.adventure-char-stat small {
+  color: rgba(58, 74, 67, 0.78);
+  font-size: 10px;
+}
+
+.adventure-char-stat.hp span { color: #d1445a; }
+.adventure-char-stat.atk span { color: #b5701c; }
+.adventure-char-stat.mana span { color: #3a63c9; }
 
 .adventure-stat-card.realm span {
   color: #296e89;
@@ -10595,21 +10615,17 @@ html[data-theme="dark"] .adventure-guide-card b {
   color: #ecf7ef;
 }
 
-html[data-theme="dark"] .adventure-summary-chip span,
-html[data-theme="dark"] .adventure-summary-chip small,
 html[data-theme="dark"] .adventure-guide-card small {
   color: rgba(226, 239, 231, 0.78);
 }
 
 @media (max-width: 720px) {
   .adventure-menu-summary {
-    grid-template-columns: 52px minmax(0, 1fr) 52px;
     padding: 0 14px 10px;
   }
 
-  .adventure-summary-chip {
-    padding: 5px 7px;
-    min-height: 42px;
+  .adventure-summary-chip.crystal-only {
+    padding: 5px 10px;
   }
 
   .adventure-hero-board {
@@ -11059,6 +11075,16 @@ html[data-theme="dark"] .adventure-shop-card small {
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.dynamic-loot-stat-badge {
+  align-self: flex-start;
+  font-size: 10px;
+  font-weight: 700;
+  color: #158c58;
+  background: rgba(21, 140, 88, 0.12);
+  border-radius: 999px;
+  padding: 2px 8px;
 }
 
 .dynamic-loot-card footer {

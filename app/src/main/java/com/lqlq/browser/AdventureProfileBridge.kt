@@ -53,6 +53,28 @@ class AdventureProfileBridge(
     }
 
     @JavascriptInterface
+    fun purchaseInventorySlot(): String {
+        return try {
+            if (!store.spendCrystals(DynamicLootStore.SLOT_PRICE_CRYSTALS)) {
+                error("Không đủ Linh Thạch.")
+            }
+            dynamicLootStore.increaseSlotCapacity()
+            val snapshot = store.snapshot()
+            activity.dispatchAdventureProfileState(snapshot)
+            JSONObject().apply {
+                put("ok", true)
+                put("state", dynamicLootStore.appendTo(snapshot.toJson()))
+            }.toString()
+        } catch (error: Exception) {
+            JSONObject().apply {
+                put("ok", false)
+                put("error", error.message ?: "Không mở được ô hành trang.")
+                put("state", dynamicLootStore.appendTo(store.snapshot().toJson()))
+            }.toString()
+        }
+    }
+
+    @JavascriptInterface
     fun deleteProfile(): String {
         dynamicLootStore.clear()
         portraitStore.clear()
@@ -62,8 +84,9 @@ class AdventureProfileBridge(
     @JavascriptInterface
     fun setCharacterPortrait(dataUri: String): String {
         return try {
-            if (store.snapshot().portraitSet) {
-                error("Đổi ngoại hình cần tốn Linh Thạch — tính năng đổi trả phí sẽ có sau.")
+            val snapshot = store.snapshot()
+            if (snapshot.portraitSet && snapshot.portraitChangeCredits <= 0) {
+                error("Cần Thẻ Đổi Ngoại Hình (mua ở Cửa Hàng Linh Thạch) để đổi lại ảnh ngoại hình.")
             }
             if (!portraitStore.save(dataUri)) {
                 error("Không lưu được ảnh ngoại hình. Hãy thử ảnh khác.")
