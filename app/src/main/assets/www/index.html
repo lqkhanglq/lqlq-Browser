@@ -231,22 +231,40 @@
 
     <div class="chrome-menu hidden" id="chromeMenu">
       <div class="menu-header">
-        <div class="menu-brand">
-          <span class="menu-brand-mark">
-            <svg viewBox="0 0 24 24">
+        <div
+          class="menu-brand adventure-profile-entry"
+          id="adventureProfileEntry"
+          role="button"
+          tabindex="0"
+          aria-label="Mở Hồ sơ Phiêu lưu"
+        >
+          <span class="menu-brand-mark" id="adventureAvatarMark">
+            <svg viewBox="0 0 24 24" id="adventureGuestShieldIcon">
               <path d="M12 2.8 19 5.6v5.5c0 4.6-2.9 8.6-7 10.1-4.1-1.5-7-5.5-7-10.1V5.6L12 2.8Z"/>
               <path d="m8.6 12 2.1 2.1 4.8-5"/>
             </svg>
           </span>
-          <div><b>lqlq Browser</b><small>Bảo vệ đang hoạt động</small></div>
+          <div class="adventure-brand-copy">
+            <b id="adventureProfileName">Chưa có Hồ sơ Phiêu lưu</b>
+            <small id="adventureProfileStatus">Nhấn vào đây để tạo nhà mạo hiểm của bạn</small>
+          </div>
         </div>
         <span class="menu-live-dot" title="Đang hoạt động"></span>
       </div>
 
-      <div class="menu-protection-summary">
-        <span>◈</span>
-        <div><b>Chặn quảng cáo</b><small>Popup và chuyển hướng đã được kiểm soát</small></div>
-        <span class="menu-badge">Luôn bật</span>
+      <div class="adventure-menu-summary" id="adventureMenuSummary">
+        <div class="adventure-summary-chip compact">
+          <span>Lv.</span>
+          <b id="adventureSummaryLevel">1</b>
+        </div>
+        <div class="adventure-summary-chip wide">
+          <span id="adventureSummaryRank">Khách lữ hành</span>
+          <small id="adventureSummaryHint">Tạo Hồ sơ Phiêu lưu để mở hành trình khám phá, nhặt Linh Thạch và tích lũy tiến trình.</small>
+        </div>
+        <div class="adventure-summary-chip compact crystal">
+          <span>◆</span>
+          <b id="adventureSummaryCrystals">0</b>
+        </div>
       </div>
 
       <div class="menu-section-label">Phiên duyệt</div>
@@ -1696,6 +1714,182 @@
       </footer>
     </aside>
 
+    <div class="adventure-profile-overlay hidden" id="adventureProfileOverlay" aria-hidden="true">
+      <section class="adventure-profile-card" role="dialog" aria-modal="true" aria-labelledby="adventureProfileTitle">
+        <header class="adventure-profile-head">
+          <div>
+            <span class="adventure-kicker">LQLQ SHIELD</span>
+            <h2 id="adventureProfileTitle">Hồ sơ Phiêu lưu</h2>
+            <p>Lưu trên thiết bị · Không bắt buộc đăng nhập</p>
+          </div>
+          <button type="button" id="adventureProfileClose" aria-label="Đóng">×</button>
+        </header>
+
+        <div class="adventure-create-view" id="adventureCreateView">
+          <div class="adventure-hero-preview">
+            <span class="adventure-preview-avatar" id="adventureCreatePreview">🛡️</span>
+            <div>
+              <b>Bắt đầu hành trình nhà mạo hiểm</b>
+              <small>Mỗi trang web mới là một vùng đất mới. Linh Thạch có thể xuất hiện để bạn nhặt và tích lũy hành trình.</small>
+            </div>
+          </div>
+
+          <div class="adventure-guide-card compact">
+            <b>Hướng dẫn nhanh</b>
+            <small>Tạo hồ sơ để mở hệ Phiêu lưu. Khi đi tới một trang web mới, Linh Thạch, Linh Thú hoặc một Kỳ Vật hoàn toàn ngẫu nhiên có thể xuất hiện. Thu thập chúng để xây Vạn Giới Đồ Giám riêng của bạn.</small>
+          </div>
+
+          <label class="adventure-field-label" for="adventureNicknameInput">Biệt danh</label>
+          <input
+            id="adventureNicknameInput"
+            class="adventure-name-input"
+            type="text"
+            maxlength="20"
+            placeholder="Ví dụ: Kiếm Khách Khang"
+            autocomplete="off"
+            spellcheck="false"
+          />
+
+          <span class="adventure-field-label">Chọn avatar mặc định</span>
+          <div class="adventure-avatar-grid" id="adventureAvatarGrid" role="listbox" aria-label="Chọn avatar"></div>
+
+          <div class="adventure-upload-row">
+            <button type="button" class="adventure-secondary" id="adventureAvatarUploadBtn">Chọn ảnh từ máy</button>
+            <small id="adventureAvatarUploadName">Chưa chọn ảnh tùy chỉnh</small>
+            <input type="file" id="adventureAvatarUpload" accept="image/*" hidden />
+          </div>
+
+          <p class="adventure-form-error hidden" id="adventureFormError"></p>
+
+          <div class="adventure-actions">
+            <button type="button" class="adventure-secondary" id="adventureCreateLater">Để sau</button>
+            <button type="button" class="adventure-primary" id="adventureCreateSubmit">Tạo hồ sơ</button>
+          </div>
+        </div>
+
+        <div class="adventure-dashboard-view hidden" id="adventureDashboardView">
+          <div class="adventure-hero-board">
+            <div class="adventure-gear-column left">
+              <span class="adventure-gear-slot">🗡️</span>
+              <span class="adventure-gear-slot">🛡️</span>
+              <span class="adventure-gear-slot">💍</span>
+            </div>
+            <div class="adventure-hero-core">
+              <button type="button" class="adventure-edit-button overlay" id="adventureEditProfile">Chỉnh sửa</button>
+              <span class="adventure-dashboard-avatar" id="adventureDashboardAvatar">🛡️</span>
+              <div class="adventure-level-pill">Cấp <b id="adventureLevelValue">1</b></div>
+              <b id="adventureDashboardName">Người bảo hộ</b>
+              <small id="adventureRankTitle">Khám Phá Giả</small>
+            </div>
+            <div class="adventure-gear-column right">
+              <span class="adventure-gear-slot">🎒</span>
+              <span class="adventure-gear-slot">📖</span>
+              <span class="adventure-gear-slot">🧿</span>
+            </div>
+          </div>
+
+          <div class="adventure-stat-grid three-up">
+            <div class="adventure-stat-card crystal">
+              <span>◆</span>
+              <div><b id="adventureCrystalCount">0</b><small>Linh Thạch</small></div>
+            </div>
+            <div class="adventure-stat-card realm">
+              <span>🧭</span>
+              <div><b id="adventureDiscoverCount">0</b><small>Vùng đất đã khám phá</small></div>
+            </div>
+            <div class="adventure-stat-card shield">
+              <span>◈</span>
+              <div><b id="adventureProtectCount">0</b><small>Lượt Shield bảo vệ</small></div>
+            </div>
+          </div>
+
+          <div class="adventure-daily-card">
+            <div>
+              <b>Thu hoạch hôm nay</b>
+              <small id="adventureDailyText">0/30 Linh Thạch</small>
+            </div>
+            <div class="adventure-progress-track"><span id="adventureDailyProgress"></span></div>
+          </div>
+
+          <div class="adventure-action-grid">
+            <button type="button" class="adventure-action-card" data-adventure-view="collection">
+              <span>📚</span>
+              <div><b>Vạn Giới Đồ Giám</b><small><strong id="adventureDynamicCollectionCount">0</strong> Kỳ Vật động · <strong id="adventureCollectionCount">0</strong>/<strong id="adventureCatalogCount">18</strong> Linh Thú</small></div>
+            </button>
+            <button type="button" class="adventure-action-card" data-adventure-view="inventory">
+              <span>🎒</span>
+              <div><b>Túi hành trang</b><small>Linh Cầu và chiến lợi phẩm của nhà mạo hiểm</small></div>
+            </button>
+            <button type="button" class="adventure-action-card" data-adventure-view="shop">
+              <span>🏪</span>
+              <div><b>Cửa hàng Linh Thạch</b><small>Đổi Linh Thạch lấy Linh Cầu và vật phẩm</small></div>
+            </button>
+            <button type="button" class="adventure-action-card" data-adventure-view="share">
+              <span>🏆</span>
+              <div><b>Thẻ khoe thành tích</b><small>Tạo bảng sưu tập đẹp để chụp màn hình</small></div>
+            </button>
+          </div>
+
+          <label class="adventure-toggle-row">
+            <div>
+              <b>Hiện Linh Thạch trên màn hình web</b>
+              <small>Khi bật, mỗi trang web mới sẽ xuất hiện Linh Thạch để thu thập.</small>
+            </div>
+            <input type="checkbox" id="adventureLootToggle" checked />
+          </label>
+
+          <label class="adventure-toggle-row">
+            <div>
+              <b>Cho phép Kỳ Vật động xuất hiện</b>
+              <small>Lấy hình ảnh, tên và mô tả ngẫu nhiên từ Dynamic Loot Engine; khi chưa cấu hình AI sẽ tự dùng Wikipedia/Wikimedia miễn phí.</small>
+            </div>
+            <input type="checkbox" id="adventureDynamicLootToggle" checked />
+          </label>
+
+          <label class="adventure-toggle-row">
+            <div>
+              <b>Cho phép Linh Thú xuất hiện</b>
+              <small>Linh Thú, Hồn Thú, Ma Thú, Yêu Thú và Thần Thú có thể xuất hiện ngẫu nhiên khi khám phá web.</small>
+            </div>
+            <input type="checkbox" id="adventureBeastsToggle" checked />
+          </label>
+
+          <label class="adventure-toggle-row">
+            <div>
+              <b>Hiệu ứng nhận Linh Thạch</b>
+              <small>Hiện hiệu ứng bay lên góc màn hình khi bạn nhặt thành công.</small>
+            </div>
+            <input type="checkbox" id="adventureEffectsToggle" checked />
+          </label>
+
+          <div class="adventure-guide-card">
+            <b>Cách kiếm Linh Thạch</b>
+            <small>Mỗi lần bạn đi đến một trang web mới, lqlq Browser xem đó như một vùng đất mới. Linh Thạch sẽ xuất hiện trên màn hình để bạn nhấn nhặt. Hiện tại tỷ lệ xuất hiện đang là 100% để bạn dễ thử nghiệm.</small>
+          </div>
+
+          <div class="adventure-guide-card">
+            <b>Tác dụng của Linh Thạch</b>
+            <small>Linh Thạch dùng để mua Linh Cầu trong cửa hàng và sẽ tiếp tục được mở rộng cho vật phẩm, trang bị, hành trang cùng các tác vụ tiện ích về sau.</small>
+          </div>
+
+          <button type="button" class="adventure-danger" id="adventureDeleteProfile">Xóa Hồ sơ Phiêu lưu</button>
+        </div>
+
+        <div class="adventure-sub-view hidden" id="adventureSubView">
+          <div class="adventure-sub-head">
+            <button type="button" class="adventure-secondary" id="adventureSubBack">← Quay lại</button>
+            <div>
+              <span class="adventure-kicker">VẠN GIỚI</span>
+              <h3 id="adventureSubTitle">Đồ Giám Vạn Giới</h3>
+            </div>
+          </div>
+          <div class="adventure-sub-content" id="adventureSubContent"></div>
+        </div>
+      </section>
+    </div>
+
+    <div class="adventure-crystal-effect-host" id="adventureCrystalEffectHost" aria-live="polite"></div>
+
     <div class="modal-backdrop hidden" id="privateModal">
       <div class="modal compact-modal">
         <h2 id="privateModalTitle">Nhập mật khẩu</h2>
@@ -1750,6 +1944,7 @@
   <script src="v20-mobile-image-tools.js"></script>
   <script src="v21-mobile-batch-tools.js"></script>
   <script src="v22-mobile-toolbar.js"></script>
+  <script src="v32-adventure-profile.js"></script>
   <script src="android-glue.js"></script>
 </body>
 </html>

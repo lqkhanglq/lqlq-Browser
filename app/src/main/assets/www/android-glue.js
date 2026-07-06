@@ -273,6 +273,7 @@
     { id: "chapterClipperPanel", kind: "aria", closeBtn: "chapterClipperClose" },
     { id: "storyReaderPanel", kind: "aria", closeBtn: "closeStoryReader" },
     { id: "securityCenterOverlay", kind: "hidden", closeBtn: "closeSecurityCenter" },
+    { id: "adventureProfileOverlay", kind: "hidden", closeBtn: "adventureProfileClose" },
     { id: "chromeMenu", kind: "hidden", closeBtn: null },
     { id: "toolsMenu", kind: "hidden", closeBtn: null },
     { id: "sideDrawer", kind: "open", closeBtn: "closeDrawer" }

@@ -1,0 +1,33 @@
+name: Deploy LQLQ Dynamic Loot Worker
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dynamic-loot-worker
+    steps:
+      - name: Lấy mã nguồn
+        uses: actions/checkout@v4
+
+      - name: Cài Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: dynamic-loot-worker/package-lock.json
+
+      - name: Cài Wrangler
+        run: npm ci
+
+      - name: Kiểm tra cú pháp Worker
+        run: npm run check
+
+      - name: Deploy lên Cloudflare Workers
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npm run deploy

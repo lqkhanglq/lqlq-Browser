@@ -1,0 +1,11 @@
+lqlq Browser v0.32.0 — LQLQ Dynamic Loot Engine
+
+- Thêm hệ Kỳ Vật Vạn Giới động gần như không giới hạn.
+- Kỳ Vật có ảnh, tên, thể loại, mô tả, độ hiếm và số sao.
+- Thêm Cloudflare Worker tùy chọn để dùng Workers AI tạo nội dung nguyên bản.
+- Tự rơi về Wikipedia/Wikimedia khi Worker chưa cấu hình, hết hạn mức hoặc lỗi.
+- Ảnh thẻ đã thu thập được nén WebP và lưu trong bộ nhớ riêng của ứng dụng.
+- Vạn Giới Đồ Giám hiển thị cả Kỳ Vật động và 18 Linh Thú offline.
+- Thêm công tắc bật/tắt Kỳ Vật động trên trang web.
+- Thêm cấu hình GitHub Actions cho endpoint Worker.
+- Phiên bản: versionCode 69, versionName 0.32.0.

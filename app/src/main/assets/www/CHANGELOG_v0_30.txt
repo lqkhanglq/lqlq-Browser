@@ -1,0 +1,9 @@
+lqlq Browser v0.30.0
+- Bỏ khung tóm tắt chặn quảng cáo ở menu và thay bằng tóm tắt Phiêu lưu.
+- Khi chưa có hồ sơ, menu hiển thị lời mời tạo Hồ sơ Phiêu lưu rõ ràng hơn.
+- Linh Thạch không còn cộng từ chặn quảng cáo; thay bằng vật phẩm nhặt được khi vào trang web mới.
+- Thêm Linh Thạch nổi trên màn hình bằng overlay native, hiệu ứng bay lên góc phải khi nhặt.
+- Thêm cấp độ, danh hiệu nhà mạo hiểm, số vùng đất đã khám phá.
+- Thêm nút bật/tắt việc hiện Linh Thạch trên web.
+- Cho phép dùng ảnh trên máy làm avatar đại diện.
+- Bố cục hồ sơ chuyển sang hướng menu game, có chỗ quy hoạch hành trang và cửa hàng.

@@ -3,6 +3,12 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val dynamicLootEndpoint = providers.gradleProperty("LQLQ_DYNAMIC_LOOT_ENDPOINT")
+    .orElse("")
+    .get()
+    .replace("\\", "\\\\")
+    .replace("\"", "\\\"")
+
 android {
     namespace = "com.lqlq.browser"
     compileSdk = 35
@@ -11,8 +17,13 @@ android {
         applicationId = "com.lqlq.browser"
         minSdk = 24
         targetSdk = 35
-        versionCode = 65
-        versionName = "0.28.1"
+        versionCode = 69
+        versionName = "0.32.0"
+        buildConfigField("String", "DYNAMIC_LOOT_ENDPOINT", "\"$dynamicLootEndpoint\"")
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     signingConfigs {

@@ -1,0 +1,22 @@
+lqlq Browser v0.29.0 — Hồ sơ Phiêu lưu tùy chọn
+
+MỚI
+- Tạo Hồ sơ Phiêu lưu lưu trên thiết bị: biệt danh + 8 avatar mặc định.
+- Khi đã có hồ sơ, khu vực đầu menu hiển thị avatar, tên và số Linh Thạch.
+- Shield cộng +1 Linh Thạch khi chặn điều hướng main-frame hợp lệ.
+- Hiệu ứng thu hoạch Linh Thạch ở góc trên, có thể tắt trong hồ sơ.
+- Trang hồ sơ hiển thị tổng lượt bảo vệ và tiến độ thu hoạch hằng ngày.
+- Cho phép chỉnh tên/avatar và xóa riêng hồ sơ.
+
+AN TOÀN / CÂN BẰNG
+- Chưa tạo hồ sơ: trình duyệt và Shield hoạt động y như trước, không cộng ngọc.
+- Chỉ main-frame được thưởng; ảnh, script, iframe và tracker nền không được cộng.
+- Chống cộng trùng cùng tab/domain trong 2,2 giây.
+- Giới hạn nhận thưởng 30 Linh Thạch mỗi ngày; tổng lượt bảo vệ vẫn được ghi nhận.
+- Dữ liệu Linh Thạch do native Android quản lý, JavaScript chỉ hiển thị.
+- Xóa hồ sơ không ảnh hưởng lịch sử, dấu trang, thẻ, trang ngoại tuyến hay cài đặt trình duyệt.
+
+CHƯA CÓ TRONG BẢN NÀY
+- Đăng nhập Google/Facebook hoặc đồng bộ nhiều thiết bị.
+- Bán Linh Thạch / Google Play Billing.
+- Nhiệm vụ, cửa hàng và trang bị có hiệu lực.

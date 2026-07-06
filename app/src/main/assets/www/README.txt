@@ -86,3 +86,12 @@ thành project build APK.
 - Có Bài trước, Bài tiếp theo và Lặp lại một bài.
 - Có nút chọn cả thư mục bằng trình chọn tài liệu Android.
 - Playlist YouTube dùng hàng đợi chính thức của trình nhúng YouTube.
+
+## v0.29 — Hồ sơ Phiêu lưu tùy chọn
+
+- Nhấn logo/tên ở đầu menu để tạo hồ sơ lưu trên thiết bị.
+- Khi chưa tạo hồ sơ, lqlq Browser và Shield hoạt động như trước, không cộng Linh Thạch.
+- Sau khi tạo hồ sơ, một lần chặn điều hướng main-frame hợp lệ nhận +1 Linh Thạch.
+- Giới hạn 30 Linh Thạch/ngày và chống cộng trùng cùng tab/domain trong 2,2 giây.
+- Có 8 avatar, chỉnh biệt danh, thống kê bảo vệ, bật/tắt hiệu ứng và xóa riêng hồ sơ.
+- Trang bị, nhiệm vụ, Google Login và Play Billing chưa nằm trong bản này.

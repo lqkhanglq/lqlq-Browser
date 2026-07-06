@@ -1,0 +1,11 @@
+lqlq Browser v0.31.0 — Linh Thú Vạn Giới
+- Thêm hệ sinh vật nguyên bản: Linh Thú, Hồn Thú, Ma Thú, Yêu Thú và Thần Thú.
+- Sinh vật có thể xuất hiện ngẫu nhiên khi khám phá trang web mới.
+- Thêm Linh Cầu Thô, Linh Cầu Bạc và Linh Cầu Hoàng Kim để thu phục.
+- Thêm tỷ lệ thu phục theo độ hiếm và cơ chế tăng nhẹ cơ hội sau thất bại.
+- Thêm Đồ Giám Vạn Giới gồm 18 sinh vật ban đầu, hiển thị ô đã bắt/chưa khám phá.
+- Thêm Túi Hành Trang để xem số lượng Linh Cầu và thành tích thu phục.
+- Thêm Cửa Hàng Linh Thạch để đổi Linh Thạch lấy Linh Cầu.
+- Thêm Thẻ Khoe Thành Tích để người dùng chụp màn hình chia sẻ bộ sưu tập.
+- Thêm công tắc bật/tắt Linh Thú xuất hiện trên web.
+- Giữ toàn bộ hệ Phiêu lưu độc lập; người không tạo hồ sơ vẫn dùng trình duyệt bình thường.

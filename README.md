@@ -65,3 +65,35 @@ Bản release tiếp tục dùng keystore ổn định của project, vì vậy 
 - AndroidX Media3 `1.10.1`.
 - Android 8.0 trở lên để dùng Picture-in-Picture.
 - Android 13+ cần cho phép thông báo để thấy thanh điều khiển media native.
+
+
+## v0.29.0 — Hồ sơ Phiêu lưu tùy chọn
+
+- Người chưa tạo hồ sơ vẫn dùng lqlq Browser như trình duyệt bình thường.
+- Nhấn khu vực logo/tên trong menu để tạo Hồ sơ Phiêu lưu lưu cục bộ.
+- Hồ sơ hỗ trợ biệt danh, 8 avatar mặc định, Linh Thạch, thống kê Shield và bật/tắt hiệu ứng.
+- Shield chỉ cộng `+1 Linh Thạch` cho lần chặn điều hướng main-frame hợp lệ sau khi đã có hồ sơ.
+- Chống cộng trùng trong 2,2 giây và giới hạn 30 Linh Thạch/ngày; request ảnh/script/iframe không được thưởng.
+- Xóa hồ sơ không xóa lịch sử, dấu trang, thẻ hay dữ liệu trình duyệt.
+- Chưa có Google/Facebook Login, máy chủ, bán Linh Thạch, nhiệm vụ hoặc cửa hàng trang bị.
+
+## v0.32.0 — LQLQ Dynamic Loot Engine
+
+Project có thêm hệ **Kỳ Vật Vạn Giới động**:
+
+- khi người dùng có Hồ sơ Phiêu lưu và đi tới web mới, app tự quay tỷ lệ rơi;
+- thẻ Kỳ Vật có thể lấy từ Cloudflare Worker + Workers AI;
+- nếu Worker chưa được cấu hình hoặc lỗi, app tự dùng Wikipedia/Wikimedia;
+- ảnh đã thu thập được nén WebP và lưu cục bộ, không đóng sẵn hàng nghìn ảnh vào APK;
+- bộ sưu tập hiển thị trong **Vạn Giới Đồ Giám**.
+
+### Cấu hình endpoint khi build
+
+```bash
+gradle assembleRelease \
+  -PLQLQ_DYNAMIC_LOOT_ENDPOINT="https://lqlq-dynamic-loot.<account>.workers.dev"
+```
+
+GitHub Actions đọc repository variable `LQLQ_DYNAMIC_LOOT_ENDPOINT`. Nếu để trống, APK vẫn dùng nguồn Wikipedia/Wikimedia trực tiếp.
+
+Mã Worker nằm trong thư mục `dynamic-loot-worker/`.

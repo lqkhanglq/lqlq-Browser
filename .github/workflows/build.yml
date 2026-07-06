@@ -25,7 +25,11 @@ jobs:
           gradle-version: '8.7'
 
       - name: Build APK (debug + release, cùng chữ ký ổn định)
-        run: gradle assembleDebug assembleRelease --no-daemon
+        env:
+          LQLQ_DYNAMIC_LOOT_ENDPOINT: ${{ vars.LQLQ_DYNAMIC_LOOT_ENDPOINT }}
+        run: |
+          gradle assembleDebug assembleRelease --no-daemon \
+            -PLQLQ_DYNAMIC_LOOT_ENDPOINT="${LQLQ_DYNAMIC_LOOT_ENDPOINT:-}"
 
       - name: Đổi tên APK
         run: |

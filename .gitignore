@@ -9,3 +9,6 @@ captures/
 .externalNativeBuild/
 .cxx/
 out/
+node_modules/
+.wrangler/
+.dev.vars

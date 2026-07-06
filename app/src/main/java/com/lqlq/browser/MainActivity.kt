@@ -1,6 +1,8 @@
 package com.lqlq.browser
 
 import android.Manifest
+import android.animation.AnimatorSet
+import android.animation.ObjectAnimator
 import android.annotation.SuppressLint
 import android.app.AlertDialog
 import android.app.DownloadManager
@@ -13,13 +15,17 @@ import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Rect
+import android.graphics.drawable.GradientDrawable
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.provider.MediaStore
@@ -27,9 +33,12 @@ import android.print.PrintAttributes
 import android.print.PrintManager
 import android.util.Rational
 import android.view.Gravity
+import android.view.animation.AccelerateDecelerateInterpolator
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
+import android.widget.ImageView
+import android.widget.LinearLayout
 import android.webkit.CookieManager
 import android.webkit.MimeTypeMap
 import android.webkit.URLUtil
@@ -66,6 +75,9 @@ import java.io.InputStream
 import java.text.Collator
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
+import kotlin.random.Random
 
 class MainActivity : AppCompatActivity() {
 
@@ -215,6 +227,86 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
     }
 
+    /**
+     * Ghi một lần bảo vệ đủ điều kiện cho Hồ sơ Phiêu lưu. Chỉ điều hướng
+     * main-frame mới gọi hàm này; request ảnh/script/iframe không được thưởng.
+     * Key tab + host và cửa sổ 2,2 giây loại bỏ trường hợp cùng redirect bị
+     * báo ở cả shouldOverrideUrlLoading và shouldInterceptRequest.
+     */
+    private fun recordAdventureShieldProtection(
+        tabId: String,
+        targetHost: String?,
+        reason: String
+    ): AdventureProfileStore.RewardResult? {
+        if (!::adventureProfileStore.isInitialized || !adventureProfileStore.hasProfile()) {
+            return null
+        }
+
+        val now = System.currentTimeMillis()
+        val host = targetHost.orEmpty().lowercase(Locale.ROOT).take(160)
+        val eventKey = "$tabId|$host"
+        val previous = recentAdventureShieldEvents.put(eventKey, now)
+        if (previous != null && now - previous < 2_200L) return null
+
+        if (recentAdventureShieldEvents.size > 128) {
+            recentAdventureShieldEvents.entries.removeIf { now - it.value > 10_000L }
+        }
+
+        val result = adventureProfileStore.recordShieldProtection()
+        if (result.profileCreated) {
+            dispatchAdventureRewardResult(result, reason, host)
+        }
+        return result
+    }
+
+    private fun withAdventureReward(
+        message: String,
+        result: AdventureProfileStore.RewardResult?
+    ): String = if (result?.rewarded == true) "$message · +1 Linh Thạch" else message
+
+    internal fun dispatchAdventureProfileState(snapshot: AdventureProfileStore.Snapshot) {
+        val payloadObject = snapshot.toJson()
+        if (::dynamicLootStore.isInitialized) dynamicLootStore.appendTo(payloadObject)
+        val payload = payloadObject.toString()
+        runOnUiThread {
+            if (!snapshot.exists || !snapshot.lootEnabled) {
+                hideAdventureLoot()
+            }
+            if (!snapshot.exists || !snapshot.spiritBeastsEnabled) {
+                hideSpiritBeastEncounter()
+            }
+            if (!snapshot.exists || (::dynamicLootStore.isInitialized && !dynamicLootStore.isEnabled())) {
+                hideDynamicLootEncounter()
+            }
+            if (shellReady && ::shellWebView.isInitialized && !isDestroyed) {
+                shellWebView.evaluateJavascript(
+                    "window.LqlqAdventureUI && LqlqAdventureUI.applyNativeState($payload);",
+                    null
+                )
+            }
+        }
+    }
+
+    private fun dispatchAdventureRewardResult(
+        result: AdventureProfileStore.RewardResult,
+        reason: String,
+        host: String
+    ) {
+        if (!shellReady || !::shellWebView.isInitialized || isDestroyed) return
+        val payload = result.toJson().apply {
+            put("reason", reason)
+            put("host", host)
+        }.toString()
+        runOnUiThread {
+            if (!isDestroyed) {
+                shellWebView.evaluateJavascript(
+                    "window.LqlqAdventureUI && LqlqAdventureUI.onShieldProtection($payload);",
+                    null
+                )
+            }
+        }
+    }
+
     /** Lớp phủ của giao diện (menu, panel...) đang mở → phải nổi trên trang web. */
     @Volatile
     private var overlayOpen = false
@@ -224,9 +316,52 @@ class MainActivity : AppCompatActivity() {
     private lateinit var assetLoader: WebViewAssetLoader
     private var ttsBridge: TtsBridge? = null
     private lateinit var shellBridge: ShellBridge
+    private lateinit var adventureProfileStore: AdventureProfileStore
+    private lateinit var adventureProfileBridge: AdventureProfileBridge
+    private lateinit var dynamicLootStore: DynamicLootStore
+    private lateinit var dynamicLootRepository: DynamicLootRepository
+    private lateinit var dynamicLootImageCache: DynamicLootImageCache
     private lateinit var pageToolsBridge: PageToolsBridge
     private lateinit var pageBridge: PageBridge
     private lateinit var faviconStore: FaviconStore
+
+    /** Chống cộng Linh Thạch hai lần khi cùng redirect đi qua nhiều callback. */
+    private val recentAdventureShieldEvents = ConcurrentHashMap<String, Long>()
+
+    private lateinit var adventureLootLayer: FrameLayout
+    private lateinit var adventureLootIcon: ImageView
+    private var pendingAdventureLootUrl: String? = null
+    private var pendingAdventureLootTabId: String? = null
+    private val lastAdventureLootUrlByTab = ConcurrentHashMap<String, String>()
+    private var adventureLootShowRunnable: Runnable? = null
+
+    private lateinit var spiritBeastCard: LinearLayout
+    private lateinit var spiritBeastIcon: TextView
+    private lateinit var spiritBeastName: TextView
+    private lateinit var spiritBeastMeta: TextView
+    private var pendingSpiritBeast: SpiritBeastCatalog.Beast? = null
+    private var pendingSpiritBeastDomain: String = ""
+    private var pendingSpiritBeastUrl: String = ""
+    private var pendingSpiritBeastTabId: String = ""
+    private val lastSpiritBeastUrlByTab = ConcurrentHashMap<String, String>()
+    private var spiritBeastShowRunnable: Runnable? = null
+    private var spiritBeastHideRunnable: Runnable? = null
+
+    private lateinit var dynamicLootCard: LinearLayout
+    private lateinit var dynamicLootImage: ImageView
+    private lateinit var dynamicLootName: TextView
+    private lateinit var dynamicLootMeta: TextView
+    private var pendingDynamicLoot: DynamicLootItem? = null
+    private var pendingDynamicLootBitmap: Bitmap? = null
+    private var pendingDynamicLootDomain: String = ""
+    private var pendingDynamicLootUrl: String = ""
+    private var pendingDynamicLootTabId: String = ""
+    private val lastDynamicLootUrlByTab = ConcurrentHashMap<String, String>()
+    private var dynamicLootShowRunnable: Runnable? = null
+    private var dynamicLootHideRunnable: Runnable? = null
+    private var dynamicLootFetchTask: Future<*>? = null
+    private val dynamicLootExecutor = Executors.newSingleThreadExecutor()
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     private var nativeMediaControllerFuture: ListenableFuture<MediaController>? = null
     private var nativeMediaController: MediaController? = null
@@ -402,6 +537,10 @@ class MainActivity : AppCompatActivity() {
 
         tabStore = BrowserTabStore(this)
         faviconStore = FaviconStore(this)
+        adventureProfileStore = AdventureProfileStore(applicationContext)
+        dynamicLootStore = DynamicLootStore(applicationContext)
+        dynamicLootRepository = DynamicLootRepository()
+        dynamicLootImageCache = DynamicLootImageCache(applicationContext)
         activeTabId = tabStore.activeTabId()
 
         root = FrameLayout(this)
@@ -425,6 +564,14 @@ class MainActivity : AppCompatActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
         )
+        setupAdventureLootOverlay()
+        root.addView(
+            adventureLootLayer,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        )
         setupMediaBubble()
         setupNativeTabSwitcher()
         setContentView(root)
@@ -432,6 +579,7 @@ class MainActivity : AppCompatActivity() {
         assetLoader = WebViewAssetLoader.Builder()
             .setDomain(SHELL_HOST)
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
+            .addPathHandler("/dynamic-loot/", DynamicLootAssetHandler(dynamicLootImageCache))
             .build()
 
         setupShellWebView()
@@ -441,6 +589,711 @@ class MainActivity : AppCompatActivity() {
 
         shellWebView.loadUrl(SHELL_URL)
     }
+
+    private fun setupAdventureLootOverlay() {
+        adventureLootLayer = FrameLayout(this).apply {
+            visibility = View.GONE
+            isClickable = false
+            isFocusable = false
+        }
+        adventureLootIcon = ImageView(this).apply {
+            setImageResource(R.drawable.adventure_crystal_loot)
+            alpha = 0f
+            scaleX = 0.92f
+            scaleY = 0.92f
+            contentDescription = "Linh Thạch có thể nhặt"
+            setOnClickListener { collectAdventureLoot() }
+            isClickable = true
+            isFocusable = true
+            visibility = View.GONE
+            background = ContextCompat.getDrawable(context, android.R.color.transparent)
+        }
+        val size = dp(72)
+        adventureLootLayer.addView(
+            adventureLootIcon,
+            FrameLayout.LayoutParams(size, size).apply {
+                gravity = Gravity.TOP or Gravity.START
+                leftMargin = dp(20)
+                topMargin = dp(160)
+            }
+        )
+
+        spiritBeastIcon = TextView(this).apply {
+            gravity = Gravity.CENTER
+            textSize = 42f
+            includeFontPadding = false
+        }
+        spiritBeastName = TextView(this).apply {
+            gravity = Gravity.CENTER
+            textSize = 14f
+            setTextColor(Color.rgb(29, 69, 50))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            maxLines = 1
+        }
+        spiritBeastMeta = TextView(this).apply {
+            gravity = Gravity.CENTER
+            textSize = 11f
+            setTextColor(Color.rgb(82, 104, 93))
+            maxLines = 1
+        }
+        spiritBeastCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            alpha = 0f
+            scaleX = 0.76f
+            scaleY = 0.76f
+            visibility = View.GONE
+            isClickable = true
+            isFocusable = true
+            contentDescription = "Linh Thú Vạn Giới"
+            elevation = dp(10).toFloat()
+            addView(spiritBeastIcon, LinearLayout.LayoutParams(dp(72), dp(60)))
+            addView(spiritBeastName, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(24)))
+            addView(spiritBeastMeta, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(20)))
+            setOnClickListener { openSpiritBeastEncounter() }
+        }
+        adventureLootLayer.addView(
+            spiritBeastCard,
+            FrameLayout.LayoutParams(dp(132), dp(124)).apply {
+                gravity = Gravity.TOP or Gravity.START
+                leftMargin = dp(22)
+                topMargin = dp(250)
+            }
+        )
+
+        dynamicLootImage = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            contentDescription = "Ảnh Kỳ Vật Vạn Giới"
+            background = roundedBackground(Color.rgb(235, 245, 240), Color.rgb(92, 168, 130))
+            clipToOutline = true
+        }
+        dynamicLootName = TextView(this).apply {
+            gravity = Gravity.CENTER
+            textSize = 13f
+            setTextColor(Color.rgb(29, 58, 45))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            maxLines = 2
+        }
+        dynamicLootMeta = TextView(this).apply {
+            gravity = Gravity.CENTER
+            textSize = 10.5f
+            setTextColor(Color.rgb(73, 94, 84))
+            maxLines = 1
+        }
+        dynamicLootCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(dp(8), dp(8), dp(8), dp(8))
+            alpha = 0f
+            scaleX = 0.76f
+            scaleY = 0.76f
+            visibility = View.GONE
+            isClickable = true
+            isFocusable = true
+            contentDescription = "Kỳ Vật Vạn Giới động"
+            elevation = dp(12).toFloat()
+            background = roundedBackground(Color.rgb(244, 251, 247), Color.rgb(60, 157, 107))
+            addView(dynamicLootImage, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(98)))
+            addView(dynamicLootName, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(38)))
+            addView(dynamicLootMeta, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(22)))
+            setOnClickListener { openDynamicLootEncounter() }
+        }
+        adventureLootLayer.addView(
+            dynamicLootCard,
+            FrameLayout.LayoutParams(dp(158), dp(178)).apply {
+                gravity = Gravity.TOP or Gravity.START
+                leftMargin = dp(28)
+                topMargin = dp(310)
+            }
+        )
+    }
+
+    private fun updateAdventureOverlayVisibility() {
+        if (!::adventureLootLayer.isInitialized) return
+        val hasCrystal = ::adventureLootIcon.isInitialized && adventureLootIcon.visibility == View.VISIBLE
+        val hasBeast = ::spiritBeastCard.isInitialized && spiritBeastCard.visibility == View.VISIBLE
+        val hasDynamic = ::dynamicLootCard.isInitialized && dynamicLootCard.visibility == View.VISIBLE
+        adventureLootLayer.visibility = if (hasCrystal || hasBeast || hasDynamic) View.VISIBLE else View.GONE
+    }
+
+    private fun hideAdventureLoot() {
+        adventureLootShowRunnable?.let { adventureLootLayer.removeCallbacks(it) }
+        adventureLootShowRunnable = null
+        pendingAdventureLootUrl = null
+        pendingAdventureLootTabId = null
+        if (::adventureLootIcon.isInitialized) {
+            adventureLootIcon.clearAnimation()
+            adventureLootIcon.animate().cancel()
+            adventureLootIcon.alpha = 0f
+            adventureLootIcon.translationX = 0f
+            adventureLootIcon.translationY = 0f
+            adventureLootIcon.scaleX = 0.92f
+            adventureLootIcon.scaleY = 0.92f
+            adventureLootIcon.visibility = View.GONE
+        }
+        updateAdventureOverlayVisibility()
+    }
+
+    private fun hideSpiritBeastEncounter() {
+        spiritBeastShowRunnable?.let { adventureLootLayer.removeCallbacks(it) }
+        spiritBeastHideRunnable?.let { adventureLootLayer.removeCallbacks(it) }
+        spiritBeastShowRunnable = null
+        spiritBeastHideRunnable = null
+        pendingSpiritBeast = null
+        pendingSpiritBeastDomain = ""
+        pendingSpiritBeastUrl = ""
+        pendingSpiritBeastTabId = ""
+        if (::spiritBeastCard.isInitialized) {
+            spiritBeastCard.animate().cancel()
+            spiritBeastCard.alpha = 0f
+            spiritBeastCard.scaleX = 0.76f
+            spiritBeastCard.scaleY = 0.76f
+            spiritBeastCard.visibility = View.GONE
+        }
+        updateAdventureOverlayVisibility()
+    }
+
+    private fun hideDynamicLootEncounter() {
+        dynamicLootShowRunnable?.let { adventureLootLayer.removeCallbacks(it) }
+        dynamicLootHideRunnable?.let { adventureLootLayer.removeCallbacks(it) }
+        dynamicLootShowRunnable = null
+        dynamicLootHideRunnable = null
+        dynamicLootFetchTask?.cancel(true)
+        dynamicLootFetchTask = null
+        pendingDynamicLoot = null
+        pendingDynamicLootBitmap = null
+        pendingDynamicLootDomain = ""
+        pendingDynamicLootUrl = ""
+        pendingDynamicLootTabId = ""
+        if (::dynamicLootCard.isInitialized) {
+            dynamicLootCard.animate().cancel()
+            dynamicLootCard.alpha = 0f
+            dynamicLootCard.scaleX = 0.76f
+            dynamicLootCard.scaleY = 0.76f
+            dynamicLootCard.visibility = View.GONE
+        }
+        updateAdventureOverlayVisibility()
+    }
+
+    private fun roundedBackground(fill: Int, stroke: Int): GradientDrawable = GradientDrawable().apply {
+        shape = GradientDrawable.RECTANGLE
+        cornerRadius = dp(22).toFloat()
+        setColor(fill)
+        setStroke(dp(2), stroke)
+    }
+
+    private fun maybeScheduleAdventureLoot(tabId: String, url: String) {
+        if (!::adventureProfileStore.isInitialized || !adventureProfileStore.hasProfile()) {
+            hideAdventureLoot()
+            return
+        }
+        val snapshot = adventureProfileStore.snapshot()
+        if (!snapshot.lootEnabled || !snapshot.exists) {
+            hideAdventureLoot()
+            return
+        }
+        if (!pageVisible || activeTabId != tabId) {
+            hideAdventureLoot()
+            return
+        }
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            hideAdventureLoot()
+            return
+        }
+        val normalized = url.trim()
+        if (lastAdventureLootUrlByTab[tabId] == normalized) {
+            hideAdventureLoot()
+            return
+        }
+        lastAdventureLootUrlByTab[tabId] = normalized
+        pendingAdventureLootUrl = normalized
+        pendingAdventureLootTabId = tabId
+        adventureLootShowRunnable?.let { adventureLootLayer.removeCallbacks(it) }
+        val runnable = Runnable {
+            showAdventureLoot(normalized)
+        }
+        adventureLootShowRunnable = runnable
+        adventureLootLayer.postDelayed(runnable, 420L)
+    }
+
+    private fun showAdventureLoot(url: String) {
+        if (!::adventureLootLayer.isInitialized || !::adventureLootIcon.isInitialized) return
+        val snapshot = adventureProfileStore.snapshot()
+        if (!snapshot.exists || !snapshot.lootEnabled || pendingAdventureLootUrl != url || !pageVisible) {
+            hideAdventureLoot()
+            return
+        }
+        adventureLootIcon.visibility = View.VISIBLE
+        updateAdventureOverlayVisibility()
+        val size = dp(72)
+        val width = root.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
+        val height = root.height.takeIf { it > 0 } ?: resources.displayMetrics.heightPixels
+        val minX = dp(18)
+        val maxX = (width - size - dp(18)).coerceAtLeast(minX)
+        val minY = (toolbarHeightPx + dp(96)).coerceAtLeast(dp(120))
+        val maxY = (height - size - dp(112)).coerceAtLeast(minY)
+        val x = if (maxX > minX) Random.nextInt(minX, maxX + 1) else minX
+        val y = if (maxY > minY) Random.nextInt(minY, maxY + 1) else minY
+        (adventureLootIcon.layoutParams as FrameLayout.LayoutParams).apply {
+            width = size
+            height = size
+            leftMargin = x
+            topMargin = y
+        }.also { adventureLootIcon.layoutParams = it }
+        adventureLootIcon.alpha = 0f
+        adventureLootIcon.scaleX = 0.7f
+        adventureLootIcon.scaleY = 0.7f
+        adventureLootIcon.translationX = 0f
+        adventureLootIcon.translationY = 0f
+        adventureLootIcon.animate()
+            .alpha(1f)
+            .scaleX(1f)
+            .scaleY(1f)
+            .setDuration(220L)
+            .setInterpolator(AccelerateDecelerateInterpolator())
+            .start()
+    }
+
+    private fun collectAdventureLoot() {
+        val url = pendingAdventureLootUrl ?: return
+        val result = adventureProfileStore.collectRealmCrystal()
+        pendingAdventureLootUrl = null
+        pendingAdventureLootTabId = null
+        dispatchAdventureProfileState(result.snapshot)
+        animateAdventureLootToHeader(result, url)
+    }
+
+    private fun animateAdventureLootToHeader(result: AdventureProfileStore.RewardResult, url: String) {
+        if (!::adventureLootIcon.isInitialized) return
+        val startX = adventureLootIcon.x
+        val startY = adventureLootIcon.y
+        val targetX = (root.width - dp(38) - adventureLootIcon.width).toFloat().coerceAtLeast(0f)
+        val targetY = dp(18).toFloat()
+        val moveX = ObjectAnimator.ofFloat(adventureLootIcon, View.X, startX, targetX)
+        val moveY = ObjectAnimator.ofFloat(adventureLootIcon, View.Y, startY, targetY)
+        val scaleX = ObjectAnimator.ofFloat(adventureLootIcon, View.SCALE_X, 1f, 0.35f)
+        val scaleY = ObjectAnimator.ofFloat(adventureLootIcon, View.SCALE_Y, 1f, 0.35f)
+        val fade = ObjectAnimator.ofFloat(adventureLootIcon, View.ALPHA, 1f, 0f)
+        AnimatorSet().apply {
+            duration = 760L
+            interpolator = AccelerateDecelerateInterpolator()
+            playTogether(moveX, moveY, scaleX, scaleY, fade)
+            addListener(object : android.animation.Animator.AnimatorListener {
+                override fun onAnimationStart(animation: android.animation.Animator) = Unit
+                override fun onAnimationCancel(animation: android.animation.Animator) {
+                    hideAdventureLoot()
+                }
+                override fun onAnimationRepeat(animation: android.animation.Animator) = Unit
+                override fun onAnimationEnd(animation: android.animation.Animator) {
+                    hideAdventureLoot()
+                    if (result.rewarded) {
+                        runOnUiThread {
+                            shellWebView.evaluateJavascript(
+                                "window.LqlqAdventureUI && LqlqAdventureUI.onRealmCrystalCollected(${result.toJson().toString()});",
+                                null
+                            )
+                        }
+                    }
+                    val host = runCatching { Uri.parse(url).host.orEmpty() }.getOrDefault("")
+                    if (result.rewarded) {
+                        Toast.makeText(
+                            this@MainActivity,
+                            if (host.isNotBlank()) "Nhặt được 1 Linh Thạch tại $host" else "Nhặt được 1 Linh Thạch",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    } else if (result.dailyLimitReached) {
+                        Toast.makeText(
+                            this@MainActivity,
+                            "Bạn đã đầy hạn mức Linh Thạch hôm nay, nhưng vùng đất này vẫn được ghi nhận.",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+            })
+            start()
+        }
+    }
+
+    private fun maybeScheduleDynamicLoot(tabId: String, url: String, title: String): Boolean {
+        if (!::adventureProfileStore.isInitialized || !adventureProfileStore.hasProfile()) {
+            hideDynamicLootEncounter()
+            return false
+        }
+        if (!::dynamicLootStore.isInitialized || !dynamicLootStore.isEnabled()) {
+            hideDynamicLootEncounter()
+            return false
+        }
+        if (!pageVisible || activeTabId != tabId || (!url.startsWith("http://") && !url.startsWith("https://"))) {
+            hideDynamicLootEncounter()
+            return false
+        }
+
+        val normalized = url.trim()
+        if (lastDynamicLootUrlByTab[tabId] == normalized) return false
+        lastDynamicLootUrlByTab[tabId] = normalized
+
+        val dynamicCount = dynamicLootStore.stateJson().optInt("dynamicCollectionCount", 0)
+        val encounterChance = if (dynamicCount == 0) 0.86 else 0.24
+        val chanceRoll = deterministicRoll("$normalized|${adventureProfileStore.currentDayKey()}|dynamic-encounter")
+        if (chanceRoll > encounterChance) return false
+
+        val rarity = rollDynamicRarity("$normalized|$title|${adventureProfileStore.currentDayKey()}")
+        pendingDynamicLootUrl = normalized
+        pendingDynamicLootTabId = tabId
+        pendingDynamicLootDomain = runCatching { Uri.parse(normalized).host.orEmpty() }.getOrDefault("")
+        dynamicLootStore.noteEncounter()
+
+        dynamicLootFetchTask?.cancel(true)
+        dynamicLootFetchTask = dynamicLootExecutor.submit {
+            try {
+                val fetched = dynamicLootRepository.fetchRandom(
+                    seed = "$normalized|$title|${System.currentTimeMillis() / 86_400_000L}",
+                    rarity = rarity,
+                    locale = "vi"
+                )
+                mainHandler.post {
+                    if (isDestroyed || pendingDynamicLootUrl != normalized || activeTabId != tabId || !pageVisible) return@post
+                    pendingDynamicLoot = fetched.item
+                    pendingDynamicLootBitmap = fetched.bitmap
+                    showDynamicLootEncounter(fetched.item, fetched.bitmap, normalized)
+                }
+            } catch (_: Throwable) {
+                mainHandler.post {
+                    if (pendingDynamicLootUrl == normalized) {
+                        pendingDynamicLootUrl = ""
+                        pendingDynamicLootTabId = ""
+                        pendingDynamicLootDomain = ""
+                    }
+                }
+            }
+        }
+        return true
+    }
+
+    private fun deterministicRoll(seed: String): Double {
+        val value = seed.hashCode().toLong() and 0x7fffffffL
+        return (value % 100_000L) / 100_000.0
+    }
+
+    private fun rollDynamicRarity(seed: String): String {
+        val roll = deterministicRoll("$seed|rarity")
+        return when {
+            roll < 0.003 -> "Thần Thoại"
+            roll < 0.020 -> "Huyền Thoại"
+            roll < 0.080 -> "Sử Thi"
+            roll < 0.280 -> "Hiếm"
+            else -> "Thường"
+        }
+    }
+
+    private fun showDynamicLootEncounter(item: DynamicLootItem, bitmap: Bitmap, url: String) {
+        if (!::dynamicLootCard.isInitialized || pendingDynamicLootUrl != url || !pageVisible) {
+            hideDynamicLootEncounter()
+            return
+        }
+        if (!dynamicLootStore.isEnabled()) {
+            hideDynamicLootEncounter()
+            return
+        }
+
+        val colors = rarityColors(item.rarity)
+        dynamicLootCard.background = roundedBackground(colors.first, colors.second)
+        dynamicLootImage.setImageBitmap(bitmap)
+        dynamicLootName.text = item.name
+        dynamicLootMeta.text = "${item.category} · ${item.rarity} · ${"★".repeat(item.stars.coerceIn(1, 5))}"
+        dynamicLootName.setTextColor(colors.third)
+        dynamicLootMeta.setTextColor(colors.third)
+
+        val width = root.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
+        val height = root.height.takeIf { it > 0 } ?: resources.displayMetrics.heightPixels
+        val cardWidth = dp(158)
+        val cardHeight = dp(178)
+        val minX = dp(16)
+        val maxX = (width - cardWidth - dp(16)).coerceAtLeast(minX)
+        val minY = (toolbarHeightPx + dp(140)).coerceAtLeast(dp(180))
+        val maxY = (height - cardHeight - dp(110)).coerceAtLeast(minY)
+        var x = if (maxX > minX) Random.nextInt(minX, maxX + 1) else minX
+        var y = if (maxY > minY) Random.nextInt(minY, maxY + 1) else minY
+
+        if (::spiritBeastCard.isInitialized && spiritBeastCard.visibility == View.VISIBLE) {
+            val otherX = spiritBeastCard.x + spiritBeastCard.width / 2f
+            val otherY = spiritBeastCard.y + spiritBeastCard.height / 2f
+            if (kotlin.math.abs(otherX - (x + cardWidth / 2f)) < dp(150) &&
+                kotlin.math.abs(otherY - (y + cardHeight / 2f)) < dp(190)) {
+                x = if (otherX < width / 2f) maxX else minX
+                y = (y + dp(150)).coerceAtMost(maxY)
+            }
+        }
+
+        (dynamicLootCard.layoutParams as FrameLayout.LayoutParams).apply {
+            leftMargin = x
+            topMargin = y
+        }.also { dynamicLootCard.layoutParams = it }
+        dynamicLootCard.visibility = View.VISIBLE
+        updateAdventureOverlayVisibility()
+        dynamicLootCard.alpha = 0f
+        dynamicLootCard.scaleX = 0.72f
+        dynamicLootCard.scaleY = 0.72f
+        dynamicLootCard.animate()
+            .alpha(1f)
+            .scaleX(1f)
+            .scaleY(1f)
+            .setDuration(300L)
+            .setInterpolator(AccelerateDecelerateInterpolator())
+            .start()
+
+        dynamicLootHideRunnable?.let { adventureLootLayer.removeCallbacks(it) }
+        val hide = Runnable {
+            if (pendingDynamicLoot?.id == item.id) {
+                Toast.makeText(this, "Kỳ Vật ${item.name} đã tan vào Vạn Giới.", Toast.LENGTH_SHORT).show()
+                hideDynamicLootEncounter()
+            }
+        }
+        dynamicLootHideRunnable = hide
+        adventureLootLayer.postDelayed(hide, 30_000L)
+    }
+
+    private fun openDynamicLootEncounter() {
+        val item = pendingDynamicLoot ?: return
+        val bitmap = pendingDynamicLootBitmap ?: return
+        dynamicLootHideRunnable?.let { adventureLootLayer.removeCallbacks(it) }
+        dynamicLootHideRunnable = null
+
+        val preview = ImageView(this).apply {
+            setImageBitmap(bitmap)
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            adjustViewBounds = true
+            background = roundedBackground(Color.rgb(239, 247, 243), rarityColors(item.rarity).second)
+        }
+        val textView = TextView(this).apply {
+            text = "${item.category} · ${item.rarity} · ${"★".repeat(item.stars.coerceIn(1, 5))}\n\n${item.description}\n\nTìm thấy tại: ${pendingDynamicLootDomain.ifBlank { "Vạn Giới" }}\nNguồn: ${dynamicSourceLabel(item)}"
+            setPadding(dp(4), dp(14), dp(4), dp(4))
+            textSize = 14f
+            setTextColor(Color.rgb(42, 58, 50))
+        }
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(10), dp(20), dp(4))
+            addView(preview, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(220)))
+            addView(textView, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        }
+
+        val builder = AlertDialog.Builder(this)
+            .setTitle("Kỳ Vật xuất hiện: ${item.name}")
+            .setView(content)
+            .setPositiveButton("Thu thập thẻ") { _, _ -> collectDynamicLoot(item, bitmap) }
+            .setNegativeButton("Bỏ qua") { _, _ -> hideDynamicLootEncounter() }
+            .setOnCancelListener { hideDynamicLootEncounter() }
+        if (item.sourceUrl.startsWith("http")) {
+            builder.setNeutralButton("Xem nguồn") { _, _ -> openExternalUri(Uri.parse(item.sourceUrl)) }
+        }
+        builder.show()
+    }
+
+    private fun collectDynamicLoot(item: DynamicLootItem, bitmap: Bitmap) {
+        val localName = runCatching { dynamicLootImageCache.save(item.id, bitmap) }.getOrDefault("")
+        val storedItem = item.copy(
+            localImageName = localName,
+            imageUrl = if (item.imageUrl.startsWith("data:image/")) "" else item.imageUrl
+        )
+        val result = dynamicLootStore.collect(storedItem, pendingDynamicLootDomain)
+        hideDynamicLootEncounter()
+        val profileSnapshot = adventureProfileStore.snapshot()
+        dispatchAdventureProfileState(profileSnapshot)
+
+        if (shellReady && !isDestroyed) {
+            val payload = result.toJson().apply {
+                put("state", dynamicLootStore.appendTo(profileSnapshot.toJson()))
+            }.toString()
+            shellWebView.evaluateJavascript(
+                "window.LqlqAdventureUI && LqlqAdventureUI.onDynamicLootCollected($payload);",
+                null
+            )
+        }
+
+        if (!result.ok) {
+            Toast.makeText(this, result.error, Toast.LENGTH_SHORT).show()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Đã ghi vào Vạn Giới Đồ Giám!")
+            .setMessage("${item.name}\n${item.category} · ${item.rarity} · ${"★".repeat(item.stars.coerceIn(1, 5))}\n\n${item.description}")
+            .setPositiveButton("Tuyệt vời", null)
+            .show()
+    }
+
+    private fun dynamicSourceLabel(item: DynamicLootItem): String = when (item.sourceType.lowercase(Locale.ROOT)) {
+        "ai", "workers-ai" -> "AI tạo nguyên bản"
+        "wikimedia", "wikipedia", "knowledge" -> "Wikipedia / Wikimedia"
+        else -> item.sourceType.ifBlank { "Vạn Giới" }
+    }
+
+    private fun maybeScheduleSpiritBeast(tabId: String, url: String, title: String) {
+        if (!::adventureProfileStore.isInitialized || !adventureProfileStore.hasProfile()) {
+            hideSpiritBeastEncounter()
+            return
+        }
+        val snapshot = adventureProfileStore.snapshot()
+        if (!snapshot.exists || !snapshot.spiritBeastsEnabled || !pageVisible || activeTabId != tabId) {
+            hideSpiritBeastEncounter()
+            return
+        }
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            hideSpiritBeastEncounter()
+            return
+        }
+        val normalized = url.trim()
+        if (lastSpiritBeastUrlByTab[tabId] == normalized) return
+        lastSpiritBeastUrlByTab[tabId] = normalized
+
+        // Những lần đầu cho tỷ lệ cao để người dùng hiểu hệ thống; sau đó về
+        // mức 32% để Linh Thú vẫn có cảm giác bất ngờ và có giá trị sưu tầm.
+        val chance = if (snapshot.totalBeastEncounters < 3 && snapshot.collection.isEmpty()) 0.78 else 0.32
+        val roll = (("$normalized|${adventureProfileStore.currentDayKey()}|encounter".hashCode().toLong() and 0x7fffffffL) % 10_000L) / 10_000.0
+        if (roll > chance) return
+
+        val beast = SpiritBeastCatalog.choose(normalized, title, adventureProfileStore.currentDayKey())
+        pendingSpiritBeast = beast
+        pendingSpiritBeastDomain = runCatching { Uri.parse(normalized).host.orEmpty() }.getOrDefault("")
+        pendingSpiritBeastUrl = normalized
+        pendingSpiritBeastTabId = tabId
+        spiritBeastShowRunnable?.let { adventureLootLayer.removeCallbacks(it) }
+        val runnable = Runnable { showSpiritBeastEncounter(beast, normalized) }
+        spiritBeastShowRunnable = runnable
+        adventureLootLayer.postDelayed(runnable, 1_350L)
+    }
+
+    private fun showSpiritBeastEncounter(beast: SpiritBeastCatalog.Beast, url: String) {
+        val snapshot = adventureProfileStore.snapshot()
+        if (!snapshot.exists || !snapshot.spiritBeastsEnabled || pendingSpiritBeastUrl != url || !pageVisible) {
+            hideSpiritBeastEncounter()
+            return
+        }
+        val colors = rarityColors(beast.rarity)
+        spiritBeastCard.background = roundedBackground(colors.first, colors.second)
+        spiritBeastIcon.text = beast.icon
+        spiritBeastName.text = beast.name
+        spiritBeastMeta.text = "${beast.family} · ${beast.rarity}"
+        spiritBeastName.setTextColor(colors.third)
+        spiritBeastMeta.setTextColor(colors.third)
+
+        val width = root.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
+        val height = root.height.takeIf { it > 0 } ?: resources.displayMetrics.heightPixels
+        val cardWidth = dp(132)
+        val cardHeight = dp(124)
+        val minX = dp(18)
+        val maxX = (width - cardWidth - dp(18)).coerceAtLeast(minX)
+        val minY = (toolbarHeightPx + dp(180)).coerceAtLeast(dp(210))
+        val maxY = (height - cardHeight - dp(120)).coerceAtLeast(minY)
+        var x = if (maxX > minX) Random.nextInt(minX, maxX + 1) else minX
+        var y = if (maxY > minY) Random.nextInt(minY, maxY + 1) else minY
+
+        if (::adventureLootIcon.isInitialized && adventureLootIcon.visibility == View.VISIBLE) {
+            val crystalCenterX = adventureLootIcon.x + adventureLootIcon.width / 2f
+            val crystalCenterY = adventureLootIcon.y + adventureLootIcon.height / 2f
+            val beastCenterX = x + cardWidth / 2f
+            val beastCenterY = y + cardHeight / 2f
+            if (kotlin.math.abs(crystalCenterX - beastCenterX) < dp(120) && kotlin.math.abs(crystalCenterY - beastCenterY) < dp(150)) {
+                x = if (crystalCenterX < width / 2f) maxX else minX
+                y = (y + dp(120)).coerceAtMost(maxY)
+            }
+        }
+
+        (spiritBeastCard.layoutParams as FrameLayout.LayoutParams).apply {
+            leftMargin = x
+            topMargin = y
+        }.also { spiritBeastCard.layoutParams = it }
+        spiritBeastCard.visibility = View.VISIBLE
+        updateAdventureOverlayVisibility()
+        spiritBeastCard.alpha = 0f
+        spiritBeastCard.scaleX = 0.7f
+        spiritBeastCard.scaleY = 0.7f
+        spiritBeastCard.animate()
+            .alpha(1f)
+            .scaleX(1f)
+            .scaleY(1f)
+            .setDuration(280L)
+            .setInterpolator(AccelerateDecelerateInterpolator())
+            .start()
+
+        spiritBeastHideRunnable?.let { adventureLootLayer.removeCallbacks(it) }
+        val hide = Runnable {
+            if (pendingSpiritBeast?.id == beast.id) {
+                Toast.makeText(this, "${beast.name} đã rời khỏi vùng đất.", Toast.LENGTH_SHORT).show()
+                hideSpiritBeastEncounter()
+            }
+        }
+        spiritBeastHideRunnable = hide
+        adventureLootLayer.postDelayed(hide, 24_000L)
+    }
+
+    private fun openSpiritBeastEncounter() {
+        val beast = pendingSpiritBeast ?: return
+        spiritBeastHideRunnable?.let { adventureLootLayer.removeCallbacks(it) }
+        spiritBeastHideRunnable = null
+        val snapshot = adventureProfileStore.snapshot()
+        val domain = pendingSpiritBeastDomain.ifBlank { "vùng đất chưa biết" }
+        val options = arrayOf(
+            "Linh Cầu Thô ×${snapshot.orbBasic}  •  ${(beast.baseCatchChance * 100).toInt()}%",
+            "Linh Cầu Bạc ×${snapshot.orbSilver}  •  ${(minOf(0.95, beast.baseCatchChance * 1.35) * 100).toInt()}%",
+            "Linh Cầu Hoàng Kim ×${snapshot.orbGold}  •  ${(minOf(0.95, beast.baseCatchChance * 1.8) * 100).toInt()}%"
+        )
+        AlertDialog.Builder(this)
+            .setTitle("${beast.icon} ${beast.name} — ${beast.rarity}")
+            .setMessage("${beast.family} · Hệ ${beast.habitat}\n\n${beast.description}\n\nNơi gặp: $domain\nChọn Linh Cầu để thử thu phục.")
+            .setItems(options) { _, index ->
+                val type = when (index) {
+                    1 -> "silver"
+                    2 -> "gold"
+                    else -> "basic"
+                }
+                attemptSpiritBeastCapture(beast, domain, type)
+            }
+            .setNegativeButton("Bỏ qua") { _, _ -> hideSpiritBeastEncounter() }
+            .setOnCancelListener { hideSpiritBeastEncounter() }
+            .show()
+    }
+
+    private fun attemptSpiritBeastCapture(beast: SpiritBeastCatalog.Beast, domain: String, orbType: String) {
+        val result = adventureProfileStore.attemptCapture(beast.id, domain, orbType)
+        if (result.error.isNotBlank()) {
+            Toast.makeText(this, result.error, Toast.LENGTH_SHORT).show()
+            return
+        }
+        hideSpiritBeastEncounter()
+        dispatchAdventureProfileState(result.snapshot)
+        val payload = result.toJson().toString()
+        if (shellReady && !isDestroyed) {
+            shellWebView.evaluateJavascript(
+                "window.LqlqAdventureUI && LqlqAdventureUI.onSpiritBeastCapture($payload);",
+                null
+            )
+        }
+        if (result.success) {
+            AlertDialog.Builder(this)
+                .setTitle("Thu phục thành công!")
+                .setMessage("${beast.icon} ${beast.name} đã gia nhập Đồ Giám Vạn Giới của bạn.\n\nĐộ hiếm: ${beast.rarity}\nHệ: ${beast.habitat}")
+                .setPositiveButton("Tuyệt vời", null)
+                .show()
+        } else {
+            AlertDialog.Builder(this)
+                .setTitle("Linh Thú đã thoát")
+                .setMessage("${beast.name} phá vỡ phong ấn và biến mất. Những lần thất bại liên tiếp sẽ tăng nhẹ cơ hội ở lần thu phục sau.")
+                .setPositiveButton("Tiếp tục hành trình", null)
+                .show()
+        }
+    }
+
+    private fun rarityColors(rarity: String): Triple<Int, Int, Int> = when (rarity) {
+        "Thần Thoại" -> Triple(Color.rgb(255, 239, 250), Color.rgb(210, 83, 180), Color.rgb(112, 34, 94))
+        "Huyền Thoại" -> Triple(Color.rgb(255, 247, 222), Color.rgb(224, 163, 46), Color.rgb(118, 73, 12))
+        "Sử Thi" -> Triple(Color.rgb(244, 235, 255), Color.rgb(143, 85, 210), Color.rgb(82, 40, 128))
+        "Hiếm" -> Triple(Color.rgb(230, 245, 255), Color.rgb(69, 147, 206), Color.rgb(31, 84, 124))
+        else -> Triple(Color.rgb(233, 250, 241), Color.rgb(72, 171, 119), Color.rgb(32, 91, 60))
+    }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     private fun registerBridgeHub() {
         BridgeHub.jsRunner = { script ->
@@ -494,9 +1347,11 @@ class MainActivity : AppCompatActivity() {
 
         ttsBridge = TtsBridge(applicationContext)
         shellBridge = ShellBridge(this)
+        adventureProfileBridge = AdventureProfileBridge(this, adventureProfileStore, dynamicLootStore)
         pageToolsBridge = PageToolsBridge(shellBridge)
         pageBridge = PageBridge { currentPageWebView() }
         shellWebView.addJavascriptInterface(shellBridge, "LqlqAndroid")
+        shellWebView.addJavascriptInterface(adventureProfileBridge, "LqlqAdventure")
         shellWebView.addJavascriptInterface(ttsBridge!!, "LqlqTtsBridge")
         shellWebView.addJavascriptInterface(pageBridge, "LqlqPageBridge")
 
@@ -528,6 +1383,7 @@ class MainActivity : AppCompatActivity() {
                 if (url.startsWith(SHELL_URL)) {
                     shellReady = true
                     notifyShellTabsChanged()
+                    dispatchAdventureProfileState(adventureProfileStore.snapshot())
                     restoreActiveTabAfterShellLoad()
                     publishNativeMediaState(nativeMediaController)
                 }
@@ -1558,6 +2414,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun showHome() {
+        hideAdventureLoot()
+        hideSpiritBeastEncounter()
+        hideDynamicLootEncounter()
         setPageVisible(false)
         if (shellReady) {
             shellWebView.evaluateJavascript(
@@ -2007,7 +2866,12 @@ $js
                     !isSearchOrAiToolHost(tabRootDomain[tabId]) &&
                     isBlockedAdHost(request.url.host)
                 ) {
-                    showBlockNoticeToast("Đã chặn quảng cáo: ${request.url.host}")
+                    val reward = if (request.isForMainFrame) {
+                        recordAdventureShieldProtection(tabId, request.url.host, "ad-host")
+                    } else null
+                    showBlockNoticeToast(
+                        withAdventureReward("Đã chặn quảng cáo: ${request.url.host}", reward)
+                    )
                     return true
                 }
 
@@ -2024,7 +2888,10 @@ $js
                     !safeHost.isNullOrEmpty() && !targetHost.isNullOrEmpty() &&
                     !isSameRootDomain(safeHost, targetHost)
                 ) {
-                    showBlockNoticeToast("Đã chặn chuyển hướng lạ: $targetHost")
+                    val reward = recordAdventureShieldProtection(tabId, targetHost, "cross-domain")
+                    showBlockNoticeToast(
+                        withAdventureReward("Đã chặn chuyển hướng lạ: $targetHost", reward)
+                    )
                     return true
                 }
                 return false
@@ -2061,9 +2928,16 @@ $js
 
                 if (blockedByList || blockedByRootDomainGuard) {
                     if (request.isForMainFrame) {
+                        val reason = if (blockedByList) "ad-host" else "cross-domain"
+                        val reward = recordAdventureShieldProtection(tabId, targetHost, reason)
                         runOnUiThread {
                             try { view.stopLoading() } catch (_: Exception) {}
-                            showBlockNoticeToast("Đã chặn quảng cáo/chuyển hướng lạ: $targetHost")
+                            showBlockNoticeToast(
+                                withAdventureReward(
+                                    "Đã chặn quảng cáo/chuyển hướng lạ: $targetHost",
+                                    reward
+                                )
+                            )
                         }
                     }
                     return WebResourceResponse(
@@ -2081,6 +2955,9 @@ $js
                 favicon: android.graphics.Bitmap?
             ) {
                 if (tabId == activeTabId) {
+                    hideAdventureLoot()
+                    hideSpiritBeastEncounter()
+                    hideDynamicLootEncounter()
                     notifyShellPage(tabId, url, view.title ?: "", loading = true)
                 }
             }
@@ -2104,6 +2981,13 @@ $js
                     injectChapterClipperInto(view)
                 }
 
+                if (tabId == activeTabId) {
+                    maybeScheduleAdventureLoot(tabId, url)
+                    val dynamicTriggered = maybeScheduleDynamicLoot(tabId, url, view.title.orEmpty())
+                    if (!dynamicTriggered) {
+                        maybeScheduleSpiritBeast(tabId, url, view.title.orEmpty())
+                    }
+                }
             }
 
             override fun doUpdateVisitedHistory(
@@ -2929,6 +3813,8 @@ $js
     }
 
     override fun onDestroy() {
+        dynamicLootFetchTask?.cancel(true)
+        dynamicLootExecutor.shutdownNow()
         releaseNativeMediaController()
         BridgeHub.jsRunner = null
         ttsBridge?.shutdown()

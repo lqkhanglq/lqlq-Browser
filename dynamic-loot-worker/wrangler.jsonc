@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "lqlq-dynamic-loot",
+  "main": "src/index.js",
+  "compatibility_date": "2026-06-01",
+  "workers_dev": true,
+  "ai": {
+    "binding": "AI"
+  },
+  "vars": {
+    "AI_ENABLED": "true",
+    "AI_RATE": "0.12",
+    "ALLOW_ORIGIN": "*",
+    "TEXT_MODEL": "@cf/meta/llama-3.1-8b-instruct-fast",
+    "IMAGE_MODEL": "@cf/black-forest-labs/flux-1-schnell"
+  }
+}
