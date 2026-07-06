@@ -212,7 +212,8 @@ async function fetchPageByTitle(language, title) {
 // bao giờ ra được.
 const ANIME_POOL_CHANCE = 0.22;
 const ANIME_POOL = [
-  "Goku", "Monkey D. Luffy", "Naruto Uzumaki", "Sasuke Uchiha", "Pikachu",
+  "Goku", "Rocks D. Xebec", "Naruto Uzumaki", "Sasuke Uchiha", "Itachi Uchiha",
+  "Kakashi Hatake", "Madara Uchiha", "Pikachu",
   "Doraemon", "Sailor Moon (character)", "Edward Elric", "Levi Ackerman",
   "Eren Yeager", "Mikasa Ackerman", "Light Yagami", "L (Death Note)",
   "Vegeta", "Roronoa Zoro", "Tanjiro Kamado", "Ichigo Kurosaki",
