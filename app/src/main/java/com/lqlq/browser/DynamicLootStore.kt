@@ -135,13 +135,19 @@ class DynamicLootStore(context: Context) {
         return true
     }
 
+    /**
+     * Chỉ số nhân vật (HP/ATK/MANA) chỉ được cộng từ những Thẻ Kỳ Vật ĐANG
+     * GẮN vào nhân vật (equippedIds) — thẻ còn nằm trong túi hành trang mà
+     * chưa gắn thì KHÔNG cộng chỉ số. Tháo thẻ ra là chỉ số giảm lại ngay.
+     */
     @Synchronized
-    fun stateJson(): JSONObject {
+    fun stateJson(equippedIds: Set<String> = emptySet()): JSONObject {
         val collection = readCollection()
         var hp = BASE_HP
         var atk = BASE_ATK
         var mana = BASE_MANA
         collection.forEach { entry ->
+            if (!equippedIds.contains(entry.item.id)) return@forEach
             val bonus = entry.item.statValue * entry.count
             when (entry.item.statType) {
                 "HP" -> hp += bonus
@@ -165,8 +171,8 @@ class DynamicLootStore(context: Context) {
     }
 
     @Synchronized
-    fun appendTo(target: JSONObject): JSONObject {
-        val state = stateJson()
+    fun appendTo(target: JSONObject, equippedIds: Set<String> = emptySet()): JSONObject {
+        val state = stateJson(equippedIds)
         val keys = state.keys()
         while (keys.hasNext()) {
             val key = keys.next()

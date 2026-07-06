@@ -283,7 +283,9 @@ class MainActivity : AppCompatActivity() {
 
     internal fun dispatchAdventureProfileState(snapshot: AdventureProfileStore.Snapshot) {
         val payloadObject = snapshot.toJson()
-        if (::dynamicLootStore.isInitialized) dynamicLootStore.appendTo(payloadObject)
+        if (::dynamicLootStore.isInitialized) {
+            dynamicLootStore.appendTo(payloadObject, snapshot.equippedCardIds.toSet())
+        }
         val payload = payloadObject.toString()
         runOnUiThread {
             if (!snapshot.exists || !snapshot.lootEnabled) {
@@ -1135,7 +1137,7 @@ class MainActivity : AppCompatActivity() {
 
         if (shellReady && !isDestroyed) {
             val payload = result.toJson().apply {
-                put("state", dynamicLootStore.appendTo(profileSnapshot.toJson()))
+                put("state", dynamicLootStore.appendTo(profileSnapshot.toJson(), profileSnapshot.equippedCardIds.toSet()))
             }.toString()
             shellWebView.evaluateJavascript(
                 "window.LqlqAdventureUI && LqlqAdventureUI.onDynamicLootCollected($payload);",

@@ -15,7 +15,7 @@ class AdventureProfileBridge(
 ) {
 
     @JavascriptInterface
-    fun getProfileState(): String = dynamicLootStore.appendTo(store.snapshot().toJson()).toString()
+    fun getProfileState(): String = appendState(store.snapshot()).toString()
 
     @JavascriptInterface
     fun createProfile(nickname: String, avatarId: String): String =
@@ -67,7 +67,7 @@ class AdventureProfileBridge(
             JSONObject().apply {
                 put("ok", false)
                 put("error", error.message ?: "Không xóa được thẻ.")
-                put("state", dynamicLootStore.appendTo(store.snapshot().toJson()))
+                put("state", appendState(store.snapshot()))
             }.toString()
         }
     }
@@ -83,13 +83,13 @@ class AdventureProfileBridge(
             activity.dispatchAdventureProfileState(snapshot)
             JSONObject().apply {
                 put("ok", true)
-                put("state", dynamicLootStore.appendTo(snapshot.toJson()))
+                put("state", appendState(snapshot))
             }.toString()
         } catch (error: Exception) {
             JSONObject().apply {
                 put("ok", false)
                 put("error", error.message ?: "Không mở được ô hành trang.")
-                put("state", dynamicLootStore.appendTo(store.snapshot().toJson()))
+                put("state", appendState(store.snapshot()))
             }.toString()
         }
     }
@@ -116,7 +116,7 @@ class AdventureProfileBridge(
             JSONObject().apply {
                 put("ok", false)
                 put("error", error.message ?: "Không đặt được ngoại hình nhân vật.")
-                put("state", dynamicLootStore.appendTo(store.snapshot().toJson()))
+                put("state", appendState(store.snapshot()))
             }.toString()
         }
     }
@@ -129,16 +129,20 @@ class AdventureProfileBridge(
             activity.dispatchAdventureProfileState(snapshot)
             JSONObject().apply {
                 put("ok", true)
-                put("state", dynamicLootStore.appendTo(snapshot.toJson()))
+                put("state", appendState(snapshot))
             }.toString()
         } catch (error: Exception) {
             JSONObject().apply {
                 put("ok", false)
                 put("error", error.message ?: "Không cập nhật được Kỳ Vật động.")
-                put("state", dynamicLootStore.appendTo(store.snapshot().toJson()))
+                put("state", appendState(store.snapshot()))
             }.toString()
         }
     }
+
+    /** Chỉ số nhân vật (HP/ATK/MANA) chỉ tính từ các Thẻ Kỳ Vật đang GẮN vào nhân vật. */
+    private fun appendState(snapshot: AdventureProfileStore.Snapshot): JSONObject =
+        dynamicLootStore.appendTo(snapshot.toJson(), snapshot.equippedCardIds.toSet())
 
     private fun mutate(block: () -> AdventureProfileStore.Snapshot): String {
         return try {
@@ -146,13 +150,13 @@ class AdventureProfileBridge(
             activity.dispatchAdventureProfileState(snapshot)
             JSONObject().apply {
                 put("ok", true)
-                put("state", dynamicLootStore.appendTo(snapshot.toJson()))
+                put("state", appendState(snapshot))
             }.toString()
         } catch (error: Exception) {
             JSONObject().apply {
                 put("ok", false)
                 put("error", error.message ?: "Không cập nhật được Hồ sơ Phiêu lưu.")
-                put("state", dynamicLootStore.appendTo(store.snapshot().toJson()))
+                put("state", appendState(store.snapshot()))
             }.toString()
         }
     }
