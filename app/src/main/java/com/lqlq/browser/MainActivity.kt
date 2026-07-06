@@ -836,8 +836,8 @@ class MainActivity : AppCompatActivity() {
         val x = if (maxX > minX) Random.nextInt(minX, maxX + 1) else minX
         val y = if (maxY > minY) Random.nextInt(minY, maxY + 1) else minY
         (adventureLootIcon.layoutParams as FrameLayout.LayoutParams).apply {
-            width = size
-            height = size
+            this.width = size
+            this.height = size
             leftMargin = x
             topMargin = y
         }.also { adventureLootIcon.layoutParams = it }
