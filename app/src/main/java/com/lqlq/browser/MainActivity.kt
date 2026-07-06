@@ -27,7 +27,6 @@ import android.print.PrintAttributes
 import android.print.PrintManager
 import android.util.Rational
 import android.view.Gravity
-import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
@@ -387,9 +386,11 @@ class MainActivity : AppCompatActivity() {
     private var customView: View? = null
     private var customViewCallback: WebChromeClient.CustomViewCallback? = null
     private var fullscreenControlsOverlay: FrameLayout? = null
+    private var fullscreenRotateBtn: TextView? = null
+    private var fullscreenLockBtn: TextView? = null
     private var fullscreenLockOverlay: View? = null
     private var fullscreenLocked = false
-    private var fullscreenUnlockRunnable: Runnable? = null
+    private var fullscreenHideRunnable: Runnable? = null
     private val fullscreenHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -2695,6 +2696,13 @@ $js
 
     private fun fullscreenDp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
+    /**
+     * Vùng góc trên-phải: luôn tồn tại suốt phiên fullscreen (không gỡ ra),
+     * chỉ ẩn/hiện 2 nút xoay + khoá bên trong. Nhờ vậy chạm vào đúng vùng
+     * này khi nút đang ẩn sẽ tự hiện lại — không cần một lớp phủ toàn màn
+     * hình nào khác, nên không đụng tới thao tác chạm/tua của video bên
+     * dưới (chỉ đúng góc nhỏ 130x70dp mới bắt chạm).
+     */
     private fun addFullscreenControls() {
         fullscreenLocked = false
 
@@ -2712,6 +2720,7 @@ $js
                 } else {
                     android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
                 }
+                scheduleFullscreenControlsAutoHide()
             }
         }
 
@@ -2721,10 +2730,15 @@ $js
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
             setBackgroundColor(Color.argb(140, 0, 0, 0))
-            setOnClickListener { setFullscreenLocked(true) }
+            setOnClickListener { setFullscreenLocked(!fullscreenLocked) }
         }
 
-        val overlay = FrameLayout(this).apply {
+        fullscreenRotateBtn = rotateBtn
+        fullscreenLockBtn = lockBtn
+
+        val cornerZone = FrameLayout(this).apply {
+            isClickable = true
+            setOnClickListener { showFullscreenControls() }
             addView(
                 rotateBtn,
                 FrameLayout.LayoutParams(fullscreenDp(44), fullscreenDp(44)).apply {
@@ -2743,69 +2757,82 @@ $js
             )
         }
 
-        fullscreenControlsOverlay = overlay
+        fullscreenControlsOverlay = cornerZone
         root.addView(
-            overlay,
-            FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-            )
+            cornerZone,
+            FrameLayout.LayoutParams(fullscreenDp(130), fullscreenDp(70)).apply {
+                gravity = Gravity.TOP or Gravity.END
+            }
         )
+
+        showFullscreenControls()
     }
 
     private fun removeFullscreenControls() {
+        fullscreenHideRunnable?.let { fullscreenHandler.removeCallbacks(it) }
+        fullscreenHideRunnable = null
         setFullscreenLocked(false)
         fullscreenControlsOverlay?.let { root.removeView(it) }
         fullscreenControlsOverlay = null
+        fullscreenRotateBtn = null
+        fullscreenLockBtn = null
+    }
+
+    /** Hiện nút xoay/khoá rồi tự ẩn sau vài giây, giống mọi trình phát video. */
+    private fun showFullscreenControls() {
+        fullscreenLockBtn?.visibility = View.VISIBLE
+        fullscreenRotateBtn?.visibility = if (fullscreenLocked) View.GONE else View.VISIBLE
+        scheduleFullscreenControlsAutoHide()
+    }
+
+    private fun scheduleFullscreenControlsAutoHide() {
+        fullscreenHideRunnable?.let { fullscreenHandler.removeCallbacks(it) }
+        // Khi đã khoá màn hình, giữ nút khoá hiện luôn để còn chỗ bấm mở lại.
+        if (fullscreenLocked) return
+        val runnable = Runnable {
+            fullscreenRotateBtn?.visibility = View.GONE
+            fullscreenLockBtn?.visibility = View.GONE
+        }
+        fullscreenHideRunnable = runnable
+        fullscreenHandler.postDelayed(runnable, 2500)
     }
 
     /**
-     * "Khoá màn hình" trong lúc xem video toàn màn hình: chặn mọi thao tác
-     * chạm (tránh bấm nhầm khi để trong túi/trẻ con nghịch), giữ 1,2 giây lên
-     * dòng chữ để mở khoá lại — cùng cách "giữ để mở khóa" đã dùng ở panel
-     * Nhạc và video nền, chỉ khác là cài đặt bằng View native thay vì HTML.
+     * Khoá màn hình (v0.28.1): chỉ 1 chạm để khoá, chạm lại đúng nút đó để
+     * mở — bỏ hẳn kiểu "giữ để mở khoá" rườm rà trước đây. Khi khoá, một lớp
+     * phủ trong suốt chặn toàn bộ thao tác lên video; nút khoá vẫn nổi trên
+     * lớp đó nên luôn bấm mở lại được.
      */
     private fun setFullscreenLocked(locked: Boolean) {
         fullscreenLocked = locked
-        fullscreenUnlockRunnable?.let { fullscreenHandler.removeCallbacks(it) }
-        fullscreenUnlockRunnable = null
-
         fullscreenLockOverlay?.let { root.removeView(it) }
         fullscreenLockOverlay = null
+        fullscreenRotateBtn?.visibility = if (locked) View.GONE else View.VISIBLE
 
-        if (!locked) return
-
-        val hint = TextView(this).apply {
-            text = "Đang khoá màn hình · Giữ để mở khoá"
-            textSize = 15f
-            gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.argb(90, 0, 0, 0))
-            setOnTouchListener { _, event ->
-                when (event.action) {
-                    MotionEvent.ACTION_DOWN -> {
-                        text = "Đang giữ..."
-                        val runnable = Runnable { setFullscreenLocked(false) }
-                        fullscreenUnlockRunnable = runnable
-                        fullscreenHandler.postDelayed(runnable, 1200)
-                    }
-                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                        fullscreenUnlockRunnable?.let { fullscreenHandler.removeCallbacks(it) }
-                        fullscreenUnlockRunnable = null
-                        text = "Đang khoá màn hình · Giữ để mở khoá"
-                    }
-                }
-                true
-            }
+        if (!locked) {
+            scheduleFullscreenControlsAutoHide()
+            return
         }
-        fullscreenLockOverlay = hint
-        root.addView(
-            hint,
-            FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
+
+        fullscreenHideRunnable?.let { fullscreenHandler.removeCallbacks(it) }
+        val blocker = View(this).apply {
+            setBackgroundColor(Color.TRANSPARENT)
+            isClickable = true
+        }
+        fullscreenLockOverlay = blocker
+        // Thêm NGAY SAU customView nhưng TRƯỚC vùng nút góc — vùng nút vẫn ở
+        // trên cùng nên nút khoá luôn bấm được để mở lại.
+        val index = fullscreenControlsOverlay?.let { root.indexOfChild(it) } ?: -1
+        if (index >= 0) {
+            root.addView(
+                blocker,
+                index,
+                FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
             )
-        )
+        }
     }
 
     // ------------------------------------------------------------------
