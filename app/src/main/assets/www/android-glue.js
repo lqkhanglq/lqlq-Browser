@@ -162,16 +162,23 @@
   // ==================================================================
 
   function currentMode() {
-    try { return store.mode === "private" ? "private" : "normal"; }
-    catch { return "normal"; }
+    try {
+      return store.mode === "private" || store.mode === "incognito"
+        ? store.mode
+        : "normal";
+    } catch {
+      return "normal";
+    }
   }
 
   function applyNativeTabState(rawState) {
     safeCall(() => {
       const state = typeof rawState === "string" ? JSON.parse(rawState) : rawState;
       if (!state || !Array.isArray(state.tabs)) return;
-      const mode = state.mode === "private" ? "private" : "normal";
-      const profile = mode === "private" ? store.private : store.normal;
+      const mode = state.mode === "private" || state.mode === "incognito"
+        ? state.mode
+        : "normal";
+      const profile = store[mode];
       profile.tabs = state.tabs.map(tab => ({
         id: String(tab.id),
         title: String(tab.title || "Thẻ mới"),
@@ -234,15 +241,21 @@
     safeCall(() => native.closeTab(String(id), currentMode()));
   };
 
-  // Chế độ riêng tư dùng một phiên tab native riêng và không được lưu qua lần
-  // mở app sau. Bọc hàm ẩn hiện có để báo mode cho Android ngay khi đổi.
-  const origSubmitHiddenSearch = window.submitHiddenSearch;
-  if (typeof origSubmitHiddenSearch === "function") {
-    window.submitHiddenSearch = function () {
-      const before = currentMode();
-      origSubmitHiddenSearch();
-      const after = currentMode();
-      if (before !== after) safeCall(() => native.setTabMode(after));
+  // Chế độ riêng tư/ẩn danh mỗi cái dùng một phiên tab native riêng. Thay vì
+  // bọc từng hàm chuyển mode riêng lẻ (enterPrivateMode/enterIncognito/
+  // exitIncognito/nút "Quay lại chế độ thường"...), bọc render() — hàm DUY
+  // NHẤT luôn được gọi lại ngay sau mọi lần đổi store.mode — và so sánh mode
+  // hiện tại với lần trước để báo cho Android biết ngay khi đổi.
+  let lastKnownMode = currentMode();
+  const origRender = window.render;
+  if (typeof origRender === "function") {
+    window.render = function () {
+      origRender();
+      const mode = currentMode();
+      if (mode !== lastKnownMode) {
+        lastKnownMode = mode;
+        safeCall(() => native.setTabMode(mode));
+      }
     };
   }
 
@@ -252,7 +265,7 @@
   // ==================================================================
 
   const OVERLAYS = [
-    { id: "searchModal", kind: "hidden", closeBtn: null },
+    { id: "privateModal", kind: "hidden", closeBtn: null },
     { id: "warpModal", kind: "hidden", closeBtn: "closeWarpModal" },
     { id: "videoPanel", kind: "hidden", closeBtn: "closeVideoPanel" },
     { id: "mediaCenterOverlay", kind: "hidden", closeBtn: "mediaClosePanelBtn" },
@@ -280,8 +293,8 @@
       const btn = $(spec.closeBtn);
       if (btn) { btn.click(); return; }
     }
-    if (spec.id === "searchModal" && typeof window.closeSearchModal === "function") {
-      window.closeSearchModal();
+    if (spec.id === "privateModal" && typeof window.closePrivateModal === "function") {
+      window.closePrivateModal();
       return;
     }
     if (spec.kind === "open") el.classList.remove("open");

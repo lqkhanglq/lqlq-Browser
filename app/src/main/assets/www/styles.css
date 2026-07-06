@@ -502,6 +502,87 @@ h1 {
   box-shadow: 0 0 0 3px rgba(139, 106, 223, .16);
 }
 
+/* Chế độ ẩn danh (v0.28): tông xám đậm gợi nhắc Chrome Incognito. */
+.incognito-context .top-shell,
+.incognito-context .toolbar {
+  background: #2b2b2e;
+}
+
+.incognito-context .icon-btn {
+  color: #f1f1f2;
+}
+
+.incognito-context .icon-btn:hover {
+  background: rgba(255, 255, 255, .12);
+}
+
+.incognito-context .tab {
+  background: #3c3c40;
+  color: #f1f1f2;
+}
+
+.incognito-context .tab.active {
+  background: #f5f5f6;
+  color: #1f1f21;
+}
+
+.incognito-context .address-wrap {
+  background: #f5f5f6;
+}
+
+.incognito-context .browser-stage {
+  background: linear-gradient(135deg, #1a1a1c, #313134);
+}
+
+.incognito-context .page-card {
+  background: #fbfbfb;
+  border-color: #b3b3b6;
+}
+
+.incognito-context .shield-dot {
+  background: #6b6b70;
+  box-shadow: 0 0 0 3px rgba(107, 107, 112, .16);
+}
+
+/* Modal mật khẩu "Chức năng riêng tư" (v0.28). */
+.password-field-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.password-field-row input {
+  flex: 1;
+}
+
+.password-eye-btn {
+  border: 1px solid #d9e0e8;
+  background: #f7f9fc;
+  border-radius: 8px;
+  width: 40px;
+  height: 40px;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.modal-note {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: #5f6368;
+}
+
+.link-button {
+  border: none;
+  background: none;
+  color: #285ca6;
+  font-size: 13px;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 8px 0 0;
+  text-align: left;
+}
+
 @media (max-width: 760px) {
   .browser-stage {
     padding: 16px;

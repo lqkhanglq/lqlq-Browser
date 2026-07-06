@@ -255,10 +255,13 @@
         <span class="menu-copy"><b>Thẻ mới</b><small>Mở trang mới</small></span>
         <kbd>Ctrl+T</kbd>
       </button>
-      <button data-action="new-window">
-        <span class="menu-icon">▣</span>
-        <span class="menu-copy"><b>Cửa sổ mới</b><small>Tạo phiên duyệt khác</small></span>
-        <kbd>Ctrl+N</kbd>
+      <button data-action="private-mode" id="privateModeMenuBtn">
+        <span class="menu-icon">🔒</span>
+        <span class="menu-copy"><b>Chức năng riêng tư</b><small>Có mật khẩu, lưu trữ độc lập</small></span>
+      </button>
+      <button data-action="incognito-mode" id="incognitoModeMenuBtn">
+        <span class="menu-icon">🕶</span>
+        <span class="menu-copy"><b>Chế độ ẩn danh</b><small>Không lưu lại sau khi thoát</small></span>
       </button>
 
       <div class="menu-section-label">Dữ liệu và nội dung</div>
@@ -442,10 +445,6 @@
         <span class="menu-icon warp">1</span>
         <span class="menu-copy"><b>1.1.1.1 / WARP</b><small>Mở kết nối riêng tư Cloudflare</small></span>
         <span class="menu-chevron">›</span>
-      </button>
-      <button data-action="advanced-search">
-        <span class="menu-icon">⌕</span>
-        <span class="menu-copy"><b>Tìm kiếm nâng cao</b><small>Công cụ tìm kiếm bổ sung</small></span>
       </button>
     </div>
 
@@ -1697,20 +1696,39 @@
       </footer>
     </aside>
 
-    <div class="modal-backdrop hidden" id="searchModal">
+    <div class="modal-backdrop hidden" id="privateModal">
       <div class="modal compact-modal">
-        <h2>Chức năng tìm kiếm</h2>
-        <input
-          id="searchInput"
-          type="text"
-          placeholder="Nhập nội dung tìm kiếm"
-          autocomplete="off"
-          spellcheck="false"
-        />
-        <p class="error hidden" id="searchError">Không tìm thấy nội dung tìm kiếm.</p>
+        <h2 id="privateModalTitle">Nhập mật khẩu</h2>
+        <p class="modal-note" id="privateModalNote"></p>
+
+        <div class="password-field-row">
+          <input
+            id="privatePasswordInput"
+            type="password"
+            placeholder="Mật khẩu"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button type="button" class="password-eye-btn" id="privatePasswordEyeBtn" aria-label="Hiện/ẩn mật khẩu">👁</button>
+        </div>
+
+        <div class="password-field-row hidden" id="privateConfirmRow">
+          <input
+            id="privatePasswordConfirmInput"
+            type="password"
+            placeholder="Nhập lại mật khẩu"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button type="button" class="password-eye-btn" id="privatePasswordConfirmEyeBtn" aria-label="Hiện/ẩn mật khẩu">👁</button>
+        </div>
+
+        <p class="error hidden" id="privateModalError"></p>
+        <button type="button" class="link-button hidden" id="privateForgotBtn">Quên mật khẩu?</button>
+
         <div class="modal-actions">
-          <button id="cancelSearch">Hủy</button>
-          <button class="primary" id="submitSearch">Tìm kiếm</button>
+          <button id="privateModalCancel">Hủy</button>
+          <button class="primary" id="privateModalSubmit">Mở khoá</button>
         </div>
       </div>
     </div>

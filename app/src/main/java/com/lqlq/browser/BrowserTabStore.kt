@@ -24,15 +24,18 @@ class BrowserTabStore(context: Context) {
     companion object {
         const val MODE_NORMAL = "normal"
         const val MODE_PRIVATE = "private"
+        const val MODE_INCOGNITO = "incognito"
 
         private const val PREFS_NAME = "lqlq_native_tabs"
         private const val KEY_NORMAL_SESSION = "normal_session_v1"
+        private const val KEY_PRIVATE_SESSION = "private_session_v1"
     }
 
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val tabsByMode = linkedMapOf(
         MODE_NORMAL to mutableListOf<BrowserTab>(),
-        MODE_PRIVATE to mutableListOf()
+        MODE_PRIVATE to mutableListOf(),
+        MODE_INCOGNITO to mutableListOf()
     )
     private val activeIds = mutableMapOf<String, String>()
 
@@ -40,9 +43,11 @@ class BrowserTabStore(context: Context) {
         private set
 
     init {
-        restoreNormalSession()
+        restoreSession(MODE_NORMAL, KEY_NORMAL_SESSION)
+        restoreSession(MODE_PRIVATE, KEY_PRIVATE_SESSION)
         ensureModeHasTab(MODE_NORMAL)
         ensureModeHasTab(MODE_PRIVATE)
+        ensureModeHasTab(MODE_INCOGNITO)
     }
 
     @Synchronized
@@ -224,12 +229,12 @@ class BrowserTabStore(context: Context) {
         }.toString()
     }
 
-    private fun restoreNormalSession() {
-        val raw = prefs.getString(KEY_NORMAL_SESSION, null) ?: return
+    private fun restoreSession(mode: String, key: String) {
+        val raw = prefs.getString(key, null) ?: return
         try {
             val root = JSONObject(raw)
             val array = root.optJSONArray("tabs") ?: JSONArray()
-            val restored = tabsByMode.getValue(MODE_NORMAL)
+            val restored = tabsByMode.getValue(mode)
             for (index in 0 until array.length()) {
                 val item = array.optJSONObject(index) ?: continue
                 val id = item.optString("id").ifBlank { UUID.randomUUID().toString() }
@@ -244,21 +249,31 @@ class BrowserTabStore(context: Context) {
                 )
             }
             val requestedActive = root.optString("activeTabId")
-            activeIds[MODE_NORMAL] = restored.firstOrNull { it.id == requestedActive }?.id
+            activeIds[mode] = restored.firstOrNull { it.id == requestedActive }?.id
                 ?: restored.firstOrNull()?.id.orEmpty()
         } catch (_: Exception) {
-            prefs.edit().remove(KEY_NORMAL_SESSION).apply()
-            tabsByMode.getValue(MODE_NORMAL).clear()
-            activeIds.remove(MODE_NORMAL)
+            prefs.edit().remove(key).apply()
+            tabsByMode.getValue(mode).clear()
+            activeIds.remove(mode)
         }
     }
 
+    /**
+     * "Chức năng riêng tư" (MODE_PRIVATE) được ghi xuống đĩa giống hệt
+     * MODE_NORMAL — đây là hồ sơ có mật khẩu, cần sống sót qua các lần mở
+     * app. MODE_INCOGNITO KHÔNG được ghi gì cả — chỉ sống trong RAM, mất khi
+     * process bị hủy, đúng hành vi ẩn danh kiểu Chrome.
+     */
     private fun persistIfNeeded(mode: String) {
-        if (mode != MODE_NORMAL) return
+        val key = when (mode) {
+            MODE_NORMAL -> KEY_NORMAL_SESSION
+            MODE_PRIVATE -> KEY_PRIVATE_SESSION
+            else -> return
+        }
         val json = JSONObject().apply {
-            put("activeTabId", activeIds[MODE_NORMAL])
+            put("activeTabId", activeIds[mode])
             put("tabs", JSONArray().apply {
-                tabsByMode.getValue(MODE_NORMAL).forEach { tab ->
+                tabsByMode.getValue(mode).forEach { tab ->
                     put(JSONObject().apply {
                         put("id", tab.id)
                         put("title", tab.title)
@@ -268,7 +283,7 @@ class BrowserTabStore(context: Context) {
                 }
             })
         }
-        prefs.edit().putString(KEY_NORMAL_SESSION, json.toString()).apply()
+        prefs.edit().putString(key, json.toString()).apply()
     }
 
     private fun ensureModeHasTab(mode: String) {
@@ -292,8 +307,11 @@ class BrowserTabStore(context: Context) {
     private fun listFor(mode: String): MutableList<BrowserTab> =
         tabsByMode.getValue(normalizeMode(mode))
 
-    private fun normalizeMode(mode: String): String =
-        if (mode == MODE_PRIVATE) MODE_PRIVATE else MODE_NORMAL
+    private fun normalizeMode(mode: String): String = when (mode) {
+        MODE_PRIVATE -> MODE_PRIVATE
+        MODE_INCOGNITO -> MODE_INCOGNITO
+        else -> MODE_NORMAL
+    }
 
     private fun newBlankTab() = BrowserTab(
         id = UUID.randomUUID().toString(),

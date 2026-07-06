@@ -1,5 +1,6 @@
-const ACCESS_TEXT = "Iqlq";
 const STORAGE_KEY = "shieldBrowserPrototypeStateV2";
+const PRIVATE_PASSWORD_HASH_KEY = "lqlqPrivatePasswordHashV1";
+const PRIVATE_PASSWORD_SALT_KEY = "lqlqPrivatePasswordSaltV1";
 const NATIVE_TAB_STORE = Boolean(window.LqlqAndroid && window.LqlqAndroid.getTabState);
 
 function uid() {
@@ -32,6 +33,17 @@ const store = {
     bookmarks: [],
     downloads: []
   },
+  // Chế độ ẩn danh (v0.28): KHÔNG BAO GIỜ được ghi vào saveState() — xem
+  // saveState() bên dưới. Luôn khởi tạo trống mỗi lần shell nạp (loadState()),
+  // và bị native reset về trống mỗi lần vào/thoát (xem enterIncognito()/
+  // exitIncognito()), giống hệt cách Chrome xoá phiên ẩn danh.
+  incognito: {
+    tabs: [blankTab("Thẻ mới")],
+    activeTabId: null,
+    history: [],
+    bookmarks: [],
+    downloads: []
+  },
   mode: "normal",
   zoom: 100
 };
@@ -52,11 +64,20 @@ const els = {
   pageUrl: document.getElementById("pageUrl"),
   fakeSearch: document.getElementById("fakeSearch"),
   fakeSearchBtn: document.getElementById("fakeSearchBtn"),
-  searchModal: document.getElementById("searchModal"),
-  searchInput: document.getElementById("searchInput"),
-  searchError: document.getElementById("searchError"),
-  cancelSearch: document.getElementById("cancelSearch"),
-  submitSearch: document.getElementById("submitSearch"),
+  privateModeMenuBtn: document.getElementById("privateModeMenuBtn"),
+  incognitoModeMenuBtn: document.getElementById("incognitoModeMenuBtn"),
+  privateModal: document.getElementById("privateModal"),
+  privateModalTitle: document.getElementById("privateModalTitle"),
+  privateModalNote: document.getElementById("privateModalNote"),
+  privatePasswordInput: document.getElementById("privatePasswordInput"),
+  privatePasswordEyeBtn: document.getElementById("privatePasswordEyeBtn"),
+  privateConfirmRow: document.getElementById("privateConfirmRow"),
+  privatePasswordConfirmInput: document.getElementById("privatePasswordConfirmInput"),
+  privatePasswordConfirmEyeBtn: document.getElementById("privatePasswordConfirmEyeBtn"),
+  privateModalError: document.getElementById("privateModalError"),
+  privateForgotBtn: document.getElementById("privateForgotBtn"),
+  privateModalCancel: document.getElementById("privateModalCancel"),
+  privateModalSubmit: document.getElementById("privateModalSubmit"),
   drawer: document.getElementById("sideDrawer"),
   drawerTitle: document.getElementById("drawerTitle"),
   drawerContent: document.getElementById("drawerContent"),
@@ -308,6 +329,7 @@ function renderPage() {
 
   // Không hiển thị chữ hoặc nhãn mô tả vùng riêng.
   els.app.classList.toggle("private-context", store.mode === "private");
+  els.app.classList.toggle("incognito-context", store.mode === "incognito");
 
   // Việc 2 (v0.23.4): chưa có trang thật nào mở (thẻ trống) và không có
   // native page đang hiển thị phía dưới → focus sẵn ô địa chỉ để gõ ngay.
@@ -317,9 +339,36 @@ function renderPage() {
   }
 }
 
+function renderModeMenuLabels() {
+  if (els.privateModeMenuBtn) {
+    const label = els.privateModeMenuBtn.querySelector("b");
+    const desc = els.privateModeMenuBtn.querySelector("small");
+    if (store.mode === "private") {
+      label.textContent = "Quay lại chế độ thường";
+      desc.textContent = "Thoát khỏi chức năng riêng tư";
+    } else {
+      label.textContent = "Chức năng riêng tư";
+      desc.textContent = "Có mật khẩu, lưu trữ độc lập";
+    }
+  }
+
+  if (els.incognitoModeMenuBtn) {
+    const label = els.incognitoModeMenuBtn.querySelector("b");
+    const desc = els.incognitoModeMenuBtn.querySelector("small");
+    if (store.mode === "incognito") {
+      label.textContent = "Thoát chế độ ẩn danh";
+      desc.textContent = "Quay lại chế độ thường";
+    } else {
+      label.textContent = "Chế độ ẩn danh";
+      desc.textContent = "Không lưu lại sau khi thoát";
+    }
+  }
+}
+
 function render() {
   renderTabs();
   renderPage();
+  renderModeMenuLabels();
 
   if (els.androidAdblockBadge) {
     const android = /Android/i.test(navigator.userAgent || "");
@@ -329,34 +378,193 @@ function render() {
   }
 }
 
-function openSearchModal() {
+// ======================================================================
+// Chức năng riêng tư (v0.28): mật khẩu do người dùng tự đặt, không còn là
+// chuỗi cứng giấu trong một modal "tìm kiếm" giả. Băm bằng SHA-256 (Web
+// Crypto, có sẵn vì shell chạy trên origin https://appassets... — secure
+// context) + salt ngẫu nhiên, lưu localStorage. Không thêm thư viện Android
+// mới (androidx.security/biometric) để tránh rủi ro lệch compileSdk như
+// media3 từng gặp — mức bảo mật này đủ dùng cho việc "giấu tab khỏi người
+// mượn máy xem", không phải chống điều tra pháp y.
+// ======================================================================
+
+let privateModalMode = "unlock"; // "setup" | "unlock"
+
+function bytesToHex(bytes) {
+  return Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("");
+}
+
+function randomSaltHex() {
+  const bytes = new Uint8Array(16);
+  window.crypto.getRandomValues(bytes);
+  return bytesToHex(bytes);
+}
+
+async function hashPassword(password, saltHex) {
+  const data = new TextEncoder().encode(`${saltHex}:${password}`);
+  const digest = await window.crypto.subtle.digest("SHA-256", data);
+  return bytesToHex(new Uint8Array(digest));
+}
+
+function hasPrivatePassword() {
+  return Boolean(localStorage.getItem(PRIVATE_PASSWORD_HASH_KEY));
+}
+
+function setPasswordEyeState(input, btn, visible) {
+  input.type = visible ? "text" : "password";
+  btn.textContent = visible ? "🙈" : "👁";
+}
+
+function openPrivateModal() {
   closeMenus();
-  els.searchModal.classList.remove("hidden");
-  els.searchInput.value = "";
-  els.searchError.classList.add("hidden");
-  setTimeout(() => els.searchInput.focus(), 50);
+  privateModalMode = hasPrivatePassword() ? "unlock" : "setup";
+
+  els.privatePasswordInput.value = "";
+  els.privatePasswordConfirmInput.value = "";
+  els.privateModalError.classList.add("hidden");
+  els.privateModalError.textContent = "";
+  setPasswordEyeState(els.privatePasswordInput, els.privatePasswordEyeBtn, false);
+  setPasswordEyeState(els.privatePasswordConfirmInput, els.privatePasswordConfirmEyeBtn, false);
+
+  if (privateModalMode === "setup") {
+    els.privateModalTitle.textContent = "Thiết lập mật khẩu chức năng riêng tư";
+    els.privateModalNote.textContent = "Mật khẩu này sẽ được dùng cho mọi lần mở chức năng riêng tư sau này.";
+    els.privatePasswordInput.placeholder = "Mật khẩu mới";
+    els.privateConfirmRow.classList.remove("hidden");
+    els.privateForgotBtn.classList.add("hidden");
+    els.privateModalSubmit.textContent = "Tạo mật khẩu";
+  } else {
+    els.privateModalTitle.textContent = "Nhập mật khẩu";
+    els.privateModalNote.textContent = "";
+    els.privatePasswordInput.placeholder = "Mật khẩu";
+    els.privateConfirmRow.classList.add("hidden");
+    els.privateForgotBtn.classList.remove("hidden");
+    els.privateModalSubmit.textContent = "Mở khoá";
+  }
+
+  els.privateModal.classList.remove("hidden");
+  setTimeout(() => els.privatePasswordInput.focus(), 50);
 }
 
-function closeSearchModal() {
-  els.searchModal.classList.add("hidden");
-  els.searchInput.value = "";
-  els.searchError.classList.add("hidden");
+function closePrivateModal() {
+  els.privateModal.classList.add("hidden");
+  els.privatePasswordInput.value = "";
+  els.privatePasswordConfirmInput.value = "";
+  els.privateModalError.classList.add("hidden");
 }
 
-function submitHiddenSearch() {
-  const query = els.searchInput.value;
+function showPrivateModalError(message) {
+  els.privateModalError.textContent = message;
+  els.privateModalError.classList.remove("hidden");
+}
 
-  if (query !== ACCESS_TEXT) {
-    els.searchError.classList.remove("hidden");
-    els.searchInput.value = "";
-    els.searchInput.focus();
+function enterPrivateMode() {
+  store.mode = "private";
+  saveState();
+  closePrivateModal();
+  render();
+}
+
+async function submitPrivateModal() {
+  const password = els.privatePasswordInput.value;
+
+  if (privateModalMode === "setup") {
+    const confirmPassword = els.privatePasswordConfirmInput.value;
+    if (!password || password.length < 4) {
+      showPrivateModalError("Mật khẩu phải có ít nhất 4 ký tự.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      showPrivateModalError("Hai mật khẩu bạn nhập không khớp nhau.");
+      els.privatePasswordConfirmInput.value = "";
+      els.privatePasswordConfirmInput.focus();
+      return;
+    }
+
+    const salt = randomSaltHex();
+    const hash = await hashPassword(password, salt);
+    localStorage.setItem(PRIVATE_PASSWORD_SALT_KEY, salt);
+    localStorage.setItem(PRIVATE_PASSWORD_HASH_KEY, hash);
+    enterPrivateMode();
     return;
   }
 
-  closeSearchModal();
+  const salt = localStorage.getItem(PRIVATE_PASSWORD_SALT_KEY) || "";
+  const storedHash = localStorage.getItem(PRIVATE_PASSWORD_HASH_KEY) || "";
+  const enteredHash = await hashPassword(password, salt);
 
-  // Cùng một thao tác dùng để vào hoặc trở về, không hiện thông báo tiết lộ.
-  store.mode = store.mode === "normal" ? "private" : "normal";
+  if (enteredHash !== storedHash) {
+    showPrivateModalError("Sai mật khẩu.");
+    els.privatePasswordInput.value = "";
+    els.privatePasswordInput.focus();
+    return;
+  }
+
+  enterPrivateMode();
+}
+
+function forgotPrivatePassword() {
+  const ok = confirm(
+    "Xoá toàn bộ thẻ, lịch sử và trang đã lưu của Chức năng riêng tư cũ, rồi đặt mật khẩu mới? Không thể khôi phục dữ liệu cũ."
+  );
+  if (!ok) return;
+
+  try {
+    window.LqlqAndroid?.closeAllTabs?.("private");
+  } catch (error) {
+    console.warn("lqlq private reset:", error);
+  }
+
+  store.private.tabs = [blankTab("Thẻ mới")];
+  store.private.activeTabId = store.private.tabs[0].id;
+  store.private.history = [];
+  store.private.bookmarks = [];
+  store.private.downloads = [];
+  saveState();
+
+  localStorage.removeItem(PRIVATE_PASSWORD_HASH_KEY);
+  localStorage.removeItem(PRIVATE_PASSWORD_SALT_KEY);
+
+  openPrivateModal();
+}
+
+// ======================================================================
+// Chế độ ẩn danh (v0.28): không mật khẩu, không lưu trữ — mỗi lần vào đều
+// trống, giống Chrome Incognito. store.incognito không bao giờ nằm trong
+// saveState()/loadState(), và native cũng không ghi SharedPreferences cho
+// mode "incognito" (xem BrowserTabStore.persistIfNeeded()).
+// ======================================================================
+
+function resetIncognitoProfile() {
+  store.incognito.tabs = [blankTab("Thẻ mới")];
+  store.incognito.activeTabId = store.incognito.tabs[0].id;
+  store.incognito.history = [];
+  store.incognito.bookmarks = [];
+  store.incognito.downloads = [];
+}
+
+function enterIncognito() {
+  closeMenus();
+  try {
+    window.LqlqAndroid?.closeAllTabs?.("incognito");
+  } catch (error) {
+    console.warn("lqlq incognito enter:", error);
+  }
+  resetIncognitoProfile();
+  store.mode = "incognito";
+  saveState();
+  render();
+}
+
+function exitIncognito() {
+  closeMenus();
+  try {
+    window.LqlqAndroid?.closeAllTabs?.("incognito");
+  } catch (error) {
+    console.warn("lqlq incognito exit:", error);
+  }
+  resetIncognitoProfile();
+  store.mode = "normal";
   saveState();
   render();
 }
@@ -722,9 +930,27 @@ function closeMenus() {
 function handleAction(action) {
   switch (action) {
     case "new-tab":
-    case "new-window":
       closeMenus();
       newTab();
+      break;
+
+    case "private-mode":
+      closeMenus();
+      if (store.mode === "private") {
+        store.mode = "normal";
+        saveState();
+        render();
+      } else {
+        openPrivateModal();
+      }
+      break;
+
+    case "incognito-mode":
+      if (store.mode === "incognito") {
+        exitIncognito();
+      } else {
+        enterIncognito();
+      }
       break;
 
     case "history":
@@ -817,10 +1043,6 @@ function handleAction(action) {
 
     case "warp-tools":
       openWarpModal();
-      break;
-
-    case "advanced-search":
-      openSearchModal();
       break;
 
     case "exit":
@@ -1839,14 +2061,27 @@ document.addEventListener("click", event => {
   }
 });
 
-els.cancelSearch.addEventListener("click", closeSearchModal);
-els.submitSearch.addEventListener("click", submitHiddenSearch);
-els.searchInput.addEventListener("keydown", event => {
-  if (event.key === "Enter") submitHiddenSearch();
+els.privateModalCancel.addEventListener("click", closePrivateModal);
+els.privateModalSubmit.addEventListener("click", () => submitPrivateModal());
+els.privatePasswordInput.addEventListener("keydown", event => {
+  if (event.key === "Enter") submitPrivateModal();
+});
+els.privatePasswordConfirmInput.addEventListener("keydown", event => {
+  if (event.key === "Enter") submitPrivateModal();
+});
+els.privateForgotBtn.addEventListener("click", forgotPrivatePassword);
+
+els.privatePasswordEyeBtn.addEventListener("click", () => {
+  const visible = els.privatePasswordInput.type === "text";
+  setPasswordEyeState(els.privatePasswordInput, els.privatePasswordEyeBtn, !visible);
+});
+els.privatePasswordConfirmEyeBtn.addEventListener("click", () => {
+  const visible = els.privatePasswordConfirmInput.type === "text";
+  setPasswordEyeState(els.privatePasswordConfirmInput, els.privatePasswordConfirmEyeBtn, !visible);
 });
 
-els.searchModal.addEventListener("click", event => {
-  if (event.target === els.searchModal) closeSearchModal();
+els.privateModal.addEventListener("click", event => {
+  if (event.target === els.privateModal) closePrivateModal();
 });
 
 els.closeDrawer.addEventListener("click", () => {
