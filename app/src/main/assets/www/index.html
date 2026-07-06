@@ -1769,18 +1769,25 @@
 
         <div class="adventure-dashboard-view hidden" id="adventureDashboardView">
           <div class="adventure-hero-board">
-            <div class="adventure-gear-column left">
+            <div class="adventure-hero-heading">
+              <span class="adventure-dashboard-avatar" id="adventureDashboardAvatar">🛡️</span>
+              <div class="adventure-hero-heading-text">
+                <b id="adventureDashboardName">Người bảo hộ</b>
+                <div class="adventure-level-pill">Cấp <b id="adventureLevelValue">1</b></div>
+                <small id="adventureRankTitle">Khám Phá Giả</small>
+              </div>
+            </div>
+            <button type="button" class="adventure-portrait-frame" id="adventurePortraitButton" aria-label="Đặt ngoại hình nhân vật">
+              <img class="adventure-portrait-image hidden" id="adventurePortraitImage" alt="Ngoại hình nhân vật" />
+              <div class="adventure-portrait-empty" id="adventurePortraitEmpty">
+                <span>＋</span>
+                <small>Đặt ngoại hình nhân vật</small>
+              </div>
+            </button>
+            <div class="adventure-gear-row">
               <span class="adventure-gear-slot">🗡️</span>
               <span class="adventure-gear-slot">🛡️</span>
               <span class="adventure-gear-slot">💍</span>
-            </div>
-            <div class="adventure-hero-core">
-              <span class="adventure-dashboard-avatar" id="adventureDashboardAvatar">🛡️</span>
-              <div class="adventure-level-pill">Cấp <b id="adventureLevelValue">1</b></div>
-              <b id="adventureDashboardName">Người bảo hộ</b>
-              <small id="adventureRankTitle">Khám Phá Giả</small>
-            </div>
-            <div class="adventure-gear-column right">
               <span class="adventure-gear-slot">🎒</span>
               <span class="adventure-gear-slot">📖</span>
               <span class="adventure-gear-slot">🧿</span>
@@ -1828,6 +1835,7 @@
               <div><b>Thẻ khoe thành tích</b><small>Tạo bảng sưu tập đẹp để chụp màn hình</small></div>
             </button>
           </div>
+          <input type="file" id="adventurePortraitUpload" accept="image/*" hidden />
 
           <label class="adventure-toggle-row">
             <div>

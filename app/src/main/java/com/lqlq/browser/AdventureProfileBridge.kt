@@ -10,7 +10,8 @@ import org.json.JSONObject
 class AdventureProfileBridge(
     private val activity: MainActivity,
     private val store: AdventureProfileStore,
-    private val dynamicLootStore: DynamicLootStore
+    private val dynamicLootStore: DynamicLootStore,
+    private val portraitStore: CharacterPortraitStore
 ) {
 
     @JavascriptInterface
@@ -54,7 +55,27 @@ class AdventureProfileBridge(
     @JavascriptInterface
     fun deleteProfile(): String {
         dynamicLootStore.clear()
+        portraitStore.clear()
         return mutate { store.deleteProfile() }
+    }
+
+    @JavascriptInterface
+    fun setCharacterPortrait(dataUri: String): String {
+        return try {
+            if (store.snapshot().portraitSet) {
+                error("Đổi ngoại hình cần tốn Linh Thạch — tính năng đổi trả phí sẽ có sau.")
+            }
+            if (!portraitStore.save(dataUri)) {
+                error("Không lưu được ảnh ngoại hình. Hãy thử ảnh khác.")
+            }
+            mutate { store.markPortraitSet() }
+        } catch (error: Exception) {
+            JSONObject().apply {
+                put("ok", false)
+                put("error", error.message ?: "Không đặt được ngoại hình nhân vật.")
+                put("state", dynamicLootStore.appendTo(store.snapshot().toJson()))
+            }.toString()
+        }
     }
 
     @JavascriptInterface

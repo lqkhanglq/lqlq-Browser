@@ -321,6 +321,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var dynamicLootStore: DynamicLootStore
     private lateinit var dynamicLootRepository: DynamicLootRepository
     private lateinit var dynamicLootImageCache: DynamicLootImageCache
+    private lateinit var characterPortraitStore: CharacterPortraitStore
     private lateinit var pageToolsBridge: PageToolsBridge
     private lateinit var pageBridge: PageBridge
     private lateinit var faviconStore: FaviconStore
@@ -541,6 +542,7 @@ class MainActivity : AppCompatActivity() {
         dynamicLootStore = DynamicLootStore(applicationContext)
         dynamicLootRepository = DynamicLootRepository()
         dynamicLootImageCache = DynamicLootImageCache(applicationContext)
+        characterPortraitStore = CharacterPortraitStore(applicationContext)
         activeTabId = tabStore.activeTabId()
 
         root = FrameLayout(this)
@@ -580,6 +582,7 @@ class MainActivity : AppCompatActivity() {
             .setDomain(SHELL_HOST)
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
             .addPathHandler("/dynamic-loot/", DynamicLootAssetHandler(dynamicLootImageCache))
+            .addPathHandler("/character-portrait/", CharacterPortraitAssetHandler(characterPortraitStore))
             .build()
 
         setupShellWebView()
@@ -1352,7 +1355,7 @@ class MainActivity : AppCompatActivity() {
 
         ttsBridge = TtsBridge(applicationContext)
         shellBridge = ShellBridge(this)
-        adventureProfileBridge = AdventureProfileBridge(this, adventureProfileStore, dynamicLootStore)
+        adventureProfileBridge = AdventureProfileBridge(this, adventureProfileStore, dynamicLootStore, characterPortraitStore)
         pageToolsBridge = PageToolsBridge(shellBridge)
         pageBridge = PageBridge { currentPageWebView() }
         shellWebView.addJavascriptInterface(shellBridge, "LqlqAndroid")

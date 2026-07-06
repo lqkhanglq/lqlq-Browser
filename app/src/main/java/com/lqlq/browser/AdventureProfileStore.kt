@@ -43,6 +43,8 @@ class AdventureProfileStore(context: Context) {
         private const val KEY_TOTAL_CAPTURES = "total_beast_captures"
         private const val KEY_CAPTURE_PITY = "capture_pity"
         private const val KEY_COLLECTION = "spirit_beast_collection"
+        private const val KEY_PORTRAIT_SET = "character_portrait_set"
+        private const val KEY_PORTRAIT_VERSION = "character_portrait_version"
 
         private val ALLOWED_AVATARS = setOf(
             "guardian",
@@ -175,7 +177,9 @@ class AdventureProfileStore(context: Context) {
         val orbGold: Int,
         val totalBeastEncounters: Int,
         val totalBeastCaptures: Int,
-        val collection: List<CollectionEntry>
+        val collection: List<CollectionEntry>,
+        val portraitSet: Boolean,
+        val portraitVersion: Int
     ) {
         fun toJson(): JSONObject = JSONObject().apply {
             put("exists", exists)
@@ -201,6 +205,8 @@ class AdventureProfileStore(context: Context) {
             put("collectionCount", collection.size)
             put("catalogCount", SpiritBeastCatalog.all.size)
             put("collection", JSONArray().apply { collection.forEach { put(it.toJson()) } })
+            put("portraitSet", portraitSet)
+            put("portraitVersion", portraitVersion)
             put("catalog", SpiritBeastCatalog.toJson())
             put("shop", shopCatalogJson())
             put("storage", "device")
@@ -246,7 +252,9 @@ class AdventureProfileStore(context: Context) {
             orbGold = prefs.getInt(KEY_ORB_GOLD, 0).coerceAtLeast(0),
             totalBeastEncounters = prefs.getInt(KEY_TOTAL_ENCOUNTERS, 0).coerceAtLeast(0),
             totalBeastCaptures = prefs.getInt(KEY_TOTAL_CAPTURES, 0).coerceAtLeast(0),
-            collection = readCollection()
+            collection = readCollection(),
+            portraitSet = prefs.getBoolean(KEY_PORTRAIT_SET, false),
+            portraitVersion = prefs.getInt(KEY_PORTRAIT_VERSION, 0)
         )
     }
 
@@ -279,6 +287,8 @@ class AdventureProfileStore(context: Context) {
             .putInt(KEY_TOTAL_CAPTURES, 0)
             .putInt(KEY_CAPTURE_PITY, 0)
             .putString(KEY_COLLECTION, "{}")
+            .putBoolean(KEY_PORTRAIT_SET, false)
+            .putInt(KEY_PORTRAIT_VERSION, 0)
             .apply()
 
         return snapshot()
@@ -291,6 +301,27 @@ class AdventureProfileStore(context: Context) {
             .putString(KEY_NICKNAME, validateNickname(nickname))
             .putString(KEY_AVATAR_ID, validateAvatar(avatarId))
             .putString(KEY_CUSTOM_AVATAR, validateCustomAvatar(customAvatarData))
+            .apply()
+        return snapshot()
+    }
+
+    /**
+     * Ngoại hình nhân vật (ảnh lớn trong bảng Hồ sơ) được đặt miễn phí một lần
+     * duy nhất lúc tạo/lần đầu chỉnh sửa. Từ lần thứ hai trở đi bị khóa cho
+     * đến khi có cơ chế đổi trả phí bằng Linh Thạch (chưa triển khai) — hàm
+     * này chỉ đóng vai trò "cổng" kiểm tra, việc lưu file ảnh do
+     * CharacterPortraitStore đảm nhiệm bên ngoài.
+     */
+    @Synchronized
+    fun markPortraitSet(): Snapshot {
+        check(hasProfile()) { "Chưa có Hồ sơ Phiêu lưu." }
+        check(!prefs.getBoolean(KEY_PORTRAIT_SET, false)) {
+            "Đổi ngoại hình cần tốn Linh Thạch — tính năng đổi trả phí sẽ có sau."
+        }
+        val version = prefs.getInt(KEY_PORTRAIT_VERSION, 0) + 1
+        prefs.edit()
+            .putBoolean(KEY_PORTRAIT_SET, true)
+            .putInt(KEY_PORTRAIT_VERSION, version)
             .apply()
         return snapshot()
     }

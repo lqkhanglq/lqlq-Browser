@@ -10446,10 +10446,9 @@ html[data-theme="dark"] .adventure-name-input {
 }
 
 .adventure-hero-board {
-  display: grid;
-  grid-template-columns: 58px minmax(0, 1fr) 58px;
-  gap: 12px;
-  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
   border: 1px solid rgba(36, 120, 82, 0.14);
   border-radius: 28px;
   padding: 16px;
@@ -10457,18 +10456,28 @@ html[data-theme="dark"] .adventure-name-input {
   position: relative;
 }
 
-.adventure-hero-core {
-  display: grid;
-  place-items: center;
-  text-align: center;
-  gap: 8px;
-  position: relative;
+.adventure-hero-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.adventure-hero-heading-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
+
+.adventure-hero-heading-text b {
+  font-size: 17px;
 }
 
 .adventure-dashboard-avatar {
-  width: 108px;
-  height: 108px;
-  border-radius: 30px;
+  width: 64px;
+  height: 64px;
+  border-radius: 22px;
   border: 4px solid rgba(90, 194, 142, 0.25);
   background: linear-gradient(180deg, rgba(229, 248, 239, 0.98), rgba(212, 240, 226, 0.98));
   display: flex;
@@ -10476,6 +10485,7 @@ html[data-theme="dark"] .adventure-name-input {
   justify-content: center;
   overflow: hidden;
   box-shadow: 0 14px 28px rgba(90, 152, 121, 0.16);
+  flex-shrink: 0;
 }
 
 .adventure-level-pill {
@@ -10486,16 +10496,60 @@ html[data-theme="dark"] .adventure-name-input {
   padding: 6px 12px;
   border-radius: 999px;
   border: 1px solid rgba(31, 120, 81, 0.14);
+  align-self: flex-start;
 }
 
-.adventure-gear-column {
+.adventure-portrait-frame {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 1 / 2;
+  max-height: 420px;
+  border-radius: 24px;
+  border: 1px dashed rgba(54, 126, 90, 0.32);
+  background: linear-gradient(180deg, rgba(229, 248, 239, 0.9), rgba(212, 240, 226, 0.9));
+  overflow: hidden;
+  position: relative;
+  cursor: pointer;
+  padding: 0;
+}
+
+.adventure-portrait-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.adventure-portrait-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: rgba(37, 81, 61, 0.72);
+}
+
+.adventure-portrait-empty span {
+  font-size: 30px;
+  font-weight: 700;
+}
+
+.adventure-portrait-empty small {
+  font-size: 13px;
+  max-width: 160px;
+  text-align: center;
+}
+
+.adventure-gear-row {
   display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 10px;
 }
 
 .adventure-gear-slot {
-  width: 52px;
-  height: 52px;
+  width: 100%;
+  aspect-ratio: 1 / 1;
   border-radius: 16px;
   display: flex;
   align-items: center;
@@ -10559,19 +10613,20 @@ html[data-theme="dark"] .adventure-guide-card small {
   }
 
   .adventure-hero-board {
-    grid-template-columns: 52px minmax(0, 1fr) 52px;
     gap: 10px;
     padding: 14px;
   }
 
   .adventure-dashboard-avatar {
-    width: 96px;
-    height: 96px;
+    width: 52px;
+    height: 52px;
+  }
+
+  .adventure-portrait-frame {
+    max-height: 340px;
   }
 
   .adventure-gear-slot {
-    width: 46px;
-    height: 46px;
     font-size: 20px;
   }
 

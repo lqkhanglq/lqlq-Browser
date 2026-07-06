@@ -56,6 +56,10 @@
     createSubmit: $("adventureCreateSubmit"),
     dashboardAvatar: $("adventureDashboardAvatar"),
     dashboardName: $("adventureDashboardName"),
+    portraitButton: $("adventurePortraitButton"),
+    portraitImage: $("adventurePortraitImage"),
+    portraitEmpty: $("adventurePortraitEmpty"),
+    portraitUpload: $("adventurePortraitUpload"),
     crystalCount: $("adventureCrystalCount"),
     discoverCount: $("adventureDiscoverCount"),
     protectCount: $("adventureProtectCount"),
@@ -106,7 +110,9 @@
     dynamicTotalEncounters: 0,
     dynamicTotalCollected: 0,
     dynamicCollection: [],
-    storage: "device"
+    storage: "device",
+    portraitSet: false,
+    portraitVersion: 0
   };
 
   let selectedAvatarId = "guardian";
@@ -232,6 +238,20 @@
     if (elements.lootToggle) elements.lootToggle.checked = state.lootEnabled !== false;
     if (elements.beastsToggle) elements.beastsToggle.checked = state.spiritBeastsEnabled !== false;
     if (elements.dynamicLootToggle) elements.dynamicLootToggle.checked = state.dynamicLootEnabled !== false;
+    renderPortrait();
+  }
+
+  function renderPortrait() {
+    if (!elements.portraitImage || !elements.portraitEmpty) return;
+    if (state.portraitSet) {
+      elements.portraitImage.src = `https://appassets.androidapp.com/character-portrait/portrait.jpg?v=${state.portraitVersion || 0}`;
+      elements.portraitImage.classList.remove("hidden");
+      elements.portraitEmpty.classList.add("hidden");
+    } else {
+      elements.portraitImage.classList.add("hidden");
+      elements.portraitImage.removeAttribute("src");
+      elements.portraitEmpty.classList.remove("hidden");
+    }
   }
 
   function applyNativeState(nextState) {
@@ -442,6 +462,49 @@
       };
       reader.readAsDataURL(file);
     });
+  }
+
+  function resizePortraitFile(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("Không đọc được ảnh."));
+      reader.onload = () => {
+        const image = new Image();
+        image.onerror = () => reject(new Error("Ảnh không hợp lệ."));
+        image.onload = () => {
+          const maxWidth = 1024;
+          const maxHeight = 2048;
+          const scale = Math.min(1, maxWidth / image.width, maxHeight / image.height);
+          const width = Math.max(1, Math.round(image.width * scale));
+          const height = Math.max(1, Math.round(image.height * scale));
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          canvas.getContext("2d").drawImage(image, 0, 0, width, height);
+          resolve(canvas.toDataURL("image/jpeg", 0.9));
+        };
+        image.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function pickCharacterPortrait(file) {
+    if (!file) return;
+    try {
+      const dataUri = await resizePortraitFile(file);
+      const result = callMutation("setCharacterPortrait", dataUri);
+      if (!result?.ok) {
+        window.toast?.(result?.error || "Không đặt được ngoại hình nhân vật.");
+        return;
+      }
+      applyNativeState(result.state);
+      window.toast?.("Đã đặt ngoại hình nhân vật.");
+    } catch (error) {
+      window.toast?.(error?.message || "Không xử lý được ảnh ngoại hình.");
+    } finally {
+      if (elements.portraitUpload) elements.portraitUpload.value = "";
+    }
   }
 
   function collectionById() {
@@ -655,6 +718,16 @@
     } catch (error) {
       setFormError(error?.message || "Không xử lý được ảnh đại diện.");
     }
+  });
+  elements.portraitButton?.addEventListener("click", () => {
+    if (state.portraitSet) {
+      window.toast?.("Đổi ngoại hình cần tốn Linh Thạch — tính năng đổi trả phí sẽ có sau.");
+      return;
+    }
+    elements.portraitUpload?.click();
+  });
+  elements.portraitUpload?.addEventListener("change", event => {
+    pickCharacterPortrait(event.target.files?.[0]);
   });
   elements.overlay.addEventListener("click", event => { if (event.target === elements.overlay) closeProfile(); });
   document.addEventListener("keydown", event => {
