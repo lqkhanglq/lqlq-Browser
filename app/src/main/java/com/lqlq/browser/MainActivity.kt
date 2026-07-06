@@ -1435,6 +1435,9 @@ class MainActivity : AppCompatActivity() {
                 override fun onDismiss() {
                     updatePageVisibility()
                 }
+
+                override fun getFaviconBitmap(url: String): android.graphics.Bitmap? =
+                    faviconStore.getBitmap(url)
             }
         )
         root.addView(
