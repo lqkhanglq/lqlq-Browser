@@ -397,6 +397,7 @@
     } else {
       renderDashboard();
     }
+    resetProfileScroll();
   }
 
   function openProfile() {
@@ -406,6 +407,18 @@
     elements.overlay.classList.remove("hidden");
     elements.overlay.setAttribute("aria-hidden", "false");
     showView(state.exists ? "dashboard" : "create");
+    resetProfileScroll();
+  }
+
+  /**
+   * Vòng lặp mở Hồ sơ Phiêu lưu nhiều lần (đặc biệt sau khi cuộn xuống xem
+   * túi hành trang/cửa hàng rồi thoát) có thể giữ nguyên scrollTop cũ của
+   * lần trước — làm phần đầu trang (nút thoát, tiêu đề) bị cuộn khuất mất,
+   * trông như "không có nút thoát". Luôn đưa về đầu mỗi khi mở lại hoặc
+   * đổi màn hình.
+   */
+  function resetProfileScroll() {
+    elements.overlay.querySelector(".adventure-profile-card")?.scrollTo(0, 0);
   }
 
   /**
@@ -628,6 +641,7 @@
     elements.dashboardView.classList.add("hidden");
     elements.subView.classList.remove("hidden");
     renderSubView(view);
+    resetProfileScroll();
   }
 
   function renderSubView(view) {
