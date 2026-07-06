@@ -253,17 +253,10 @@
       </div>
 
       <div class="adventure-menu-summary" id="adventureMenuSummary">
-        <div class="adventure-summary-chip compact">
-          <span>Lv.</span>
-          <b id="adventureSummaryLevel">1</b>
-        </div>
-        <div class="adventure-summary-chip wide">
-          <span id="adventureSummaryRank">Khách lữ hành</span>
-          <small id="adventureSummaryHint">Tạo Hồ sơ Phiêu lưu để mở hành trình khám phá, nhặt Linh Thạch và tích lũy tiến trình.</small>
-        </div>
-        <div class="adventure-summary-chip compact crystal">
-          <span>◆</span>
+        <div class="adventure-summary-chip crystal-only">
+          <img src="assets/adventure/crystal_loot.png" alt="Linh Thạch" />
           <b id="adventureSummaryCrystals">0</b>
+          <span>Linh Thạch</span>
         </div>
       </div>
 
@@ -1717,10 +1710,10 @@
     <div class="adventure-profile-overlay hidden" id="adventureProfileOverlay" aria-hidden="true">
       <section class="adventure-profile-card" role="dialog" aria-modal="true" aria-labelledby="adventureProfileTitle">
         <header class="adventure-profile-head">
+          <button type="button" class="adventure-back-button" id="adventureProfileBack" aria-label="Quay lại Menu chức năng">‹</button>
           <div>
             <span class="adventure-kicker">LQLQ SHIELD</span>
             <h2 id="adventureProfileTitle">Hồ sơ Phiêu lưu</h2>
-            <p>Lưu trên thiết bị · Không bắt buộc đăng nhập</p>
           </div>
           <button type="button" id="adventureProfileClose" aria-label="Đóng">×</button>
         </header>
@@ -1736,7 +1729,7 @@
 
           <div class="adventure-guide-card compact">
             <b>Hướng dẫn nhanh</b>
-            <small>Tạo hồ sơ để mở hệ Phiêu lưu. Khi đi tới một trang web mới, Linh Thạch, Linh Thú hoặc một Kỳ Vật hoàn toàn ngẫu nhiên có thể xuất hiện. Thu thập chúng để xây Vạn Giới Đồ Giám riêng của bạn.</small>
+            <small>Tạo hồ sơ để mở hệ Phiêu lưu. Khi đi tới một trang web mới, Linh Thạch, Linh Thú hoặc một Thẻ Kỳ Vật hoàn toàn ngẫu nhiên có thể xuất hiện. Thu thập chúng để xây Vạn Giới Đồ Giám riêng của bạn.</small>
           </div>
 
           <label class="adventure-field-label" for="adventureNicknameInput">Biệt danh</label>
@@ -1769,28 +1762,33 @@
 
         <div class="adventure-dashboard-view hidden" id="adventureDashboardView">
           <div class="adventure-hero-board">
-            <div class="adventure-gear-column left">
-              <span class="adventure-gear-slot">🗡️</span>
-              <span class="adventure-gear-slot">🛡️</span>
-              <span class="adventure-gear-slot">💍</span>
-            </div>
-            <div class="adventure-hero-core">
-              <button type="button" class="adventure-edit-button overlay" id="adventureEditProfile">Chỉnh sửa</button>
+            <div class="adventure-hero-heading">
               <span class="adventure-dashboard-avatar" id="adventureDashboardAvatar">🛡️</span>
-              <div class="adventure-level-pill">Cấp <b id="adventureLevelValue">1</b></div>
-              <b id="adventureDashboardName">Người bảo hộ</b>
-              <small id="adventureRankTitle">Khám Phá Giả</small>
+              <div class="adventure-hero-heading-text">
+                <b id="adventureDashboardName">Người bảo hộ</b>
+                <div class="adventure-level-pill">Cấp <b id="adventureLevelValue">1</b></div>
+                <small id="adventureRankTitle">Khám Phá Giả</small>
+              </div>
             </div>
-            <div class="adventure-gear-column right">
-              <span class="adventure-gear-slot">🎒</span>
-              <span class="adventure-gear-slot">📖</span>
-              <span class="adventure-gear-slot">🧿</span>
-            </div>
+            <button type="button" class="adventure-portrait-frame" id="adventurePortraitButton" aria-label="Đặt ngoại hình nhân vật">
+              <img class="adventure-portrait-image hidden" id="adventurePortraitImage" alt="Ngoại hình nhân vật" />
+              <div class="adventure-portrait-empty" id="adventurePortraitEmpty">
+                <span>＋</span>
+                <small>Đặt ngoại hình nhân vật</small>
+              </div>
+            </button>
+            <div class="adventure-gear-row" id="adventureCardSlots"></div>
+          </div>
+
+          <div class="adventure-char-stat-grid">
+            <div class="adventure-char-stat hp"><span>❤</span><div><b id="adventureCharHp">100</b><small>HP</small></div></div>
+            <div class="adventure-char-stat atk"><span>⚔</span><div><b id="adventureCharAtk">10</b><small>ATK</small></div></div>
+            <div class="adventure-char-stat mana"><span>✦</span><div><b id="adventureCharMana">10</b><small>MANA</small></div></div>
           </div>
 
           <div class="adventure-stat-grid three-up">
             <div class="adventure-stat-card crystal">
-              <span>◆</span>
+              <img class="adventure-stat-crystal-icon" src="assets/adventure/crystal_loot.png" alt="" />
               <div><b id="adventureCrystalCount">0</b><small>Linh Thạch</small></div>
             </div>
             <div class="adventure-stat-card realm">
@@ -1814,7 +1812,7 @@
           <div class="adventure-action-grid">
             <button type="button" class="adventure-action-card" data-adventure-view="collection">
               <span>📚</span>
-              <div><b>Vạn Giới Đồ Giám</b><small><strong id="adventureDynamicCollectionCount">0</strong> Kỳ Vật động · <strong id="adventureCollectionCount">0</strong>/<strong id="adventureCatalogCount">18</strong> Linh Thú</small></div>
+              <div><b>Vạn Giới Đồ Giám</b><small><strong id="adventureDynamicCollectionCount">0</strong> Thẻ Kỳ Vật · <strong id="adventureCollectionCount">0</strong>/<strong id="adventureCatalogCount">18</strong> Linh Thú</small></div>
             </button>
             <button type="button" class="adventure-action-card" data-adventure-view="inventory">
               <span>🎒</span>
@@ -1829,6 +1827,7 @@
               <div><b>Thẻ khoe thành tích</b><small>Tạo bảng sưu tập đẹp để chụp màn hình</small></div>
             </button>
           </div>
+          <input type="file" id="adventurePortraitUpload" accept="image/*" hidden />
 
           <label class="adventure-toggle-row">
             <div>
@@ -1840,7 +1839,7 @@
 
           <label class="adventure-toggle-row">
             <div>
-              <b>Cho phép Kỳ Vật động xuất hiện</b>
+              <b>Cho phép Thẻ Kỳ Vật xuất hiện</b>
               <small>Lấy hình ảnh, tên và mô tả ngẫu nhiên từ Dynamic Loot Engine; khi chưa cấu hình AI sẽ tự dùng Wikipedia/Wikimedia miễn phí.</small>
             </div>
             <input type="checkbox" id="adventureDynamicLootToggle" checked />
@@ -1877,13 +1876,29 @@
 
         <div class="adventure-sub-view hidden" id="adventureSubView">
           <div class="adventure-sub-head">
-            <button type="button" class="adventure-secondary" id="adventureSubBack">← Quay lại</button>
+            <button type="button" class="adventure-back-button" id="adventureSubBack" aria-label="Quay lại">‹</button>
             <div>
               <span class="adventure-kicker">VẠN GIỚI</span>
-              <h3 id="adventureSubTitle">Đồ Giám Vạn Giới</h3>
+              <h3 id="adventureSubTitle">Vạn Giới Đồ Giám</h3>
             </div>
           </div>
           <div class="adventure-sub-content" id="adventureSubContent"></div>
+        </div>
+
+        <div class="adventure-card-modal hidden" id="adventureCardModal">
+          <div class="adventure-card-modal-sheet">
+            <button type="button" class="adventure-back-button" id="adventureCardModalClose" aria-label="Đóng">×</button>
+            <div class="adventure-card-modal-image-wrap">
+              <img id="adventureCardModalImage" alt="" />
+            </div>
+            <b id="adventureCardModalName">Thẻ Kỳ Vật</b>
+            <span id="adventureCardModalMeta"></span>
+            <div class="adventure-card-modal-actions">
+              <button type="button" id="adventureCardModalEquip">Gắn vào nhân vật</button>
+              <button type="button" id="adventureCardModalUnequip">Tháo ra</button>
+              <button type="button" class="danger" id="adventureCardModalDelete">Xóa thẻ</button>
+            </div>
+          </div>
         </div>
       </section>
     </div>

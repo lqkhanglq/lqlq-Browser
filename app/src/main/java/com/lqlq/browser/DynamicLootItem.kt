@@ -19,6 +19,14 @@ data class DynamicLootItem(
     val license: String = "",
     val generated: Boolean = false
 ) {
+    /**
+     * Mỗi thẻ cộng 1 trong 3 thuộc tính (HP/ATK/MANA) cho nhân vật, chọn
+     * ngẫu nhiên nhưng ổn định theo id (băm), độ lớn theo số sao — không
+     * cần AI, tự phân phối ở phía app để luôn nhất quán mỗi lần hiển thị.
+     */
+    val statType: String get() = statTypeFor(id)
+    val statValue: Int get() = statValueFor(statType, stars)
+
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id)
         put("name", name)
@@ -39,6 +47,8 @@ data class DynamicLootItem(
         put("attribution", attribution)
         put("license", license)
         put("generated", generated)
+        put("statType", statType)
+        put("statValue", statValue)
     }
 
     companion object {
@@ -87,6 +97,18 @@ data class DynamicLootItem(
             "Sử Thi" -> 3
             "Hiếm" -> 2
             else -> 1
+        }
+
+        private val STAT_TYPES = listOf("HP", "ATK", "MANA")
+
+        fun statTypeFor(id: String): String {
+            val hash = id.fold(0) { acc, c -> acc * 31 + c.code }
+            return STAT_TYPES[Math.floorMod(hash, STAT_TYPES.size)]
+        }
+
+        fun statValueFor(statType: String, stars: Int): Int {
+            val clean = stars.coerceIn(1, 5)
+            return if (statType == "HP") clean * 10 else clean
         }
     }
 }

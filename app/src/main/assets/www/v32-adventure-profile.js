@@ -32,12 +32,10 @@
     avatarMark: $("adventureAvatarMark"),
     profileName: $("adventureProfileName"),
     profileStatus: $("adventureProfileStatus"),
-    summaryLevel: $("adventureSummaryLevel"),
-    summaryRank: $("adventureSummaryRank"),
-    summaryHint: $("adventureSummaryHint"),
     summaryCrystals: $("adventureSummaryCrystals"),
     overlay: $("adventureProfileOverlay"),
     close: $("adventureProfileClose"),
+    back: $("adventureProfileBack"),
     createView: $("adventureCreateView"),
     dashboardView: $("adventureDashboardView"),
     subView: $("adventureSubView"),
@@ -56,6 +54,22 @@
     createSubmit: $("adventureCreateSubmit"),
     dashboardAvatar: $("adventureDashboardAvatar"),
     dashboardName: $("adventureDashboardName"),
+    portraitButton: $("adventurePortraitButton"),
+    portraitImage: $("adventurePortraitImage"),
+    portraitEmpty: $("adventurePortraitEmpty"),
+    portraitUpload: $("adventurePortraitUpload"),
+    cardSlots: $("adventureCardSlots"),
+    cardModal: $("adventureCardModal"),
+    cardModalClose: $("adventureCardModalClose"),
+    cardModalImage: $("adventureCardModalImage"),
+    cardModalName: $("adventureCardModalName"),
+    cardModalMeta: $("adventureCardModalMeta"),
+    cardModalEquip: $("adventureCardModalEquip"),
+    cardModalUnequip: $("adventureCardModalUnequip"),
+    cardModalDelete: $("adventureCardModalDelete"),
+    charHp: $("adventureCharHp"),
+    charAtk: $("adventureCharAtk"),
+    charMana: $("adventureCharMana"),
     crystalCount: $("adventureCrystalCount"),
     discoverCount: $("adventureDiscoverCount"),
     protectCount: $("adventureProtectCount"),
@@ -70,7 +84,6 @@
     beastsToggle: $("adventureBeastsToggle"),
     dynamicLootToggle: $("adventureDynamicLootToggle"),
     effectsToggle: $("adventureEffectsToggle"),
-    editProfile: $("adventureEditProfile"),
     deleteProfile: $("adventureDeleteProfile"),
     effectHost: $("adventureCrystalEffectHost")
   };
@@ -107,8 +120,21 @@
     dynamicTotalEncounters: 0,
     dynamicTotalCollected: 0,
     dynamicCollection: [],
-    storage: "device"
+    storage: "device",
+    portraitSet: false,
+    portraitVersion: 0,
+    characterHp: 100,
+    characterAtk: 10,
+    characterMana: 10,
+    slotCapacity: 20,
+    slotUsed: 0,
+    slotPriceCrystals: 10,
+    identityChangeCredits: 0,
+    portraitChangeCredits: 0,
+    equippedCardIds: []
   };
+
+  let activeCardId = "";
 
   let selectedAvatarId = "guardian";
   let selectedCustomAvatar = "";
@@ -199,18 +225,8 @@
   }
 
   function renderSummary() {
-    if (!elements.summaryLevel) return;
-    if (!state.exists) {
-      elements.summaryLevel.textContent = "1";
-      elements.summaryRank.textContent = "Khách lữ hành";
-      elements.summaryHint.textContent = "Tạo Hồ sơ Phiêu lưu để mở hành trình khám phá, nhặt Linh Thạch và sưu tập Linh Thú.";
-      elements.summaryCrystals.textContent = "0";
-      return;
-    }
-    elements.summaryLevel.textContent = String(state.level || 1);
-    elements.summaryRank.textContent = state.rankTitle || "Khám Phá Giả";
-    elements.summaryHint.textContent = `${state.dynamicCollectionCount || 0} Kỳ Vật · ${state.collectionCount || 0}/${state.catalogCount || 0} Linh Thú · ${state.totalDiscoveries || 0} vùng đất.`;
-    elements.summaryCrystals.textContent = String(state.crystals || 0);
+    if (!elements.summaryCrystals) return;
+    elements.summaryCrystals.textContent = String(state.exists ? (state.crystals || 0) : 0);
   }
 
   function renderDashboard() {
@@ -233,6 +249,106 @@
     if (elements.lootToggle) elements.lootToggle.checked = state.lootEnabled !== false;
     if (elements.beastsToggle) elements.beastsToggle.checked = state.spiritBeastsEnabled !== false;
     if (elements.dynamicLootToggle) elements.dynamicLootToggle.checked = state.dynamicLootEnabled !== false;
+    renderPortrait();
+    renderCardSlots();
+    if (elements.charHp) elements.charHp.textContent = String(state.characterHp || 100);
+    if (elements.charAtk) elements.charAtk.textContent = String(state.characterAtk || 10);
+    if (elements.charMana) elements.charMana.textContent = String(state.characterMana || 10);
+  }
+
+  const CARD_SLOT_COUNT = 10;
+
+  function cardById(id) {
+    return (state.dynamicCollection || []).find(entry => entry.id === id) || null;
+  }
+
+  function cardSlotGridHtml(items, capacity) {
+    const slots = [];
+    for (let i = 0; i < capacity; i++) {
+      const entry = items[i];
+      if (!entry) {
+        slots.push(`<div class="adventure-gear-slot empty"></div>`);
+        continue;
+      }
+      const image = entry.displayImageUrl || entry.imageUrl || "";
+      slots.push(`<div class="adventure-gear-slot filled ${rarityClass(entry.rarity)}" data-card-id="${escapeHtml(entry.id)}" title="${escapeHtml(entry.name || "Thẻ Kỳ Vật")}">
+        ${image ? `<img src="${escapeHtml(image)}" alt="${escapeHtml(entry.name || "")}" loading="lazy" />` : "<span>?</span>"}
+      </div>`);
+    }
+    return slots.join("");
+  }
+
+  function renderCardSlots() {
+    if (!elements.cardSlots) return;
+    const equipped = (state.equippedCardIds || []).map(cardById).filter(Boolean);
+    elements.cardSlots.innerHTML = cardSlotGridHtml(equipped, CARD_SLOT_COUNT);
+  }
+
+  function openCardModal(cardId) {
+    const entry = cardById(cardId);
+    if (!entry || !elements.cardModal) return;
+    activeCardId = cardId;
+    const image = entry.displayImageUrl || entry.imageUrl || "";
+    if (elements.cardModalImage) {
+      if (image) { elements.cardModalImage.src = image; elements.cardModalImage.classList.remove("hidden"); }
+      else elements.cardModalImage.classList.add("hidden");
+    }
+    if (elements.cardModalName) elements.cardModalName.textContent = entry.name || "Thẻ Kỳ Vật";
+    if (elements.cardModalMeta) {
+      elements.cardModalMeta.textContent = `${entry.rarity || "Thường"} · +${entry.statValue || 1} ${entry.statType || "ATK"}`;
+    }
+    const isEquipped = (state.equippedCardIds || []).includes(cardId);
+    elements.cardModalEquip?.classList.toggle("hidden", isEquipped);
+    elements.cardModalUnequip?.classList.toggle("hidden", !isEquipped);
+    elements.cardModal.classList.remove("hidden");
+  }
+
+  function closeCardModal() {
+    activeCardId = "";
+    elements.cardModal?.classList.add("hidden");
+  }
+
+  function equipActiveCard() {
+    if (!activeCardId) return;
+    const result = callMutation("equipCard", activeCardId);
+    if (!result?.ok) { window.toast?.(result?.error || "Không gắn được thẻ."); return; }
+    applyNativeState(result.state);
+    window.toast?.("Đã gắn Thẻ Kỳ Vật vào nhân vật.");
+    closeCardModal();
+  }
+
+  function unequipActiveCard() {
+    if (!activeCardId) return;
+    const result = callMutation("unequipCard", activeCardId);
+    if (!result?.ok) { window.toast?.(result?.error || "Không tháo được thẻ."); return; }
+    applyNativeState(result.state);
+    window.toast?.("Đã tháo Thẻ Kỳ Vật.");
+    closeCardModal();
+  }
+
+  function deleteActiveCard() {
+    if (!activeCardId) return;
+    if (!window.confirm("Xóa hẳn Thẻ Kỳ Vật này? Không thể khôi phục lại.")) return;
+    const result = callMutation("deleteCard", activeCardId);
+    if (!result?.ok) { window.toast?.(result?.error || "Không xóa được thẻ."); return; }
+    applyNativeState(result.state);
+    window.toast?.("Đã xóa Thẻ Kỳ Vật.");
+    closeCardModal();
+    if (activeSubView === "inventory") renderInventory();
+    if (activeSubView === "collection") renderCollection();
+  }
+
+  function renderPortrait() {
+    if (!elements.portraitImage || !elements.portraitEmpty) return;
+    if (state.portraitSet) {
+      elements.portraitImage.src = `https://appassets.androidapp.com/character-portrait/portrait.jpg?v=${state.portraitVersion || 0}`;
+      elements.portraitImage.classList.remove("hidden");
+      elements.portraitEmpty.classList.add("hidden");
+    } else {
+      elements.portraitImage.classList.add("hidden");
+      elements.portraitImage.removeAttribute("src");
+      elements.portraitEmpty.classList.remove("hidden");
+    }
   }
 
   function applyNativeState(nextState) {
@@ -292,12 +408,36 @@
     showView(state.exists ? "dashboard" : "create");
   }
 
+  /**
+   * Thoát Hồ sơ Phiêu lưu (nút X hoặc back) quay về Menu chức năng
+   * (chromeMenu) thay vì đóng thẳng ra trang web — vì hồ sơ được mở
+   * từ trong menu đó, "thoát 1 lần" nên lùi lại đúng 1 cấp menu.
+   */
   function closeProfile() {
     editing = false;
     activeSubView = "";
     elements.overlay.classList.add("hidden");
     elements.overlay.setAttribute("aria-hidden", "true");
     setFormError("");
+    $("chromeMenu")?.classList.remove("hidden");
+  }
+
+  /**
+   * Nút Back Android (v0.32.1): trước đây bấm Back trong lúc đang ở 1 màn
+   * con (Đồ Giám/Túi Hành Trang/Cửa Hàng/Thẻ Khoe) sẽ đóng LUÔN cả bảng Hồ
+   * sơ Phiêu lưu, giống hệt bấm nút X — không giống cảm giác "quay lại"
+   * thông thường. android-glue.js gọi hàm này TRƯỚC khi tự đóng overlay:
+   * nếu đang ở màn con thì quay về dashboard và trả về true (đã xử lý,
+   * không đóng overlay); nếu đã ở dashboard rồi thì trả về false để
+   * android-glue.js đóng overlay như bình thường.
+   */
+  function handleBackPress() {
+    if (elements.overlay.classList.contains("hidden")) return false;
+    if (activeSubView) {
+      showView("dashboard");
+      return true;
+    }
+    return false;
   }
 
   function callMutation(method, ...args) {
@@ -333,7 +473,7 @@
     applyNativeState(result.state);
     editing = false;
     showView("dashboard");
-    window.toast?.("Đã lưu Hồ sơ Phiêu lưu trên thiết bị.");
+    window.toast?.("Đã lưu Hồ sơ Phiêu lưu.");
   }
 
   function deleteProfile() {
@@ -390,7 +530,7 @@
     if (result.state) applyNativeState(result.state);
     const entry = result.entry;
     if (result.ok && entry) {
-      window.toast?.(`Đã thêm ${entry.name || "Kỳ Vật"} vào Vạn Giới Đồ Giám!`);
+      window.toast?.(`Đã thêm ${entry.name || "Thẻ Kỳ Vật"} vào Vạn Giới Đồ Giám!`);
     }
   }
 
@@ -427,6 +567,49 @@
     });
   }
 
+  function resizePortraitFile(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("Không đọc được ảnh."));
+      reader.onload = () => {
+        const image = new Image();
+        image.onerror = () => reject(new Error("Ảnh không hợp lệ."));
+        image.onload = () => {
+          const maxWidth = 1024;
+          const maxHeight = 2048;
+          const scale = Math.min(1, maxWidth / image.width, maxHeight / image.height);
+          const width = Math.max(1, Math.round(image.width * scale));
+          const height = Math.max(1, Math.round(image.height * scale));
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          canvas.getContext("2d").drawImage(image, 0, 0, width, height);
+          resolve(canvas.toDataURL("image/jpeg", 0.9));
+        };
+        image.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function pickCharacterPortrait(file) {
+    if (!file) return;
+    try {
+      const dataUri = await resizePortraitFile(file);
+      const result = callMutation("setCharacterPortrait", dataUri);
+      if (!result?.ok) {
+        window.toast?.(result?.error || "Không đặt được ngoại hình nhân vật.");
+        return;
+      }
+      applyNativeState(result.state);
+      window.toast?.("Đã đặt ngoại hình nhân vật.");
+    } catch (error) {
+      window.toast?.(error?.message || "Không xử lý được ảnh ngoại hình.");
+    } finally {
+      if (elements.portraitUpload) elements.portraitUpload.value = "";
+    }
+  }
+
   function collectionById() {
     return new Map((state.collection || []).map(entry => [entry.beastId, entry]));
   }
@@ -450,7 +633,7 @@
   function renderSubView(view) {
     if (!elements.subContent || !activeSubView) return;
     const titles = {
-      collection: "Đồ Giám Vạn Giới",
+      collection: "Vạn Giới Đồ Giám",
       inventory: "Túi Hành Trang",
       shop: "Cửa Hàng Linh Thạch",
       share: "Thẻ Khoe Thành Tích"
@@ -471,9 +654,10 @@
           ${image ? `<img src="${escapeHtml(image)}" alt="${escapeHtml(entry.name)}" loading="lazy" />` : `<span>?</span>`}
           <em>${escapeHtml(entry.rarity || "Thường")}</em>
         </div>
-        <b>${escapeHtml(entry.name || "Kỳ Vật Vô Danh")}</b>
-        <span>${escapeHtml(entry.category || "Kỳ Vật")} · ${"★".repeat(Math.max(1, Math.min(5, Number(entry.stars) || 1)))}</span>
+        <b>${escapeHtml(entry.name || "Thẻ Kỳ Vật Vô Danh")}</b>
+        <span>${escapeHtml(entry.category || "Thẻ Kỳ Vật")} · ${"★".repeat(Math.max(1, Math.min(5, Number(entry.stars) || 1)))}</span>
         <small>${escapeHtml(entry.description || "Một phát hiện bí ẩn từ Vạn Giới.")}</small>
+        <div class="dynamic-loot-stat-badge">+${entry.statValue || 1} ${entry.statType || "ATK"}</div>
         <footer><span>${source}</span><span>×${entry.count || 1}</span></footer>
       </article>`;
     }).join("");
@@ -493,10 +677,10 @@
 
     elements.subContent.innerHTML = `
       <div class="adventure-sub-summary dynamic-summary">
-        <b>${state.dynamicCollectionCount || 0} Kỳ Vật động</b>
+        <b>${state.dynamicCollectionCount || 0} Thẻ Kỳ Vật</b>
         <small>Nội dung gần như không cạn: ảnh và mô tả đến từ Dynamic Loot Engine; khi AI chưa cấu hình, ứng dụng dùng Wikipedia/Wikimedia làm nguồn miễn phí.</small>
       </div>
-      <div class="dynamic-loot-grid">${dynamicCards || `<div class="adventure-empty-collection"><b>Chưa có Kỳ Vật động</b><small>Tiếp tục đi đến các trang web mới. Kỳ Vật đầu tiên có tỷ lệ xuất hiện cao để bạn thử hệ thống.</small></div>`}</div>
+      <div class="dynamic-loot-grid">${dynamicCards || `<div class="adventure-empty-collection"><b>Chưa có Thẻ Kỳ Vật</b><small>Tiếp tục đi đến các trang web mới. Kỳ Vật đầu tiên có tỷ lệ xuất hiện cao để bạn thử hệ thống.</small></div>`}</div>
       <div class="adventure-sub-summary">
         <b>${state.collectionCount || 0}/${state.catalogCount || catalog.length} Linh Thú nguyên bản</b>
         <small>Bộ Linh Thú offline vẫn được giữ làm nội dung dự phòng khi mất mạng.</small>
@@ -504,8 +688,33 @@
       <div class="spirit-beast-grid">${beastCards || "<p>Chưa tải được danh mục.</p>"}</div>`;
   }
 
+  function purchaseInventorySlot() {
+    const result = callMutation("purchaseInventorySlot");
+    if (!result?.ok) {
+      window.toast?.(result?.error || "Không mở được ô hành trang.");
+      return;
+    }
+    applyNativeState(result.state);
+    window.toast?.("Đã mở thêm 1 ô hành trang.");
+    renderInventory();
+  }
+
   function renderInventory() {
+    const used = state.slotUsed || 0;
+    const capacity = state.slotCapacity || 20;
     elements.subContent.innerHTML = `
+      <div class="adventure-sub-summary">
+        <b>Túi hành trang · ${used}/${capacity} ô Thẻ Kỳ Vật</b>
+        <small>Đầy ô? Mua thêm bằng Linh Thạch để tiếp tục sưu tập.</small>
+      </div>
+      <div class="adventure-shop-list">
+        <article class="adventure-shop-card">
+          <span class="shop-icon">🎒</span>
+          <div><b>Mở thêm 1 ô hành trang</b><small>Tăng vĩnh viễn giới hạn lưu Thẻ Kỳ Vật.</small></div>
+          <button type="button" id="adventureBuySlotBtn">◆ ${state.slotPriceCrystals || 10}</button>
+        </article>
+      </div>
+      <div class="adventure-gear-row wide" id="adventureInventoryCardSlots">${cardSlotGridHtml(state.dynamicCollection || [], capacity)}</div>
       <div class="adventure-inventory-grid">
         <article class="orb-card basic"><span>◉</span><div><b>Linh Cầu Thô</b><strong>×${state.orbBasic || 0}</strong><small>Dùng cho Linh Thú thường và những lần thử cơ bản.</small></div></article>
         <article class="orb-card silver"><span>◉</span><div><b>Linh Cầu Bạc</b><strong>×${state.orbSilver || 0}</strong><small>Tăng tỷ lệ thu phục sinh vật hiếm.</small></div></article>
@@ -519,17 +728,20 @@
         <b>Hành trang đang mở rộng</b>
         <small>Các bản sau sẽ thêm mảnh bản đồ, trứng Linh Thú, khung avatar, vật phẩm hiếm và trang bị nhà mạo hiểm.</small>
       </div>`;
+    $("adventureBuySlotBtn")?.addEventListener("click", purchaseInventorySlot);
   }
+
+  const SHOP_ICONS = { gold: "🟡", silver: "⚪", basic: "🟢", identity: "🪪", portrait: "🖼️" };
 
   function renderShop() {
     const shopCards = (state.shop || []).map(item => `
       <article class="adventure-shop-card">
-        <span class="shop-icon">${item.orbType === "gold" ? "🟡" : item.orbType === "silver" ? "⚪" : "🟢"}</span>
+        <span class="shop-icon">${SHOP_ICONS[item.orbType] || "🟢"}</span>
         <div><b>${escapeHtml(item.name)}</b><small>${escapeHtml(item.description)}</small></div>
         <button type="button" data-shop-item="${escapeHtml(item.id)}">◆ ${item.cost}</button>
       </article>`).join("");
     elements.subContent.innerHTML = `
-      <div class="adventure-sub-summary shop-balance"><b>◆ ${state.crystals || 0} Linh Thạch</b><small>Mọi giao dịch chỉ lưu offline trong Hồ sơ Phiêu lưu.</small></div>
+      <div class="adventure-sub-summary shop-balance"><b>◆ ${state.crystals || 0} Linh Thạch</b></div>
       <div class="adventure-shop-list">${shopCards}</div>`;
     elements.subContent.querySelectorAll("button[data-shop-item]").forEach(button => {
       button.addEventListener("click", () => purchaseShopItem(button.dataset.shopItem));
@@ -569,12 +781,12 @@
         </div>
         <div class="share-stats">
           <div><b>${state.crystals || 0}</b><small>Linh Thạch</small></div>
-          <div><b>${state.dynamicCollectionCount || 0}</b><small>Kỳ Vật</small></div>
+          <div><b>${state.dynamicCollectionCount || 0}</b><small>Thẻ Kỳ Vật</small></div>
           <div><b>${state.totalDiscoveries || 0}</b><small>Vùng đất</small></div>
         </div>
-        <div class="share-rare dynamic"><small>Kỳ Vật nổi bật</small><div>${dynamicHighlights || icons}</div></div>
+        <div class="share-rare dynamic"><small>Thẻ Kỳ Vật nổi bật</small><div>${dynamicHighlights || icons}</div></div>
         <div class="share-rare"><small>Linh Thú nổi bật</small><div>${icons}</div></div>
-        <footer>lqlq Browser · Đồ Giám Vạn Giới</footer>
+        <footer>lqlq Browser · Vạn Giới Đồ Giám</footer>
       </div>
       <div class="adventure-guide-card"><b>Sẵn sàng để khoe</b><small>Thẻ này được bố trí riêng để bạn chụp màn hình và chia sẻ bộ sưu tập với bạn bè. Các bản sau có thể thêm nút xuất ảnh trực tiếp.</small></div>`;
   }
@@ -591,13 +803,20 @@
     if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openProfile(); }
   });
   elements.close.addEventListener("click", closeProfile);
+  elements.back?.addEventListener("click", () => {
+    if (activeSubView) showView("dashboard");
+    else closeProfile();
+  });
   elements.createLater.addEventListener("click", () => {
     if (editing) { editing = false; showView("dashboard"); }
     else closeProfile();
   });
   elements.createSubmit.addEventListener("click", submitProfile);
   elements.nickname.addEventListener("keydown", event => { if (event.key === "Enter") submitProfile(); });
-  elements.editProfile.addEventListener("click", () => { editing = true; showView("create"); });
+  // Việc bỏ nút "Chỉnh sửa" miễn phí (v0.32.1): sau khi tạo hồ sơ, biệt danh
+  // và avatar bị khoá — chỉ đổi được bằng thẻ đổi tên/đổi avatar mua bằng
+  // Linh Thạch (chưa triển khai). Nhánh `editing` trong showView()/submitProfile()
+  // vẫn giữ nguyên để tái dùng cho tính năng thẻ đổi đó sau này.
   elements.deleteProfile.addEventListener("click", deleteProfile);
   elements.effectsToggle.addEventListener("change", () => {
     const result = callMutation("setEffectsEnabled", elements.effectsToggle.checked);
@@ -636,6 +855,25 @@
       setFormError(error?.message || "Không xử lý được ảnh đại diện.");
     }
   });
+  document.addEventListener("click", event => {
+    const slot = event.target.closest(".adventure-gear-slot.filled[data-card-id]");
+    if (slot) openCardModal(slot.dataset.cardId);
+  });
+  elements.cardModalClose?.addEventListener("click", closeCardModal);
+  elements.cardModal?.addEventListener("click", event => { if (event.target === elements.cardModal) closeCardModal(); });
+  elements.cardModalEquip?.addEventListener("click", equipActiveCard);
+  elements.cardModalUnequip?.addEventListener("click", unequipActiveCard);
+  elements.cardModalDelete?.addEventListener("click", deleteActiveCard);
+  elements.portraitButton?.addEventListener("click", () => {
+    if (state.portraitSet) {
+      window.toast?.("Đổi ngoại hình cần tốn Linh Thạch — tính năng đổi trả phí sẽ có sau.");
+      return;
+    }
+    elements.portraitUpload?.click();
+  });
+  elements.portraitUpload?.addEventListener("change", event => {
+    pickCharacterPortrait(event.target.files?.[0]);
+  });
   elements.overlay.addEventListener("click", event => { if (event.target === elements.overlay) closeProfile(); });
   document.addEventListener("keydown", event => {
     if (event.key === "Escape" && !elements.overlay.classList.contains("hidden")) {
@@ -651,7 +889,8 @@
     onDynamicLootCollected,
     openProfile,
     closeProfile,
-    refreshFromNative
+    refreshFromNative,
+    handleBackPress
   };
 
   refreshFromNative();

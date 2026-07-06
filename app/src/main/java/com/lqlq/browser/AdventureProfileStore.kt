@@ -43,6 +43,12 @@ class AdventureProfileStore(context: Context) {
         private const val KEY_TOTAL_CAPTURES = "total_beast_captures"
         private const val KEY_CAPTURE_PITY = "capture_pity"
         private const val KEY_COLLECTION = "spirit_beast_collection"
+        private const val KEY_PORTRAIT_SET = "character_portrait_set"
+        private const val KEY_PORTRAIT_VERSION = "character_portrait_version"
+        private const val KEY_IDENTITY_CREDITS = "identity_change_credits"
+        private const val KEY_PORTRAIT_CREDITS = "portrait_change_credits"
+        private const val KEY_EQUIPPED_CARDS = "equipped_card_ids"
+        const val MAX_EQUIPPED_CARDS = 10
 
         private val ALLOWED_AVATARS = setOf(
             "guardian",
@@ -69,7 +75,9 @@ class AdventureProfileStore(context: Context) {
         private fun shopItems(): Map<String, ShopItem> = listOf(
             ShopItem("basic_pack", "Túi Linh Cầu Thô", "basic", 3, 15, "3 Linh Cầu cơ bản cho những Linh Thú dễ thu phục."),
             ShopItem("silver_orb", "Linh Cầu Bạc", "silver", 1, 35, "Tăng đáng kể tỷ lệ thu phục Linh Thú hiếm."),
-            ShopItem("gold_orb", "Linh Cầu Hoàng Kim", "gold", 1, 90, "Dành cho Linh Thú Sử Thi, Huyền Thoại và Thần Thoại.")
+            ShopItem("gold_orb", "Linh Cầu Hoàng Kim", "gold", 1, 90, "Dành cho Linh Thú Sử Thi, Huyền Thoại và Thần Thoại."),
+            ShopItem("identity_card", "Thẻ Đổi Danh Tính", "identity", 1, 30, "Cho phép đổi lại biệt danh và avatar ở menu một lần."),
+            ShopItem("portrait_card", "Thẻ Đổi Ngoại Hình", "portrait", 1, 30, "Cho phép đặt lại ảnh ngoại hình lớn trong Hồ sơ một lần.")
         ).associateBy { it.id }
 
         private fun shopCatalogJson(): JSONArray = JSONArray().apply {
@@ -175,7 +183,12 @@ class AdventureProfileStore(context: Context) {
         val orbGold: Int,
         val totalBeastEncounters: Int,
         val totalBeastCaptures: Int,
-        val collection: List<CollectionEntry>
+        val collection: List<CollectionEntry>,
+        val portraitSet: Boolean,
+        val portraitVersion: Int,
+        val identityChangeCredits: Int,
+        val portraitChangeCredits: Int,
+        val equippedCardIds: List<String>
     ) {
         fun toJson(): JSONObject = JSONObject().apply {
             put("exists", exists)
@@ -201,6 +214,11 @@ class AdventureProfileStore(context: Context) {
             put("collectionCount", collection.size)
             put("catalogCount", SpiritBeastCatalog.all.size)
             put("collection", JSONArray().apply { collection.forEach { put(it.toJson()) } })
+            put("portraitSet", portraitSet)
+            put("portraitVersion", portraitVersion)
+            put("identityChangeCredits", identityChangeCredits)
+            put("portraitChangeCredits", portraitChangeCredits)
+            put("equippedCardIds", JSONArray().apply { equippedCardIds.forEach { put(it) } })
             put("catalog", SpiritBeastCatalog.toJson())
             put("shop", shopCatalogJson())
             put("storage", "device")
@@ -246,8 +264,47 @@ class AdventureProfileStore(context: Context) {
             orbGold = prefs.getInt(KEY_ORB_GOLD, 0).coerceAtLeast(0),
             totalBeastEncounters = prefs.getInt(KEY_TOTAL_ENCOUNTERS, 0).coerceAtLeast(0),
             totalBeastCaptures = prefs.getInt(KEY_TOTAL_CAPTURES, 0).coerceAtLeast(0),
-            collection = readCollection()
+            collection = readCollection(),
+            portraitSet = prefs.getBoolean(KEY_PORTRAIT_SET, false),
+            portraitVersion = prefs.getInt(KEY_PORTRAIT_VERSION, 0),
+            identityChangeCredits = prefs.getInt(KEY_IDENTITY_CREDITS, 0).coerceAtLeast(0),
+            portraitChangeCredits = prefs.getInt(KEY_PORTRAIT_CREDITS, 0).coerceAtLeast(0),
+            equippedCardIds = readEquippedCardIds()
         )
+    }
+
+    private fun readEquippedCardIds(): List<String> {
+        val raw = prefs.getString(KEY_EQUIPPED_CARDS, "[]").orEmpty()
+        return try {
+            val array = JSONArray(raw)
+            (0 until array.length()).mapNotNull { array.optString(it).takeIf { id -> id.isNotBlank() } }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun writeEquippedCardIds(ids: List<String>) {
+        prefs.edit().putString(KEY_EQUIPPED_CARDS, JSONArray(ids).toString()).apply()
+    }
+
+    @Synchronized
+    fun equipCard(cardId: String): Snapshot {
+        check(hasProfile()) { "Chưa có Hồ sơ Phiêu lưu." }
+        val clean = cardId.trim()
+        require(clean.isNotBlank()) { "Thẻ không hợp lệ." }
+        val current = readEquippedCardIds()
+        if (!current.contains(clean)) {
+            check(current.size < MAX_EQUIPPED_CARDS) { "Chỉ có thể gắn tối đa $MAX_EQUIPPED_CARDS Thẻ Kỳ Vật." }
+            writeEquippedCardIds(current + clean)
+        }
+        return snapshot()
+    }
+
+    @Synchronized
+    fun unequipCard(cardId: String): Snapshot {
+        check(hasProfile()) { "Chưa có Hồ sơ Phiêu lưu." }
+        writeEquippedCardIds(readEquippedCardIds().filterNot { it == cardId.trim() })
+        return snapshot()
     }
 
     @Synchronized
@@ -279,6 +336,8 @@ class AdventureProfileStore(context: Context) {
             .putInt(KEY_TOTAL_CAPTURES, 0)
             .putInt(KEY_CAPTURE_PITY, 0)
             .putString(KEY_COLLECTION, "{}")
+            .putBoolean(KEY_PORTRAIT_SET, false)
+            .putInt(KEY_PORTRAIT_VERSION, 0)
             .apply()
 
         return snapshot()
@@ -287,11 +346,36 @@ class AdventureProfileStore(context: Context) {
     @Synchronized
     fun updateProfile(nickname: String, avatarId: String, customAvatarData: String = ""): Snapshot {
         check(hasProfile()) { "Chưa có Hồ sơ Phiêu lưu." }
+        val credits = prefs.getInt(KEY_IDENTITY_CREDITS, 0).coerceAtLeast(0)
+        check(credits > 0) { "Cần Thẻ Đổi Danh Tính (mua ở Cửa Hàng Linh Thạch) để đổi biệt danh/avatar." }
         prefs.edit()
             .putString(KEY_NICKNAME, validateNickname(nickname))
             .putString(KEY_AVATAR_ID, validateAvatar(avatarId))
             .putString(KEY_CUSTOM_AVATAR, validateCustomAvatar(customAvatarData))
+            .putInt(KEY_IDENTITY_CREDITS, credits - 1)
             .apply()
+        return snapshot()
+    }
+
+    /**
+     * Ngoại hình nhân vật (ảnh lớn trong bảng Hồ sơ) được đặt miễn phí một lần
+     * duy nhất lúc tạo/lần đầu chỉnh sửa. Từ lần thứ hai trở đi bị khóa cho
+     * đến khi có cơ chế đổi trả phí bằng Linh Thạch (chưa triển khai) — hàm
+     * này chỉ đóng vai trò "cổng" kiểm tra, việc lưu file ảnh do
+     * CharacterPortraitStore đảm nhiệm bên ngoài.
+     */
+    @Synchronized
+    fun markPortraitSet(): Snapshot {
+        check(hasProfile()) { "Chưa có Hồ sơ Phiêu lưu." }
+        val alreadySet = prefs.getBoolean(KEY_PORTRAIT_SET, false)
+        val editor = prefs.edit()
+        if (alreadySet) {
+            val credits = prefs.getInt(KEY_PORTRAIT_CREDITS, 0).coerceAtLeast(0)
+            check(credits > 0) { "Cần Thẻ Đổi Ngoại Hình (mua ở Cửa Hàng Linh Thạch) để đổi lại ảnh ngoại hình." }
+            editor.putInt(KEY_PORTRAIT_CREDITS, credits - 1)
+        }
+        val version = prefs.getInt(KEY_PORTRAIT_VERSION, 0) + 1
+        editor.putBoolean(KEY_PORTRAIT_SET, true).putInt(KEY_PORTRAIT_VERSION, version).apply()
         return snapshot()
     }
 
@@ -362,7 +446,9 @@ class AdventureProfileStore(context: Context) {
             "gold" -> 1.8
             else -> 1.0
         }
-        val chance = min(0.95, beast.baseCatchChance * multiplier + pity * 0.04)
+        // TẠM THỜI ĐỂ TEST (v0.32.1): luôn thành công. Đổi lại
+        // "min(0.95, beast.baseCatchChance * multiplier + pity * 0.04)" khi test xong.
+        val chance = 1.0
         val roll = Random.nextDouble()
         val success = roll <= chance
         val now = System.currentTimeMillis()
@@ -404,13 +490,34 @@ class AdventureProfileStore(context: Context) {
         if (crystals < item.cost) {
             return PurchaseResult(false, "Không đủ Linh Thạch.", itemId, snapshot())
         }
-        val key = orbKey(item.orbType)
-        val current = prefs.getInt(key, 0).coerceAtLeast(0)
-        prefs.edit()
-            .putInt(KEY_CRYSTALS, crystals - item.cost)
-            .putInt(key, current + item.amount)
-            .apply()
+        val editor = prefs.edit().putInt(KEY_CRYSTALS, crystals - item.cost)
+        when (item.orbType) {
+            "identity" -> {
+                val current = prefs.getInt(KEY_IDENTITY_CREDITS, 0).coerceAtLeast(0)
+                editor.putInt(KEY_IDENTITY_CREDITS, current + item.amount)
+            }
+            "portrait" -> {
+                val current = prefs.getInt(KEY_PORTRAIT_CREDITS, 0).coerceAtLeast(0)
+                editor.putInt(KEY_PORTRAIT_CREDITS, current + item.amount)
+            }
+            else -> {
+                val key = orbKey(item.orbType)
+                val current = prefs.getInt(key, 0).coerceAtLeast(0)
+                editor.putInt(key, current + item.amount)
+            }
+        }
+        editor.apply()
         return PurchaseResult(true, "", itemId, snapshot())
+    }
+
+    /** Dùng bởi tính năng mua thêm ô Túi hành trang (DynamicLootStore), trừ Linh Thạch ở đây vì đó là kho lưu Linh Thạch duy nhất. */
+    @Synchronized
+    fun spendCrystals(amount: Int): Boolean {
+        if (!hasProfile() || amount <= 0) return false
+        val crystals = prefs.getInt(KEY_CRYSTALS, 0).coerceAtLeast(0)
+        if (crystals < amount) return false
+        prefs.edit().putInt(KEY_CRYSTALS, crystals - amount).apply()
+        return true
     }
 
 

@@ -85,6 +85,23 @@ class MainActivity : AppCompatActivity() {
         private const val SHELL_HOST = "appassets.androidapp.com"
         private const val SHELL_URL = "https://$SHELL_HOST/assets/www/index.html"
 
+        // Các trang công cụ tìm kiếm/chatbot AI mà người dùng chủ yếu vào để
+        // TRA CỨU — không phù hợp để Linh Thạch/Linh Thú/Thẻ Kỳ Vật xuất hiện
+        // (khác với các trang đọc truyện/tin tức thông thường).
+        private val ADVENTURE_LOOT_EXCLUDED_DOMAINS = setOf(
+            "google.com", "google.com.vn", "bing.com", "duckduckgo.com",
+            "search.yahoo.com", "yandex.com", "baidu.com", "you.com",
+            "chatgpt.com", "chat.openai.com", "openai.com",
+            "claude.ai", "anthropic.com",
+            "gemini.google.com", "bard.google.com",
+            "copilot.microsoft.com", "perplexity.ai", "poe.com"
+        )
+
+        private fun isAdventureLootExcludedUrl(url: String): Boolean {
+            val host = runCatching { android.net.Uri.parse(url).host }.getOrNull()?.lowercase(Locale.ROOT) ?: return false
+            return ADVENTURE_LOOT_EXCLUDED_DOMAINS.any { domain -> host == domain || host.endsWith(".$domain") }
+        }
+
         // Việc "chặn quảng cáo/nhảy trang giống metruyenchu_clipper_android_project"
         // (v0.23.11): project tham khảo chặn TUYỆT ĐỐI theo danh sách domain quảng
         // cáo/redirect đã biết (rules.json của Chapter Clipper gốc), không phụ
@@ -321,6 +338,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var dynamicLootStore: DynamicLootStore
     private lateinit var dynamicLootRepository: DynamicLootRepository
     private lateinit var dynamicLootImageCache: DynamicLootImageCache
+    private lateinit var characterPortraitStore: CharacterPortraitStore
     private lateinit var pageToolsBridge: PageToolsBridge
     private lateinit var pageBridge: PageBridge
     private lateinit var faviconStore: FaviconStore
@@ -541,6 +559,7 @@ class MainActivity : AppCompatActivity() {
         dynamicLootStore = DynamicLootStore(applicationContext)
         dynamicLootRepository = DynamicLootRepository()
         dynamicLootImageCache = DynamicLootImageCache(applicationContext)
+        characterPortraitStore = CharacterPortraitStore(applicationContext)
         activeTabId = tabStore.activeTabId()
 
         root = FrameLayout(this)
@@ -580,6 +599,7 @@ class MainActivity : AppCompatActivity() {
             .setDomain(SHELL_HOST)
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
             .addPathHandler("/dynamic-loot/", DynamicLootAssetHandler(dynamicLootImageCache))
+            .addPathHandler("/character-portrait/", CharacterPortraitAssetHandler(characterPortraitStore))
             .build()
 
         setupShellWebView()
@@ -801,6 +821,10 @@ class MainActivity : AppCompatActivity() {
             hideAdventureLoot()
             return
         }
+        if (isAdventureLootExcludedUrl(url)) {
+            hideAdventureLoot()
+            return
+        }
         val normalized = url.trim()
         if (lastAdventureLootUrlByTab[tabId] == normalized) {
             hideAdventureLoot()
@@ -928,13 +952,20 @@ class MainActivity : AppCompatActivity() {
             hideDynamicLootEncounter()
             return false
         }
+        if (isAdventureLootExcludedUrl(url)) {
+            hideDynamicLootEncounter()
+            return false
+        }
 
         val normalized = url.trim()
         if (lastDynamicLootUrlByTab[tabId] == normalized) return false
         lastDynamicLootUrlByTab[tabId] = normalized
 
         val dynamicCount = dynamicLootStore.stateJson().optInt("dynamicCollectionCount", 0)
-        val encounterChance = if (dynamicCount == 0) 0.86 else 0.24
+        // TẠM THỜI ĐỂ TEST (v0.32.1): luôn 100% để người dùng thấy Kỳ Vật ở
+        // mọi trang khi thử nghiệm. Đổi lại "if (dynamicCount == 0) 0.86 else
+        // 0.24" khi test xong.
+        val encounterChance = 1.0
         val chanceRoll = deterministicRoll("$normalized|${adventureProfileStore.currentDayKey()}|dynamic-encounter")
         if (chanceRoll > encounterChance) return false
 
@@ -1143,13 +1174,19 @@ class MainActivity : AppCompatActivity() {
             hideSpiritBeastEncounter()
             return
         }
+        if (isAdventureLootExcludedUrl(url)) {
+            hideSpiritBeastEncounter()
+            return
+        }
         val normalized = url.trim()
         if (lastSpiritBeastUrlByTab[tabId] == normalized) return
         lastSpiritBeastUrlByTab[tabId] = normalized
 
-        // Những lần đầu cho tỷ lệ cao để người dùng hiểu hệ thống; sau đó về
-        // mức 32% để Linh Thú vẫn có cảm giác bất ngờ và có giá trị sưu tầm.
-        val chance = if (snapshot.totalBeastEncounters < 3 && snapshot.collection.isEmpty()) 0.78 else 0.32
+        // TẠM THỜI ĐỂ TEST (v0.32.1): luôn 100%. Đổi lại
+        // "if (snapshot.totalBeastEncounters < 3 && snapshot.collection.isEmpty()) 0.78 else 0.32"
+        // khi test xong (những lần đầu cho tỷ lệ cao để hiểu hệ thống, sau đó
+        // về mức 32% để Linh Thú vẫn có cảm giác bất ngờ và giá trị sưu tầm).
+        val chance = 1.0
         val roll = (("$normalized|${adventureProfileStore.currentDayKey()}|encounter".hashCode().toLong() and 0x7fffffffL) % 10_000L) / 10_000.0
         if (roll > chance) return
 
@@ -1347,7 +1384,7 @@ class MainActivity : AppCompatActivity() {
 
         ttsBridge = TtsBridge(applicationContext)
         shellBridge = ShellBridge(this)
-        adventureProfileBridge = AdventureProfileBridge(this, adventureProfileStore, dynamicLootStore)
+        adventureProfileBridge = AdventureProfileBridge(this, adventureProfileStore, dynamicLootStore, characterPortraitStore)
         pageToolsBridge = PageToolsBridge(shellBridge)
         pageBridge = PageBridge { currentPageWebView() }
         shellWebView.addJavascriptInterface(shellBridge, "LqlqAndroid")
@@ -2755,6 +2792,16 @@ $js
             root.bringChildToFront(pageContainer)
         } else {
             root.bringChildToFront(shellWebView)
+        }
+
+        // Linh Thạch/Linh Thú/Kỳ Vật (adventureLootLayer) chỉ được thêm vào
+        // root MỘT LẦN lúc khởi động — mỗi lần trang web thật được đưa lên
+        // trên (bringChildToFront(pageContainer) ở trên) sẽ đè luôn lớp này
+        // xuống dưới, nên icon/thẻ dù có hiện (visibility = VISIBLE) vẫn bị
+        // trang web che kín, không bao giờ thấy được. Phải tự đưa lên lại
+        // mỗi lần, giống cách mediaBubble đã làm đúng bên dưới.
+        if (::adventureLootLayer.isInitialized) {
+            root.bringChildToFront(adventureLootLayer)
         }
 
         if (::nativeTabSwitcher.isInitialized && nativeTabSwitcher.isOpen) {

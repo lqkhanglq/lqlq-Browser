@@ -344,8 +344,20 @@
       safeCall(() => {
         const spec = OVERLAYS.find(overlayIsOpen);
         if (spec) {
-          closeOverlay(spec);
-          closed = true;
+          // Hồ sơ Phiêu lưu có màn con riêng (Đồ Giám/Túi Hành Trang/Cửa
+          // Hàng/Thẻ Khoe) bên trong overlay của nó. Cho JS tự lùi về
+          // dashboard trước — chỉ đóng hẳn overlay khi JS báo đã ở cấp
+          // ngoài cùng rồi (không còn màn con nào để lùi về nữa).
+          if (
+            spec.id === "adventureProfileOverlay" &&
+            typeof window.LqlqAdventureUI?.handleBackPress === "function" &&
+            window.LqlqAdventureUI.handleBackPress()
+          ) {
+            closed = true;
+          } else {
+            closeOverlay(spec);
+            closed = true;
+          }
         }
       });
       setTimeout(reportOverlayState, 120);

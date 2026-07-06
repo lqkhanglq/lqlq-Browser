@@ -19,6 +19,15 @@ class DynamicLootStore(context: Context) {
         private const val KEY_COLLECTION = "collection"
         private const val KEY_TOTAL_ENCOUNTERS = "total_encounters"
         private const val KEY_TOTAL_COLLECTED = "total_collected"
+        private const val KEY_SLOT_CAPACITY = "slot_capacity"
+
+        // Chỉ số nền của nhân vật khi chưa có Thẻ Kỳ Vật nào.
+        private const val BASE_HP = 100
+        private const val BASE_ATK = 10
+        private const val BASE_MANA = 10
+
+        const val DEFAULT_SLOT_CAPACITY = 20
+        const val SLOT_PRICE_CRYSTALS = 10
     }
 
     data class CollectionEntry(
@@ -75,6 +84,16 @@ class DynamicLootStore(context: Context) {
     }
 
     @Synchronized
+    fun slotCapacity(): Int = prefs.getInt(KEY_SLOT_CAPACITY, DEFAULT_SLOT_CAPACITY).coerceAtLeast(DEFAULT_SLOT_CAPACITY)
+
+    @Synchronized
+    fun increaseSlotCapacity(): Int {
+        val next = slotCapacity() + 1
+        prefs.edit().putInt(KEY_SLOT_CAPACITY, next).apply()
+        return next
+    }
+
+    @Synchronized
     fun collect(item: DynamicLootItem, domain: String): CollectResult {
         if (item.id.isBlank()) {
             return CollectResult(false, "Thẻ Vạn Giới không hợp lệ.", null, stateJson())
@@ -83,6 +102,9 @@ class DynamicLootStore(context: Context) {
         val cleanDomain = domain.trim().take(180)
         val collection = readCollectionObject()
         val old = collection.optJSONObject(item.id)
+        if (old == null && collection.length() >= slotCapacity()) {
+            return CollectResult(false, "Túi hành trang đã đầy. Hãy mua thêm ô hoặc dọn bớt trước khi nhặt Thẻ Kỳ Vật mới.", null, stateJson())
+        }
         val count = (old?.optInt("count", 0) ?: 0) + 1
         val firstDomain = old?.optString("firstDomain").orEmpty().ifBlank { cleanDomain }
         val firstCollectedAt = old?.optLong("firstCollectedAt", now) ?: now
@@ -105,14 +127,40 @@ class DynamicLootStore(context: Context) {
     }
 
     @Synchronized
+    fun delete(itemId: String): Boolean {
+        val collection = readCollectionObject()
+        if (!collection.has(itemId)) return false
+        collection.remove(itemId)
+        prefs.edit().putString(KEY_COLLECTION, collection.toString()).apply()
+        return true
+    }
+
+    @Synchronized
     fun stateJson(): JSONObject {
         val collection = readCollection()
+        var hp = BASE_HP
+        var atk = BASE_ATK
+        var mana = BASE_MANA
+        collection.forEach { entry ->
+            val bonus = entry.item.statValue * entry.count
+            when (entry.item.statType) {
+                "HP" -> hp += bonus
+                "ATK" -> atk += bonus
+                else -> mana += bonus
+            }
+        }
         return JSONObject().apply {
             put("dynamicLootEnabled", isEnabled())
             put("dynamicCollectionCount", collection.size)
             put("dynamicTotalEncounters", prefs.getInt(KEY_TOTAL_ENCOUNTERS, 0).coerceAtLeast(0))
             put("dynamicTotalCollected", prefs.getInt(KEY_TOTAL_COLLECTED, 0).coerceAtLeast(0))
             put("dynamicCollection", JSONArray().apply { collection.forEach { put(it.toJson()) } })
+            put("characterHp", hp)
+            put("characterAtk", atk)
+            put("characterMana", mana)
+            put("slotCapacity", slotCapacity())
+            put("slotUsed", collection.size)
+            put("slotPriceCrystals", SLOT_PRICE_CRYSTALS)
         }
     }
 
