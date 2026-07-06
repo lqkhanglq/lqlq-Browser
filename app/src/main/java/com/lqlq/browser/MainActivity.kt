@@ -987,7 +987,8 @@ class MainActivity : AppCompatActivity() {
                 val fetched = dynamicLootRepository.fetchRandom(
                     seed = "$normalized|$title|${System.currentTimeMillis() / 86_400_000L}",
                     rarity = rarity,
-                    locale = "vi"
+                    locale = "vi",
+                    theme = adventureProfileStore.snapshot().collectionTheme
                 )
                 mainHandler.post {
                     if (isDestroyed || pendingDynamicLootUrl != normalized || activeTabId != tabId || !pageVisible) return@post

@@ -1,6 +1,22 @@
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
 const RARITIES = new Set(["Thường", "Hiếm", "Sử Thi", "Huyền Thoại", "Thần Thoại"]);
 
+// Mục tiêu sưu tập cố định người dùng có thể chọn (khớp danh sách <select>
+// phía app). "celebrity" tái dùng luôn pipeline top-nổi-tiếng có sẵn
+// (fetchKnowledgeLoot) vì nó đã cho ra đúng người nổi tiếng; "anime" tái
+// dùng ANIME_POOL đã tuyển chọn sẵn vì tìm chung chung trên Wikipedia cho
+// từ "anime character" chất lượng không ổn định bằng danh sách biết trước.
+const THEME_QUERY_MAP = {
+  landmark: { query: "famous landmark" },
+  celebrity: { query: "" },
+  football: { query: "footballer" },
+  anime: { usePool: true },
+  comic: { query: "comic book superhero" },
+  ancient: { query: "ancient historical figure" },
+  animal: { query: "animal species" },
+  plant: { query: "plant species" }
+};
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -28,9 +44,26 @@ export default {
       const locale = normalizeLocale(url.searchParams.get("locale"));
       const mode = (url.searchParams.get("mode") || "auto").toLowerCase();
       const seed = url.searchParams.get("seed") || crypto.randomUUID();
+      // Mục tiêu sưu tập: chỉ nhận 1 id CỐ ĐỊNH trong THEME_QUERY_MAP (khớp
+      // đúng danh sách chọn sẵn phía app) — không nhận free-text, tránh bị
+      // dùng để "lái" kết quả theo ý muốn.
+      const themeId = String(url.searchParams.get("theme") || "").trim().toLowerCase();
+      const themeConfig = THEME_QUERY_MAP[themeId];
 
       let item;
-      if (shouldUseAi(mode, env, seed)) {
+      if (themeConfig) {
+        try {
+          item = themeConfig.usePool
+            ? await fetchAnimePoolLoot({ rarity, seed })
+            : themeConfig.query
+              ? await fetchThemeSearchLoot({ rarity, locale, seed, theme: themeConfig.query })
+              : await fetchKnowledgeLoot({ rarity, locale, seed });
+          if (!item) throw new Error("Theme pool trống.");
+        } catch (error) {
+          item = await fetchKnowledgeLoot({ rarity, locale, seed });
+          item.fallbackReason = String(error?.message || error).slice(0, 160);
+        }
+      } else if (shouldUseAi(mode, env, seed)) {
         try {
           item = await generateAiLoot(env, { rarity, locale, seed });
         } catch (error) {
@@ -264,6 +297,67 @@ async function fetchAnimePoolLoot({ rarity, seed }) {
     };
   }
   return null;
+}
+
+// Người dùng tự chọn mục tiêu sưu tập (vd "anime", "Marvel", "hãng xe") —
+// tìm trực tiếp trên Wikipedia theo đúng chủ đề đó (generator=search) thay
+// vì dựa vào top lượt xem chung, để luôn đúng ý người dùng đã chọn.
+async function fetchThemeSearchLoot({ rarity, locale, seed, theme }) {
+  const languages = locale === "vi" ? ["vi", "en"] : ["en", "vi"];
+  let lastError;
+
+  for (const language of languages) {
+    try {
+      const api = new URL(`https://${language}.wikipedia.org/w/api.php`);
+      api.search = new URLSearchParams({
+        action: "query",
+        generator: "search",
+        gsrsearch: theme,
+        gsrlimit: "20",
+        gsrnamespace: "0",
+        prop: "pageimages|extracts|pageprops",
+        piprop: "thumbnail",
+        pithumbsize: "640",
+        exintro: "1",
+        explaintext: "1",
+        exsentences: "2",
+        format: "json",
+        origin: "*"
+      }).toString();
+      const response = await fetch(api, { headers: { "user-agent": "lqlq-dynamic-loot/0.32" } });
+      if (!response.ok) throw new Error(`Wikipedia HTTP ${response.status}`);
+      const root = await response.json();
+      const pages = Object.values(root?.query?.pages || {}).filter((page) =>
+        page?.thumbnail?.source && String(page.extract || "").trim().length >= 24
+      );
+      if (!pages.length) throw new Error(`Không tìm thấy kết quả cho chủ đề "${theme}".`);
+
+      const index = Math.floor(seededFraction(`${seed}|${language}|theme`) * pages.length);
+      const page = pages[Math.min(index, pages.length - 1)];
+      const cleanTitle = sanitize(page.title, 100) || "Thẻ Kỳ Vật Vô Danh";
+      const description = sanitize(page.extract, 420) || `Một chủ đề trong bộ sưu tập "${theme}" của bạn.`;
+      const qid = page?.pageprops?.wikibase_item || "";
+      const pageId = Number(page.pageid || 0);
+
+      return {
+        id: qid ? `wikidata-${qid}` : `wikipedia-${language}-${pageId}`,
+        name: cleanTitle,
+        category: await classify(cleanTitle, description, qid),
+        description,
+        rarity,
+        stars: starsForRarity(rarity),
+        imageUrl: page.thumbnail.source,
+        sourceType: "wikimedia",
+        sourceUrl: `https://${language}.wikipedia.org/?curid=${pageId}`,
+        attribution: "Wikipedia / Wikimedia Commons",
+        license: "See the source page for image-specific license and attribution",
+        generated: false
+      };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error("Knowledge source unavailable.");
 }
 
 async function fetchKnowledgeLoot({ rarity, locale, seed }) {

@@ -53,6 +53,9 @@ class AdventureProfileBridge(
     }
 
     @JavascriptInterface
+    fun setCollectionTheme(theme: String): String = mutate { store.setCollectionTheme(theme) }
+
+    @JavascriptInterface
     fun equipCard(cardId: String): String = mutate { store.equipCard(cardId) }
 
     @JavascriptInterface

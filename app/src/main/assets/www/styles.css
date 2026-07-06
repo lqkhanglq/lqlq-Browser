@@ -10123,12 +10123,40 @@ html.lqlq-native-page-open .story-reader-panel {
 
 .adventure-daily-card,
 .adventure-toggle-row,
+.adventure-theme-row,
 .adventure-coming-card {
   margin-top: 11px;
   border: 1px solid #dde7e0;
   border-radius: 17px;
   background: #ffffff;
   padding: 14px;
+}
+
+.adventure-theme-row b,
+.adventure-theme-row small {
+  display: block;
+}
+
+.adventure-theme-row b {
+  color: #293a31;
+  font-size: 12.5px;
+}
+
+.adventure-theme-row small {
+  color: #7b8880;
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+.adventure-theme-row select {
+  width: 100%;
+  margin-top: 10px;
+  border: 1px solid #dde7e0;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 14px;
+  background: #fff;
+  color: #1c2d23;
 }
 
 .adventure-daily-card > div:first-child,

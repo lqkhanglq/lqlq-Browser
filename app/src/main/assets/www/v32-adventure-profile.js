@@ -80,6 +80,7 @@
     dynamicCollectionCount: $("adventureDynamicCollectionCount"),
     dailyText: $("adventureDailyText"),
     dailyProgress: $("adventureDailyProgress"),
+    themeSelect: $("adventureThemeSelect"),
     lootToggle: $("adventureLootToggle"),
     beastsToggle: $("adventureBeastsToggle"),
     dynamicLootToggle: $("adventureDynamicLootToggle"),
@@ -131,7 +132,8 @@
     slotPriceCrystals: 10,
     identityChangeCredits: 0,
     portraitChangeCredits: 0,
-    equippedCardIds: []
+    equippedCardIds: [],
+    collectionTheme: ""
   };
 
   let activeCardId = "";
@@ -246,6 +248,7 @@
     elements.dailyText.textContent = `${current}/${limit} Linh Thạch`;
     elements.dailyProgress.style.width = `${Math.min(100, (current / limit) * 100)}%`;
     elements.effectsToggle.checked = state.effectsEnabled !== false;
+    if (elements.themeSelect) elements.themeSelect.value = state.collectionTheme || "";
     if (elements.lootToggle) elements.lootToggle.checked = state.lootEnabled !== false;
     if (elements.beastsToggle) elements.beastsToggle.checked = state.spiritBeastsEnabled !== false;
     if (elements.dynamicLootToggle) elements.dynamicLootToggle.checked = state.dynamicLootEnabled !== false;
@@ -832,6 +835,17 @@
   // Linh Thạch (chưa triển khai). Nhánh `editing` trong showView()/submitProfile()
   // vẫn giữ nguyên để tái dùng cho tính năng thẻ đổi đó sau này.
   elements.deleteProfile.addEventListener("click", deleteProfile);
+  elements.themeSelect?.addEventListener("change", () => {
+    const value = elements.themeSelect.value;
+    const result = callMutation("setCollectionTheme", value);
+    if (result?.ok) {
+      applyNativeState(result.state);
+      window.toast?.(value ? "Đã đặt mục tiêu sưu tập." : "Đã bỏ mục tiêu sưu tập, quay về ngẫu nhiên.");
+    } else {
+      window.toast?.(result?.error || "Không lưu được mục tiêu sưu tập.");
+      elements.themeSelect.value = state.collectionTheme || "";
+    }
+  });
   elements.effectsToggle.addEventListener("change", () => {
     const result = callMutation("setEffectsEnabled", elements.effectsToggle.checked);
     if (result?.ok) applyNativeState(result.state);

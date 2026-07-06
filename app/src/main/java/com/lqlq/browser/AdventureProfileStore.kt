@@ -49,6 +49,14 @@ class AdventureProfileStore(context: Context) {
         private const val KEY_PORTRAIT_CREDITS = "portrait_change_credits"
         private const val KEY_EQUIPPED_CARDS = "equipped_card_ids"
         const val MAX_EQUIPPED_CARDS = 10
+        private const val KEY_COLLECTION_THEME = "collection_theme"
+
+        // Chỉ cho chọn trong danh sách cố định — KHÔNG cho nhập tự do, vì
+        // free-text có thể bị dùng để "lái" kết quả sưu tập theo ý muốn,
+        // làm mất đi tính ngẫu nhiên/giá trị của việc sưu tập.
+        private val ALLOWED_COLLECTION_THEMES = setOf(
+            "", "landmark", "celebrity", "football", "anime", "comic", "ancient", "animal", "plant"
+        )
 
         private val ALLOWED_AVATARS = setOf(
             "guardian",
@@ -188,7 +196,8 @@ class AdventureProfileStore(context: Context) {
         val portraitVersion: Int,
         val identityChangeCredits: Int,
         val portraitChangeCredits: Int,
-        val equippedCardIds: List<String>
+        val equippedCardIds: List<String>,
+        val collectionTheme: String
     ) {
         fun toJson(): JSONObject = JSONObject().apply {
             put("exists", exists)
@@ -219,6 +228,7 @@ class AdventureProfileStore(context: Context) {
             put("identityChangeCredits", identityChangeCredits)
             put("portraitChangeCredits", portraitChangeCredits)
             put("equippedCardIds", JSONArray().apply { equippedCardIds.forEach { put(it) } })
+            put("collectionTheme", collectionTheme)
             put("catalog", SpiritBeastCatalog.toJson())
             put("shop", shopCatalogJson())
             put("storage", "device")
@@ -269,8 +279,19 @@ class AdventureProfileStore(context: Context) {
             portraitVersion = prefs.getInt(KEY_PORTRAIT_VERSION, 0),
             identityChangeCredits = prefs.getInt(KEY_IDENTITY_CREDITS, 0).coerceAtLeast(0),
             portraitChangeCredits = prefs.getInt(KEY_PORTRAIT_CREDITS, 0).coerceAtLeast(0),
-            equippedCardIds = readEquippedCardIds()
+            equippedCardIds = readEquippedCardIds(),
+            collectionTheme = prefs.getString(KEY_COLLECTION_THEME, "").orEmpty()
         )
+    }
+
+    /** Mục tiêu sưu tập — chỉ nhận id trong danh sách cố định (xem ALLOWED_COLLECTION_THEMES), để trống ("") nghĩa là ngẫu nhiên. */
+    @Synchronized
+    fun setCollectionTheme(theme: String): Snapshot {
+        check(hasProfile()) { "Chưa có Hồ sơ Phiêu lưu." }
+        val clean = theme.trim().lowercase(Locale.ROOT)
+        require(ALLOWED_COLLECTION_THEMES.contains(clean)) { "Mục tiêu sưu tập không hợp lệ." }
+        prefs.edit().putString(KEY_COLLECTION_THEME, clean).apply()
+        return snapshot()
     }
 
     private fun readEquippedCardIds(): List<String> {

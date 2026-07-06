@@ -24,25 +24,41 @@ class DynamicLootRepository {
         val bitmap: Bitmap
     )
 
-    fun fetchRandom(seed: String, rarity: String, locale: String = "vi"): FetchedLoot {
+    companion object {
+        // Khớp với THEME_QUERY_MAP phía Worker — id cố định do người dùng
+        // chọn trong <select>, ánh xạ sang từ khóa tìm kiếm tiếng Anh khi
+        // dùng đường Wikipedia dự phòng (Worker chưa cấu hình/lỗi mạng).
+        private val THEME_SEARCH_QUERIES = mapOf(
+            "landmark" to "famous landmark",
+            "football" to "footballer",
+            "comic" to "comic book superhero",
+            "ancient" to "ancient historical figure",
+            "animal" to "animal species",
+            "plant" to "plant species"
+        )
+    }
+
+    fun fetchRandom(seed: String, rarity: String, locale: String = "vi", theme: String = ""): FetchedLoot {
         val endpoint = BuildConfig.DYNAMIC_LOOT_ENDPOINT.trim()
         if (endpoint.isNotBlank() && !endpoint.contains("YOUR-WORKER", ignoreCase = true)) {
-            runCatching { fetchFromWorker(endpoint, seed, rarity, locale) }
+            runCatching { fetchFromWorker(endpoint, seed, rarity, locale, theme) }
                 .getOrNull()
                 ?.let { return it }
         }
-        return fetchFromWikipedia(seed, rarity, locale)
+        return fetchFromWikipedia(seed, rarity, locale, theme)
     }
 
     private fun fetchFromWorker(
         endpoint: String,
         seed: String,
         rarity: String,
-        locale: String
+        locale: String,
+        theme: String
     ): FetchedLoot {
         val separator = if (endpoint.contains('?')) '&' else '?'
+        val themeParam = if (theme.isNotBlank()) "&theme=${encode(theme)}" else ""
         val url = endpoint.trimEnd('/') + "/api/random-loot" + separator +
-            "seed=${encode(seed)}&rarity=${encode(rarity)}&locale=${encode(locale)}&mode=auto"
+            "seed=${encode(seed)}&rarity=${encode(rarity)}&locale=${encode(locale)}&mode=auto$themeParam"
         val json = JSONObject(readText(url))
         if (!json.optBoolean("ok", true)) {
             error(json.optString("error", "Dynamic Loot Worker trả lỗi."))
@@ -53,20 +69,31 @@ class DynamicLootRepository {
         return FetchedLoot(item, loadBitmap(item.imageUrl))
     }
 
-    private fun fetchFromWikipedia(seed: String, rarity: String, locale: String): FetchedLoot {
+    private fun fetchFromWikipedia(seed: String, rarity: String, locale: String, theme: String = ""): FetchedLoot {
         val languageOrder = linkedSetOf(
             locale.lowercase(Locale.ROOT).substringBefore('-').takeIf { it in setOf("vi", "en") } ?: "vi",
             "en"
         )
+        val searchTerm = THEME_SEARCH_QUERIES[theme.trim().lowercase(Locale.ROOT)].orEmpty()
         var lastError: Throwable? = null
         languageOrder.forEach { language ->
             repeat(3) { attempt ->
                 try {
-                    val query = "https://$language.wikipedia.org/w/api.php" +
-                        "?action=query&generator=random&grnnamespace=0&grnlimit=12" +
-                        "&prop=pageimages%7Cextracts%7Cpageprops" +
-                        "&piprop=thumbnail&pithumbsize=640" +
-                        "&exintro=1&explaintext=1&exsentences=2&format=json&origin=*"
+                    // Có mục tiêu sưu tập do người dùng chọn (vd "anime") thì tìm
+                    // theo chủ đề đó (generator=search) thay vì lấy trang ngẫu nhiên.
+                    val query = if (searchTerm.isNotBlank()) {
+                        "https://$language.wikipedia.org/w/api.php" +
+                            "?action=query&generator=search&gsrsearch=${encode(searchTerm)}&gsrlimit=20" +
+                            "&prop=pageimages%7Cextracts%7Cpageprops" +
+                            "&piprop=thumbnail&pithumbsize=640" +
+                            "&exintro=1&explaintext=1&exsentences=2&format=json&origin=*"
+                    } else {
+                        "https://$language.wikipedia.org/w/api.php" +
+                            "?action=query&generator=random&grnnamespace=0&grnlimit=12" +
+                            "&prop=pageimages%7Cextracts%7Cpageprops" +
+                            "&piprop=thumbnail&pithumbsize=640" +
+                            "&exintro=1&explaintext=1&exsentences=2&format=json&origin=*"
+                    }
                     val root = JSONObject(readText(query))
                     val pages = root.optJSONObject("query")?.optJSONObject("pages")
                         ?: error("Wikipedia không trả danh sách trang.")
