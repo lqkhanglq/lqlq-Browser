@@ -285,6 +285,53 @@ function switchTab(id) {
   render();
 }
 
+// Favicon thật cho thẻ (kiểu Chrome: icon + tên), thay vì chấm tròn ẩn cũ.
+// Cache theo host (không phải theo URL đầy đủ, vì mọi trang cùng site dùng
+// chung 1 icon) và giới hạn tần suất gọi native khi chưa có kết quả — tránh
+// gọi getCachedFaviconData() (có thể đọc file) trên MỖI tab ở MỖI lần
+// render(), vốn có thể fire rất thường xuyên trong lúc trang đang tải.
+const tabFaviconCache = new Map();
+const tabFaviconCooldown = new Map();
+
+function faviconHostKey(url) {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.protocol}//${parsed.hostname.toLowerCase().replace(/^www\./, "")}`;
+  } catch {
+    return "";
+  }
+}
+
+function getTabFaviconDataUrl(url) {
+  if (!url || typeof window.LqlqAndroid?.getCachedFaviconData !== "function") return "";
+  const key = faviconHostKey(url);
+  if (!key) return "";
+
+  const cached = tabFaviconCache.get(key);
+  if (cached) return cached;
+
+  const lastAttempt = tabFaviconCooldown.get(key) || 0;
+  const now = Date.now();
+  if (now - lastAttempt < 1500) return "";
+  tabFaviconCooldown.set(key, now);
+
+  try {
+    const data = window.LqlqAndroid.getCachedFaviconData(url);
+    if (/^data:image\/(?:png|webp|jpeg|jpg|gif);base64,/i.test(String(data || ""))) {
+      tabFaviconCache.set(key, data);
+      return data;
+    }
+  } catch (error) {
+    console.warn("lqlq tab favicon:", error);
+  }
+  return "";
+}
+
+function tabFallbackLetter(tab) {
+  const source = String(tab.title || tab.url || "T").trim();
+  return source.charAt(0).toUpperCase() || "T";
+}
+
 function renderTabs() {
   const profile = currentProfile();
   els.tabStrip.innerHTML = "";
@@ -292,14 +339,31 @@ function renderTabs() {
   profile.tabs.forEach(tab => {
     const row = document.createElement("div");
     row.className = "tab" + (tab.id === profile.activeTabId ? " active" : "");
-    row.innerHTML = `
-      <span>🌐</span>
-      <span>${escapeHtml(tab.title)}</span>
-      <button class="close" title="Đóng thẻ">×</button>
-    `;
 
+    const favicon = document.createElement("span");
+    favicon.className = "tab-favicon";
+    const faviconData = tab.url ? getTabFaviconDataUrl(tab.url) : "";
+    if (faviconData) {
+      const img = document.createElement("img");
+      img.src = faviconData;
+      img.alt = "";
+      favicon.appendChild(img);
+    } else {
+      favicon.textContent = tab.url ? tabFallbackLetter(tab) : "🌐";
+    }
+
+    const title = document.createElement("span");
+    title.className = "tab-title";
+    title.textContent = tab.title;
+
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "close";
+    closeBtn.title = "Đóng thẻ";
+    closeBtn.textContent = "×";
+
+    row.append(favicon, title, closeBtn);
     row.addEventListener("click", () => switchTab(tab.id));
-    row.querySelector(".close").addEventListener("click", event => {
+    closeBtn.addEventListener("click", event => {
       event.stopPropagation();
       closeTab(tab.id);
     });
