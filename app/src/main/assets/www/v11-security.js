@@ -65,7 +65,10 @@
     blockTrackers: true,
     blockThirdPartyCookies: true,
     blockExternalApps: true,
-    blockExecutableDownloads: true,
+    // Mặc định TẮT (v0.28): người dùng tải gì là quyền của người dùng, ứng
+    // dụng không tự ý chặn hay đổi tệp tải xuống. Vẫn để công tắc này trong
+    // Trung tâm bảo mật cho ai muốn tự bật.
+    blockExecutableDownloads: false,
     checkMimeMismatch: true,
     warnCrossDomainDownload: true,
     blockMultipleDownloads: true,
@@ -206,12 +209,14 @@
   function applyLevelPreset(level) {
     securityState.level = level;
 
+    // blockExecutableDownloads KHÔNG bị các mức bảo vệ này ép bật lại (v0.28)
+    // — đây là lựa chọn tải tệp của người dùng, không phải một chỉ số "mức độ
+    // bảo vệ trang web", nên chỉ đổi khi người dùng tự bấm công tắc riêng.
     if (level === "standard") {
       securityState.httpsOnly = false;
       securityState.blockTrackers = true;
       securityState.blockThirdPartyCookies = false;
       securityState.blockExternalApps = true;
-      securityState.blockExecutableDownloads = true;
       securityState.checkMimeMismatch = true;
       securityState.warnCrossDomainDownload = true;
       securityState.blockMultipleDownloads = true;
@@ -220,7 +225,6 @@
       securityState.blockTrackers = true;
       securityState.blockThirdPartyCookies = true;
       securityState.blockExternalApps = true;
-      securityState.blockExecutableDownloads = true;
       securityState.checkMimeMismatch = true;
       securityState.warnCrossDomainDownload = true;
       securityState.blockMultipleDownloads = true;
@@ -229,7 +233,6 @@
       securityState.blockTrackers = true;
       securityState.blockThirdPartyCookies = true;
       securityState.blockExternalApps = true;
-      securityState.blockExecutableDownloads = true;
       securityState.checkMimeMismatch = true;
       securityState.warnCrossDomainDownload = true;
       securityState.blockMultipleDownloads = true;
