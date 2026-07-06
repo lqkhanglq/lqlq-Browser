@@ -922,18 +922,22 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
                     val host = runCatching { Uri.parse(url).host.orEmpty() }.getOrDefault("")
-                    if (result.rewarded) {
-                        Toast.makeText(
-                            this@MainActivity,
-                            if (host.isNotBlank()) "Nhặt được 1 Linh Thạch tại $host" else "Nhặt được 1 Linh Thạch",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    } else if (result.dailyLimitReached) {
-                        Toast.makeText(
-                            this@MainActivity,
-                            "Bạn đã đầy hạn mức Linh Thạch hôm nay, nhưng vùng đất này vẫn được ghi nhận.",
-                            Toast.LENGTH_SHORT
-                        ).show()
+                    // "Hiệu ứng nhận Linh Thạch" (adventureEffectsToggle) tắt thì
+                    // Toast hệ thống này cũng phải tắt theo — trước đây quên gate.
+                    if (result.snapshot.effectsEnabled) {
+                        if (result.rewarded) {
+                            Toast.makeText(
+                                this@MainActivity,
+                                if (host.isNotBlank()) "Nhặt được 1 Linh Thạch tại $host" else "Nhặt được 1 Linh Thạch",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        } else if (result.dailyLimitReached) {
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Bạn đã đầy hạn mức Linh Thạch hôm nay, nhưng vùng đất này vẫn được ghi nhận.",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
                     }
                 }
             })
@@ -1079,7 +1083,9 @@ class MainActivity : AppCompatActivity() {
         dynamicLootHideRunnable?.let { adventureLootLayer.removeCallbacks(it) }
         val hide = Runnable {
             if (pendingDynamicLoot?.id == item.id) {
-                Toast.makeText(this, "Kỳ Vật ${item.name} đã tan vào Vạn Giới.", Toast.LENGTH_SHORT).show()
+                if (adventureProfileStore.snapshot().effectsEnabled) {
+                    Toast.makeText(this, "Kỳ Vật ${item.name} đã tan vào Vạn Giới.", Toast.LENGTH_SHORT).show()
+                }
                 hideDynamicLootEncounter()
             }
         }
@@ -1259,7 +1265,9 @@ class MainActivity : AppCompatActivity() {
         spiritBeastHideRunnable?.let { adventureLootLayer.removeCallbacks(it) }
         val hide = Runnable {
             if (pendingSpiritBeast?.id == beast.id) {
-                Toast.makeText(this, "${beast.name} đã rời khỏi vùng đất.", Toast.LENGTH_SHORT).show()
+                if (adventureProfileStore.snapshot().effectsEnabled) {
+                    Toast.makeText(this, "${beast.name} đã rời khỏi vùng đất.", Toast.LENGTH_SHORT).show()
+                }
                 hideSpiritBeastEncounter()
             }
         }
@@ -3183,12 +3191,43 @@ $js
         }
     }
 
+    /**
+     * Website có thể tự điều hướng sang scheme khác http(s) (vd fb://,
+     * intent://...) để "nhảy" thẳng sang app ngoài mà người dùng KHÔNG hề
+     * bấm vào link đó — trước đây hàm này mở app ngay lập tức, không hỏi,
+     * khiến trình duyệt tự động bật Facebook/app khác. Giờ luôn hỏi xác
+     * nhận trước, không bao giờ tự ý chuyển app.
+     */
     private fun openExternalUri(uri: Uri) {
-        try {
-            startActivity(Intent(Intent.ACTION_VIEW, uri))
+        val intent = try {
+            Intent(Intent.ACTION_VIEW, uri)
         } catch (_: Exception) {
             Toast.makeText(this, "Không có ứng dụng nào mở được liên kết này.", Toast.LENGTH_SHORT).show()
+            return
         }
+        val appLabel = try {
+            val resolved = packageManager.resolveActivity(intent, 0)
+            resolved?.loadLabel(packageManager)?.toString()
+        } catch (_: Exception) {
+            null
+        }
+        val message = if (appLabel.isNullOrBlank()) {
+            "Trang web muốn mở một ứng dụng khác. Bạn có muốn chuyển qua không?"
+        } else {
+            "Trang web muốn mở ứng dụng \"$appLabel\". Bạn có muốn chuyển qua không?"
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Chuyển sang ứng dụng khác?")
+            .setMessage(message)
+            .setNegativeButton("Ở lại trang web", null)
+            .setPositiveButton("Mở ứng dụng") { _, _ ->
+                try {
+                    startActivity(intent)
+                } catch (_: Exception) {
+                    Toast.makeText(this, "Không có ứng dụng nào mở được liên kết này.", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .show()
     }
 
     // ------------------------------------------------------------------
