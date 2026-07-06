@@ -137,35 +137,48 @@ async function generateAiLoot(env, { rarity, locale, seed }) {
   };
 }
 
-// Dải thứ hạng lượt xem (theo ngày, Wikimedia Pageviews API) ứng với mỗi độ
-// hiếm — thẻ hiếm hơn buộc phải lấy trong nhóm chủ đề CÀNG nổi tiếng, để nội
-// dung luôn gần gũi/quen thuộc (tỷ phú, nhân vật lịch sử, vận động viên, địa
-// danh, nhân vật anime... đang thật sự được nhiều người quan tâm) thay vì một
-// bài Wikipedia ngẫu nhiên bất kỳ có thể rất xa lạ.
+// Dải thứ hạng lượt xem THEO THÁNG (Wikimedia Pageviews API, tổng hợp cả
+// tháng thay vì 1 ngày lẻ) ứng với mỗi độ hiếm — top theo tháng ổn định hơn
+// nhiều so với top theo ngày (top ngày lẫn rất nhiều tin thời sự nhất thời,
+// dễ ra chủ đề xa lạ). Thẻ càng hiếm càng bắt buộc nằm trong nhóm càng nổi
+// tiếng/hot, để luôn gần gũi, quen thuộc với người dùng phổ thông.
 const FAME_RANK_BANDS = {
-  "Thần Thoại": [1, 40],
-  "Huyền Thoại": [1, 100],
-  "Sử Thi": [40, 250],
-  "Hiếm": [100, 500],
-  "Thường": [200, 1000]
+  "Thần Thoại": [1, 15],
+  "Huyền Thoại": [1, 40],
+  "Sử Thi": [10, 80],
+  "Hiếm": [20, 150],
+  "Thường": [30, 300]
 };
 
-const IGNORED_TITLE_PATTERN = /^(Main_Page|Trang_Chính|Special:|Đặc_biệt:|Wikipedia:|Bản_mẫu:|Category:|Thể_loại:|Portal:|Cổng_thông_tin:|File:|Tập_tin:|Help:|Trợ_giúp:)/i;
+const IGNORED_TITLE_PATTERN = /^(Main_Page|Trang_Chính|Special:|Đặc_biệt:|Wikipedia:|Bản_mẫu:|Category:|Thể_loại:|Portal:|Cổng_thông_tin:|File:|Tập_tin:|Help:|Trợ_giúp:|Danh_sách|List_of)/i;
+
+// Loại các tiêu đề quá ngắn/không phải chủ đề thật (chữ cái đơn lẻ, mã số...)
+// hay lọt vào top vì là trang tra cứu nhanh, không phải nội dung "nổi tiếng".
+function isRealTopicTitle(title) {
+  const clean = title.replace(/_/g, " ").trim();
+  if (clean.length < 3) return false;
+  if (!/[a-zA-ZÀ-ỹ]{2,}/.test(clean)) return false;
+  return true;
+}
 
 async function fetchTopViewedTitles(language, seed) {
-  // Chọn 1 ngày quá khứ ổn định (2-400 ngày trước) theo seed để dữ liệu
-  // pageviews chắc chắn đã được Wikimedia tổng hợp xong (tránh ngày quá gần).
-  const daysAgo = 2 + Math.floor(seededFraction(`${seed}|day`) * 398);
-  const date = new Date(Date.now() - daysAgo * 86400000);
+  // Chọn 1 tháng quá khứ ổn định (2-36 tháng trước) theo seed để dữ liệu
+  // pageviews chắc chắn đã được Wikimedia tổng hợp xong. Top THEO THÁNG
+  // (all-days) phản ánh đúng "cái gì thật sự nổi tiếng/hot" hơn hẳn so với
+  // top của riêng 1 ngày ngẫu nhiên.
+  const monthsAgo = 2 + Math.floor(seededFraction(`${seed}|month`) * 34);
+  const date = new Date(Date.now());
+  date.setUTCMonth(date.getUTCMonth() - monthsAgo, 1);
   const y = date.getUTCFullYear();
   const m = String(date.getUTCMonth() + 1).padStart(2, "0");
-  const d = String(date.getUTCDate()).padStart(2, "0");
-  const api = `https://wikimedia.org/api/rest_v1/metrics/pageviews/top/${language}.wikipedia/all-access/${y}/${m}/${d}`;
+  const api = `https://wikimedia.org/api/rest_v1/metrics/pageviews/top/${language}.wikipedia/all-access/${y}/${m}/all-days`;
   const response = await fetch(api, { headers: { "user-agent": "lqlq-dynamic-loot/0.32" } });
   if (!response.ok) throw new Error(`Pageviews HTTP ${response.status}`);
   const root = await response.json();
   const articles = root?.items?.[0]?.articles || [];
-  return articles.filter((entry) => entry?.article && !IGNORED_TITLE_PATTERN.test(entry.article));
+  return articles.filter((entry) =>
+    entry?.article && !IGNORED_TITLE_PATTERN.test(entry.article) && isRealTopicTitle(entry.article)
+  );
 }
 
 async function fetchPageByTitle(language, title) {
