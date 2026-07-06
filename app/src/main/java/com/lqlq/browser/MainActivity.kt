@@ -934,7 +934,10 @@ class MainActivity : AppCompatActivity() {
         lastDynamicLootUrlByTab[tabId] = normalized
 
         val dynamicCount = dynamicLootStore.stateJson().optInt("dynamicCollectionCount", 0)
-        val encounterChance = if (dynamicCount == 0) 0.86 else 0.24
+        // TẠM THỜI ĐỂ TEST (v0.32.1): luôn 100% để người dùng thấy Kỳ Vật ở
+        // mọi trang khi thử nghiệm. Đổi lại "if (dynamicCount == 0) 0.86 else
+        // 0.24" khi test xong.
+        val encounterChance = 1.0
         val chanceRoll = deterministicRoll("$normalized|${adventureProfileStore.currentDayKey()}|dynamic-encounter")
         if (chanceRoll > encounterChance) return false
 
@@ -1147,9 +1150,11 @@ class MainActivity : AppCompatActivity() {
         if (lastSpiritBeastUrlByTab[tabId] == normalized) return
         lastSpiritBeastUrlByTab[tabId] = normalized
 
-        // Những lần đầu cho tỷ lệ cao để người dùng hiểu hệ thống; sau đó về
-        // mức 32% để Linh Thú vẫn có cảm giác bất ngờ và có giá trị sưu tầm.
-        val chance = if (snapshot.totalBeastEncounters < 3 && snapshot.collection.isEmpty()) 0.78 else 0.32
+        // TẠM THỜI ĐỂ TEST (v0.32.1): luôn 100%. Đổi lại
+        // "if (snapshot.totalBeastEncounters < 3 && snapshot.collection.isEmpty()) 0.78 else 0.32"
+        // khi test xong (những lần đầu cho tỷ lệ cao để hiểu hệ thống, sau đó
+        // về mức 32% để Linh Thú vẫn có cảm giác bất ngờ và giá trị sưu tầm).
+        val chance = 1.0
         val roll = (("$normalized|${adventureProfileStore.currentDayKey()}|encounter".hashCode().toLong() and 0x7fffffffL) % 10_000L) / 10_000.0
         if (roll > chance) return
 

@@ -70,7 +70,6 @@
     beastsToggle: $("adventureBeastsToggle"),
     dynamicLootToggle: $("adventureDynamicLootToggle"),
     effectsToggle: $("adventureEffectsToggle"),
-    editProfile: $("adventureEditProfile"),
     deleteProfile: $("adventureDeleteProfile"),
     effectHost: $("adventureCrystalEffectHost")
   };
@@ -298,6 +297,24 @@
     elements.overlay.classList.add("hidden");
     elements.overlay.setAttribute("aria-hidden", "true");
     setFormError("");
+  }
+
+  /**
+   * Nút Back Android (v0.32.1): trước đây bấm Back trong lúc đang ở 1 màn
+   * con (Đồ Giám/Túi Hành Trang/Cửa Hàng/Thẻ Khoe) sẽ đóng LUÔN cả bảng Hồ
+   * sơ Phiêu lưu, giống hệt bấm nút X — không giống cảm giác "quay lại"
+   * thông thường. android-glue.js gọi hàm này TRƯỚC khi tự đóng overlay:
+   * nếu đang ở màn con thì quay về dashboard và trả về true (đã xử lý,
+   * không đóng overlay); nếu đã ở dashboard rồi thì trả về false để
+   * android-glue.js đóng overlay như bình thường.
+   */
+  function handleBackPress() {
+    if (elements.overlay.classList.contains("hidden")) return false;
+    if (activeSubView) {
+      showView("dashboard");
+      return true;
+    }
+    return false;
   }
 
   function callMutation(method, ...args) {
@@ -597,7 +614,10 @@
   });
   elements.createSubmit.addEventListener("click", submitProfile);
   elements.nickname.addEventListener("keydown", event => { if (event.key === "Enter") submitProfile(); });
-  elements.editProfile.addEventListener("click", () => { editing = true; showView("create"); });
+  // Việc bỏ nút "Chỉnh sửa" miễn phí (v0.32.1): sau khi tạo hồ sơ, biệt danh
+  // và avatar bị khoá — chỉ đổi được bằng thẻ đổi tên/đổi avatar mua bằng
+  // Linh Thạch (chưa triển khai). Nhánh `editing` trong showView()/submitProfile()
+  // vẫn giữ nguyên để tái dùng cho tính năng thẻ đổi đó sau này.
   elements.deleteProfile.addEventListener("click", deleteProfile);
   elements.effectsToggle.addEventListener("change", () => {
     const result = callMutation("setEffectsEnabled", elements.effectsToggle.checked);
@@ -651,7 +671,8 @@
     onDynamicLootCollected,
     openProfile,
     closeProfile,
-    refreshFromNative
+    refreshFromNative,
+    handleBackPress
   };
 
   refreshFromNative();

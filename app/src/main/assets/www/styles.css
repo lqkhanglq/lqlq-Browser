@@ -10017,6 +10017,29 @@ html.lqlq-native-page-open .story-reader-panel {
   color: #536159;
 }
 
+.adventure-back-button {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid #dde7e0;
+  border-radius: 50%;
+  background: #ffffff;
+  color: #18a65a;
+  font-size: 22px;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(23, 45, 30, .08);
+}
+
+.adventure-back-button:hover,
+.adventure-back-button:active {
+  background: #edf7f1;
+}
+
 .adventure-dashboard-copy {
   min-width: 0;
   flex: 1;
@@ -10307,21 +10330,21 @@ html[data-theme="dark"] .adventure-name-input {
 /* v0.30.0 — Adventure profile refinements */
 .adventure-menu-summary {
   display: grid;
-  grid-template-columns: 84px minmax(0, 1fr) 84px;
-  gap: 10px;
-  padding: 0 22px 18px;
+  grid-template-columns: 56px minmax(0, 1fr) 56px;
+  gap: 7px;
+  padding: 0 16px 12px;
 }
 
 .adventure-summary-chip {
   border: 1px solid rgba(36, 120, 82, 0.14);
   background: linear-gradient(180deg, rgba(234, 248, 240, 0.94), rgba(246, 250, 247, 0.98));
-  border-radius: 18px;
-  padding: 12px 14px;
+  border-radius: 13px;
+  padding: 6px 8px;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 4px;
-  min-height: 74px;
+  gap: 1px;
+  min-height: 46px;
 }
 
 .adventure-summary-chip.compact {
@@ -10330,21 +10353,21 @@ html[data-theme="dark"] .adventure-name-input {
 }
 
 .adventure-summary-chip span {
-  font-size: 12px;
+  font-size: 9.5px;
   color: rgba(51, 88, 72, 0.74);
   font-weight: 700;
 }
 
 .adventure-summary-chip b {
-  font-size: 22px;
+  font-size: 14px;
   color: #214734;
   line-height: 1.05;
 }
 
 .adventure-summary-chip small {
   color: rgba(58, 74, 67, 0.78);
-  font-size: 12.5px;
-  line-height: 1.35;
+  font-size: 10px;
+  line-height: 1.25;
 }
 
 .adventure-summary-chip.wide {
@@ -10352,8 +10375,8 @@ html[data-theme="dark"] .adventure-name-input {
 }
 
 .adventure-summary-chip.wide span {
-  font-size: 13px;
-  letter-spacing: .03em;
+  font-size: 10px;
+  letter-spacing: .02em;
 }
 
 .adventure-summary-chip.crystal b {
@@ -10526,13 +10549,13 @@ html[data-theme="dark"] .adventure-guide-card small {
 
 @media (max-width: 720px) {
   .adventure-menu-summary {
-    grid-template-columns: 72px minmax(0, 1fr) 72px;
-    padding: 0 16px 16px;
+    grid-template-columns: 52px minmax(0, 1fr) 52px;
+    padding: 0 14px 10px;
   }
 
   .adventure-summary-chip {
-    padding: 10px 12px;
-    min-height: 72px;
+    padding: 5px 7px;
+    min-height: 42px;
   }
 
   .adventure-hero-board {

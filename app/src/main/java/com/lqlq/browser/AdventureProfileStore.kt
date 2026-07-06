@@ -362,7 +362,9 @@ class AdventureProfileStore(context: Context) {
             "gold" -> 1.8
             else -> 1.0
         }
-        val chance = min(0.95, beast.baseCatchChance * multiplier + pity * 0.04)
+        // TẠM THỜI ĐỂ TEST (v0.32.1): luôn thành công. Đổi lại
+        // "min(0.95, beast.baseCatchChance * multiplier + pity * 0.04)" khi test xong.
+        val chance = 1.0
         val roll = Random.nextDouble()
         val success = roll <= chance
         val now = System.currentTimeMillis()
