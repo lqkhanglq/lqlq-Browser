@@ -9,6 +9,8 @@ import android.app.DownloadManager
 import android.app.ActivityManager
 import android.app.PictureInPictureParams
 import android.content.ContentUris
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.ContentValues
@@ -3258,7 +3260,52 @@ $js
             startDownload(url, userAgent, contentDisposition, mimeType)
         }
 
+        // Trước đây không xử lý gì cả khi giữ (long-press) lên ảnh — WebView
+        // vẫn tự rung phản hồi mặc định rồi cố mở context menu hệ thống,
+        // nhưng vì app chưa bao giờ registerForContextMenu()/onCreateContextMenu()
+        // nên không có gì hiện ra, và trạng thái gesture bên trong WebView bị
+        // kẹt lại, khiến MỌI cú chạm sau đó trên tab đó không còn nhận được
+        // nữa (không phải treo tab, chỉ là không nhận thao tác). Tự bắt sự
+        // kiện long-press trên ảnh và luôn return true để tiêu thụ sự kiện,
+        // đồng thời hiện menu "Tải ảnh / Mở tab mới / Sao chép liên kết"
+        // giống Chrome.
+        webView.setOnLongClickListener { view ->
+            val hitTestResult = (view as WebView).hitTestResult
+            val type = hitTestResult.type
+            if (type == WebView.HitTestResult.IMAGE_TYPE ||
+                type == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE
+            ) {
+                val handler = Handler(Looper.getMainLooper()) { message ->
+                    val imageUrl = message.data.getString("url") ?: hitTestResult.extra
+                    if (!imageUrl.isNullOrBlank()) showImageLongPressMenu(imageUrl)
+                    true
+                }
+                view.requestImageRef(handler.obtainMessage())
+                true
+            } else {
+                false
+            }
+        }
+
         return webView
+    }
+
+    private fun showImageLongPressMenu(imageUrl: String) {
+        val options = arrayOf("Tải ảnh về máy", "Mở ảnh trong thẻ mới", "Sao chép liên kết ảnh")
+        AlertDialog.Builder(this)
+            .setTitle(imageUrl.take(80))
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> startDownload(imageUrl, "", "", "image/*")
+                    1 -> createNativeTab(imageUrl, tabStore.currentMode)
+                    2 -> {
+                        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("image url", imageUrl))
+                        Toast.makeText(this, "Đã sao chép liên kết ảnh.", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            .show()
     }
 
     private fun notifyShellPage(tabId: String, url: String, title: String, loading: Boolean) {
