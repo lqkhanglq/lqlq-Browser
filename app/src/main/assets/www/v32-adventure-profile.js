@@ -716,13 +716,35 @@
     renderInventory();
   }
 
+  function unequippedCards() {
+    const equipped = new Set(state.equippedCardIds || []);
+    return (state.dynamicCollection || []).filter(entry => !equipped.has(entry.id));
+  }
+
   function renderInventory() {
     const used = state.slotUsed || 0;
     const capacity = state.slotCapacity || 20;
+    const usableCards = [];
+    if (state.identityChangeCredits > 0) {
+      usableCards.push(`
+        <article class="adventure-shop-card">
+          <span class="shop-icon">🪪</span>
+          <div><b>Thẻ Đổi Danh Tính</b><small>Sở hữu ×${state.identityChangeCredits} — đổi lại biệt danh/avatar.</small></div>
+          <button type="button" id="adventureUseIdentityBtn">Sử dụng</button>
+        </article>`);
+    }
+    if (state.portraitChangeCredits > 0) {
+      usableCards.push(`
+        <article class="adventure-shop-card">
+          <span class="shop-icon">🖼️</span>
+          <div><b>Thẻ Đổi Ngoại Hình</b><small>Sở hữu ×${state.portraitChangeCredits} — đặt lại ảnh ngoại hình lớn.</small></div>
+          <button type="button" id="adventureUsePortraitBtn">Sử dụng</button>
+        </article>`);
+    }
     elements.subContent.innerHTML = `
       <div class="adventure-sub-summary">
         <b>Túi hành trang · ${used}/${capacity} ô Thẻ Kỳ Vật</b>
-        <small>Đầy ô? Mua thêm bằng Linh Thạch để tiếp tục sưu tập.</small>
+        <small>Đầy ô? Mua thêm bằng Linh Thạch để tiếp tục sưu tập. Thẻ đã gắn vào nhân vật không chiếm ô.</small>
       </div>
       <div class="adventure-shop-list">
         <article class="adventure-shop-card">
@@ -730,8 +752,9 @@
           <div><b>Mở thêm 1 ô hành trang</b><small>Tăng vĩnh viễn giới hạn lưu Thẻ Kỳ Vật.</small></div>
           <button type="button" id="adventureBuySlotBtn">◆ ${state.slotPriceCrystals || 10}</button>
         </article>
+        ${usableCards.join("")}
       </div>
-      <div class="adventure-gear-row wide" id="adventureInventoryCardSlots">${cardSlotGridHtml(state.dynamicCollection || [], capacity)}</div>
+      <div class="adventure-gear-row wide" id="adventureInventoryCardSlots">${cardSlotGridHtml(unequippedCards(), capacity)}</div>
       <div class="adventure-inventory-grid">
         <article class="orb-card basic"><span>◉</span><div><b>Linh Cầu Thô</b><strong>×${state.orbBasic || 0}</strong><small>Dùng cho Linh Thú thường và những lần thử cơ bản.</small></div></article>
         <article class="orb-card silver"><span>◉</span><div><b>Linh Cầu Bạc</b><strong>×${state.orbSilver || 0}</strong><small>Tăng tỷ lệ thu phục sinh vật hiếm.</small></div></article>
@@ -746,6 +769,18 @@
         <small>Các bản sau sẽ thêm mảnh bản đồ, trứng Linh Thú, khung avatar, vật phẩm hiếm và trang bị nhà mạo hiểm.</small>
       </div>`;
     $("adventureBuySlotBtn")?.addEventListener("click", purchaseInventorySlot);
+    $("adventureUseIdentityBtn")?.addEventListener("click", useIdentityCard);
+    $("adventureUsePortraitBtn")?.addEventListener("click", usePortraitCard);
+  }
+
+  function useIdentityCard() {
+    editing = true;
+    showView("create");
+  }
+
+  function usePortraitCard() {
+    showView("dashboard");
+    elements.portraitUpload?.click();
   }
 
   const SHOP_ICONS = { gold: "🟡", silver: "⚪", basic: "🟢", identity: "🪪", portrait: "🖼️" };

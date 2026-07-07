@@ -59,7 +59,22 @@ class AdventureProfileBridge(
     fun equipCard(cardId: String): String = mutate { store.equipCard(cardId) }
 
     @JavascriptInterface
-    fun unequipCard(cardId: String): String = mutate { store.unequipCard(cardId) }
+    fun unequipCard(cardId: String): String {
+        // Tháo thẻ trả nó về túi hành trang — nếu túi đã đầy thì không còn
+        // chỗ để trả về, phải chặn lại (giống logic tháo đồ trong game).
+        val snapshot = store.snapshot()
+        if (snapshot.equippedCardIds.contains(cardId)) {
+            val backpackUsedAfter = dynamicLootStore.backpackUsed(snapshot.equippedCardIds.toSet()) + 1
+            if (backpackUsedAfter > dynamicLootStore.slotCapacity()) {
+                return JSONObject().apply {
+                    put("ok", false)
+                    put("error", "Túi hành trang đã đầy, không thể tháo thẻ ra. Hãy mua thêm ô hoặc xóa bớt thẻ trước.")
+                    put("state", appendState(snapshot))
+                }.toString()
+            }
+        }
+        return mutate { store.unequipCard(cardId) }
+    }
 
     @JavascriptInterface
     fun deleteCard(cardId: String): String {

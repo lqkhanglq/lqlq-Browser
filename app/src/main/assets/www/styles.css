@@ -9805,7 +9805,11 @@ html.lqlq-native-page-open .story-reader-panel {
   place-items: center;
   overflow-y: auto;
   background: rgba(13, 25, 18, .48);
-  padding: calc(env(safe-area-inset-top, 0px) + 18px) 14px calc(env(safe-area-inset-bottom, 0px) + 18px);
+  /* v0.32.2: nâng thêm khoảng đệm trên (ngoài safe-area) vì thanh công cụ
+     của trình duyệt (URL/tab) là view native riêng, không tính vào
+     env(safe-area-inset-top) — nếu chỉ dùng safe-area, đầu bảng vẫn sát
+     mép trên, dễ bị thanh công cụ che một phần. */
+  padding: calc(env(safe-area-inset-top, 0px) + 48px) 14px calc(env(safe-area-inset-bottom, 0px) + 18px);
   backdrop-filter: blur(12px);
 }
 
@@ -9815,7 +9819,7 @@ html.lqlq-native-page-open .story-reader-panel {
 
 .adventure-profile-card {
   width: min(520px, 100%);
-  max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 36px);
+  max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 66px);
   overflow-y: auto;
   border: 1px solid rgba(200, 223, 209, .96);
   border-radius: 28px;

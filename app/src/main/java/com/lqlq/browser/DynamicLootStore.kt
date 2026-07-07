@@ -93,17 +93,29 @@ class DynamicLootStore(context: Context) {
         return next
     }
 
+    /** Số thẻ đang GẮN vào nhân vật không tính vào chỗ chứa túi hành trang. */
     @Synchronized
-    fun collect(item: DynamicLootItem, domain: String): CollectResult {
+    fun backpackUsed(equippedIds: Set<String>): Int {
+        val collection = readCollectionObject()
+        var equippedCount = 0
+        val keys = collection.keys()
+        while (keys.hasNext()) {
+            if (equippedIds.contains(keys.next())) equippedCount += 1
+        }
+        return (collection.length() - equippedCount).coerceAtLeast(0)
+    }
+
+    @Synchronized
+    fun collect(item: DynamicLootItem, domain: String, equippedIds: Set<String> = emptySet()): CollectResult {
         if (item.id.isBlank()) {
-            return CollectResult(false, "Thẻ Vạn Giới không hợp lệ.", null, stateJson())
+            return CollectResult(false, "Thẻ Vạn Giới không hợp lệ.", null, stateJson(equippedIds))
         }
         val now = System.currentTimeMillis()
         val cleanDomain = domain.trim().take(180)
         val collection = readCollectionObject()
         val old = collection.optJSONObject(item.id)
-        if (old == null && collection.length() >= slotCapacity()) {
-            return CollectResult(false, "Túi hành trang đã đầy. Hãy mua thêm ô hoặc dọn bớt trước khi nhặt Thẻ Kỳ Vật mới.", null, stateJson())
+        if (old == null && backpackUsed(equippedIds) >= slotCapacity()) {
+            return CollectResult(false, "Túi hành trang đã đầy. Hãy mua thêm ô hoặc dọn bớt trước khi nhặt Thẻ Kỳ Vật mới.", null, stateJson(equippedIds))
         }
         val count = (old?.optInt("count", 0) ?: 0) + 1
         val firstDomain = old?.optString("firstDomain").orEmpty().ifBlank { cleanDomain }
@@ -123,7 +135,7 @@ class DynamicLootStore(context: Context) {
             .apply()
 
         val entry = CollectionEntry(item, count, firstDomain, firstCollectedAt, now)
-        return CollectResult(true, "", entry, stateJson())
+        return CollectResult(true, "", entry, stateJson(equippedIds))
     }
 
     @Synchronized
@@ -165,7 +177,7 @@ class DynamicLootStore(context: Context) {
             put("characterAtk", atk)
             put("characterMana", mana)
             put("slotCapacity", slotCapacity())
-            put("slotUsed", collection.size)
+            put("slotUsed", collection.count { !equippedIds.contains(it.item.id) })
             put("slotPriceCrystals", SLOT_PRICE_CRYSTALS)
         }
     }

@@ -1137,7 +1137,11 @@ class MainActivity : AppCompatActivity() {
             localImageName = localName,
             imageUrl = if (item.imageUrl.startsWith("data:image/")) "" else item.imageUrl
         )
-        val result = dynamicLootStore.collect(storedItem, pendingDynamicLootDomain)
+        val result = dynamicLootStore.collect(
+            storedItem,
+            pendingDynamicLootDomain,
+            adventureProfileStore.snapshot().equippedCardIds.toSet()
+        )
         hideDynamicLootEncounter()
         val profileSnapshot = adventureProfileStore.snapshot()
         dispatchAdventureProfileState(profileSnapshot)
