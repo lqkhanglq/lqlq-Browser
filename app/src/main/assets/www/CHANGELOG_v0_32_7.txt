@@ -1,0 +1,6 @@
+lqlq Browser v0.32.7
+
+- Khôi phục bố cục dọc như v0.32.5: không tự cộng system inset vào root, nên không còn dải trắng phía trên và toolbar không bị đẩy xuống.
+- Chế độ ngang chỉ chừa cạnh có thanh điều hướng Android; bỏ padding theo display cutout gây dải trắng bên trái.
+- Thêm khe an toàn 6dp giữa nội dung PC và Back/Home/Đa nhiệm để nút menu góc phải không bị che.
+- Giữ nút Quay ngang · chế độ PC / Quay dọc · chế độ điện thoại.

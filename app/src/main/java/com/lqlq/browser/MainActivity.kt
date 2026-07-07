@@ -2841,18 +2841,18 @@ $js
     }
 
     /**
-     * Chế độ ngang thường của trình duyệt:
-     * - ẩn thanh trạng thái phía trên để lấy lại chiều cao;
-     * - giữ thanh điều hướng Android (Back/Home/Đa nhiệm) và để Android chừa
-     *   vùng an toàn, nên nội dung web không bị các nút hệ thống che;
-     * - cho nền app phủ vùng cutout/camera ở cạnh ngắn để không còn dải đen
-     *   thừa, trong khi decor vẫn giữ nội dung tương tác ở vùng an toàn.
+     * Chỉ tự xử lý vùng an toàn ở chế độ ngang.
+     *
+     * Chế độ dọc giữ nguyên cách Android bố trí cửa sổ như các bản trước:
+     * decor tự nằm dưới status bar/navigation bar và root không có padding
+     * thủ công. Nhờ vậy giao diện điện thoại không bị đẩy thấp xuống.
+     *
+     * Ở chế độ ngang, status bar được ẩn. Root chỉ chừa đúng cạnh có thanh
+     * điều hướng Android (Back/Home/Đa nhiệm), cộng một khe nhỏ để nút menu
+     * web không sát thanh hệ thống. Không dùng display-cutout làm padding
+     * cạnh trái vì đó là nguyên nhân tạo dải trắng lớn ở v0.32.6.
      */
     private fun installBrowserInsetsHandling() {
-        // targetSdk 35 dùng edge-to-edge theo mặc định trên Android 15. Tự
-        // nhận insets để nền có thể phủ kín cutout/thanh hệ thống, nhưng toàn
-        // bộ nội dung và nút bấm vẫn nằm trong vùng an toàn.
-        WindowCompat.setDecorFitsSystemWindows(window, false)
         ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
             if (customView != null) {
                 view.setPadding(0, 0, 0, 0)
@@ -2861,16 +2861,22 @@ $js
 
             val landscape =
                 resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-            val status = insets.getInsets(WindowInsetsCompat.Type.statusBars())
-            val navigation = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
-            val cutout = insets.getInsets(WindowInsetsCompat.Type.displayCutout())
-            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+            if (!landscape) {
+                // Dọc: Android đã tự chừa status/navigation bar. Không cộng
+                // inset lần thứ hai vào root.
+                view.setPadding(0, 0, 0, 0)
+                return@setOnApplyWindowInsetsListener insets
+            }
 
-            val safeLeft = maxOf(navigation.left, cutout.left)
-            val safeTop = if (landscape) cutout.top else maxOf(status.top, cutout.top)
-            val safeRight = maxOf(navigation.right, cutout.right)
-            val safeBottom = maxOf(navigation.bottom, cutout.bottom, ime.bottom)
-            view.setPadding(safeLeft, safeTop, safeRight, safeBottom)
+            val navigation = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
+            val sideGap = dp(6)
+            val safeLeft = if (navigation.left > 0) navigation.left + sideGap else 0
+            val safeRight = if (navigation.right > 0) navigation.right + sideGap else 0
+            val safeBottom = navigation.bottom
+
+            // Chỉ chừa cạnh có thanh nút Android. Không chừa cạnh camera/cutout
+            // nên nền và WebView phủ kín bên trái, không còn dải trắng thừa.
+            view.setPadding(safeLeft, 0, safeRight, safeBottom)
             insets
         }
         ViewCompat.requestApplyInsets(root)
@@ -2886,7 +2892,25 @@ $js
         }
 
         val landscape = orientation == Configuration.ORIENTATION_LANDSCAPE
-        WindowCompat.setDecorFitsSystemWindows(window, false)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val attributes = window.attributes
+            attributes.layoutInDisplayCutoutMode = if (landscape) {
+                // Cho nền/WebView phủ cạnh camera khi ngang; thanh điều hướng
+                // Android vẫn được chừa riêng bằng navigationBars inset.
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            } else {
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
+            }
+            window.attributes = attributes
+        }
+
+        WindowCompat.setDecorFitsSystemWindows(window, !landscape)
+        if (!landscape) {
+            // Khôi phục đúng bố cục dọc ổn định của v0.32.5.
+            root.setPadding(0, 0, 0, 0)
+        }
+
         WindowInsetsControllerCompat(window, root).apply {
             systemBarsBehavior =
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
@@ -2896,16 +2920,6 @@ $js
             } else {
                 show(WindowInsetsCompat.Type.statusBars())
             }
-        }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            val attributes = window.attributes
-            attributes.layoutInDisplayCutoutMode = if (landscape) {
-                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-            } else {
-                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
-            }
-            window.attributes = attributes
         }
         ViewCompat.requestApplyInsets(root)
     }

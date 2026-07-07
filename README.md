@@ -103,3 +103,10 @@ Mã Worker nằm trong thư mục `dynamic-loot-worker/`.
 - Menu chức năng có nút **Quay ngang · chế độ PC** và nút quay dọc tương ứng.
 - Chế độ ngang ẩn status bar, giữ Back/Home/Đa nhiệm và chừa đúng vùng an toàn Android.
 - Nền app phủ vùng cutout/camera để giảm dải đen thừa; nội dung web không nằm dưới các nút hệ thống.
+
+
+## v0.32.7 — Sửa vùng an toàn ngang, giữ nguyên giao diện dọc
+
+- Giao diện dọc trở lại cách bố trí ổn định của v0.32.5, không còn dải trắng phía trên hoặc bị đẩy thấp.
+- Giao diện ngang không còn dải trắng lớn bên trái do camera/cutout.
+- Nội dung PC chỉ chừa đúng cạnh có Back/Home/Đa nhiệm Android, kèm khe nhỏ để nút menu web không bị che.
