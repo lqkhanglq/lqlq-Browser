@@ -957,4 +957,13 @@
   };
 
   refreshFromNative();
+
+  // Hiện số phiên bản app trong header — giúp người dùng tự xác nhận đã
+  // cài đúng bản build mới nhất, không lẫn cache/APK cũ.
+  try {
+    const versionEl = $("adventureAppVersion");
+    if (versionEl && window.LqlqAndroid?.getAppVersion) {
+      versionEl.textContent = window.LqlqAndroid.getAppVersion();
+    }
+  } catch {}
 })();

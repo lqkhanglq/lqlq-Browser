@@ -26,6 +26,10 @@ class ShellBridge(private val activity: MainActivity) {
     // ------------------------------------------------------------------
 
 
+    /** Cho JS hiện số phiên bản app — giúp người dùng tự xác nhận đã cài đúng bản mới nhất, không lẫn cache/APK cũ. */
+    @JavascriptInterface
+    fun getAppVersion(): String = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
+
     @JavascriptInterface
     fun getTabState(): String = activity.getTabStateJson()
 
