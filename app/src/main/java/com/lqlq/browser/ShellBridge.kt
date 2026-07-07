@@ -114,6 +114,12 @@ class ShellBridge(private val activity: MainActivity) {
         activity.runOnUiThread { activity.applyNativeAppearance(theme, accent) }
     }
 
+    /** Xoay toàn bộ trình duyệt từ mục Hiển thị trong Menu chức năng web. */
+    @JavascriptInterface
+    fun setScreenOrientation(mode: String) {
+        activity.runOnUiThread { activity.setBrowserOrientation(mode) }
+    }
+
     @JavascriptInterface
     fun openHtmlFile() {
         activity.runOnUiThread { activity.launchOpenHtmlFile() }

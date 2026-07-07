@@ -56,6 +56,7 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -596,6 +597,7 @@ class MainActivity : AppCompatActivity() {
         setupMediaBubble()
         setupNativeTabSwitcher()
         setContentView(root)
+        installBrowserWindowInsets()
 
         assetLoader = WebViewAssetLoader.Builder()
             .setDomain(SHELL_HOST)
@@ -610,6 +612,116 @@ class MainActivity : AppCompatActivity() {
         setupBackHandling()
 
         shellWebView.loadUrl(SHELL_URL)
+    }
+
+    /**
+     * Quản lý thanh hệ thống riêng cho trình duyệt thường (không phải video
+     * fullscreen):
+     * - dọc: giữ nguyên status bar + navigation bar như giao diện ổn định cũ;
+     * - ngang: ẩn riêng status bar để lấy lại chiều cao, vẫn giữ các nút hệ
+     *   thống Android và chừa đúng phần navigation bar ở cạnh tương ứng.
+     *
+     * Activity target SDK 35 chạy edge-to-edge, vì vậy không được dựa vào
+     * khoảng đệm mặc định của hệ thống. Root tự nhận insets để trang web không
+     * nằm dưới Back/Home/Đa nhiệm, nhưng cũng không tạo dải trắng giả ở cạnh
+     * đối diện. Vùng camera/cutout được phép dùng ở cạnh ngắn; các nút quan
+     * trọng của giao diện nằm bên phải vẫn được bảo vệ bởi navigation inset.
+     */
+    private fun installBrowserWindowInsets() {
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val attrs = window.attributes
+            attrs.layoutInDisplayCutoutMode =
+                android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            window.attributes = attrs
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isNavigationBarContrastEnforced = false
+        }
+
+        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+            if (customView != null) {
+                view.setPadding(0, 0, 0, 0)
+                return@setOnApplyWindowInsetsListener insets
+            }
+
+            val landscape =
+                resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+            if (landscape) {
+                // Chỉ chừa đúng cạnh đang chứa navigation bar. Không cộng
+                // status-bar/cutout inset nên không sinh dải trắng bên trái.
+                val navigation = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
+                view.setPadding(
+                    navigation.left,
+                    0,
+                    navigation.right,
+                    navigation.bottom
+                )
+            } else {
+                // Giữ nguyên bố cục dọc trước đây: nội dung nằm giữa hai thanh
+                // hệ thống, không đụng tới kích thước toolbar HTML hiện có.
+                val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+                view.setPadding(
+                    systemBars.left,
+                    systemBars.top,
+                    systemBars.right,
+                    systemBars.bottom
+                )
+            }
+
+            // Root đã tự chừa system bars; không truyền lại cùng các inset
+            // này cho WebView, tránh CSS env(safe-area-inset-*) cộng lần hai
+            // và tạo thanh trắng/thanh đệm giả. IME vẫn được giữ nguyên.
+            WindowInsetsCompat.Builder(insets)
+                .setInsets(
+                    WindowInsetsCompat.Type.systemBars(),
+                    androidx.core.graphics.Insets.NONE
+                )
+                .setInsets(
+                    WindowInsetsCompat.Type.displayCutout(),
+                    androidx.core.graphics.Insets.NONE
+                )
+                .build()
+        }
+
+        applyBrowserSystemBars()
+    }
+
+    private fun applyBrowserSystemBars() {
+        if (!::root.isInitialized || customView != null) return
+
+        val landscape =
+            resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        WindowInsetsControllerCompat(window, root).apply {
+            systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            show(WindowInsetsCompat.Type.navigationBars())
+            if (landscape) {
+                hide(WindowInsetsCompat.Type.statusBars())
+            } else {
+                show(WindowInsetsCompat.Type.statusBars())
+            }
+        }
+        ViewCompat.requestApplyInsets(root)
+        notifyShellOrientationChanged(landscape)
+    }
+
+    private fun notifyShellOrientationChanged(landscape: Boolean) {
+        if (!::shellWebView.isInitialized || !shellReady || isDestroyed) return
+        val script =
+            "window.dispatchEvent(new CustomEvent('lqlq-orientation-changed'," +
+                "{detail:{landscape:${landscape}}}));"
+        shellWebView.post { shellWebView.evaluateJavascript(script, null) }
+    }
+
+    fun setBrowserOrientation(mode: String) {
+        val target = when (mode.lowercase(Locale.ROOT)) {
+            "landscape" -> android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            "portrait" -> android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+            else -> android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
+        requestedOrientation = target
     }
 
     private fun setupAdventureLootOverlay() {
@@ -3653,12 +3765,12 @@ $js
 
     private fun exitCustomView() {
         removeFullscreenControls()
-        exitImmersiveFullscreen()
         requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         customView?.let { root.removeView(it) }
         customView = null
         customViewCallback?.onCustomViewHidden()
         customViewCallback = null
+        exitImmersiveFullscreen()
     }
 
     // ------------------------------------------------------------------
@@ -3676,8 +3788,7 @@ $js
     }
 
     private fun exitImmersiveFullscreen() {
-        WindowInsetsControllerCompat(window, root).show(WindowInsetsCompat.Type.systemBars())
-        WindowCompat.setDecorFitsSystemWindows(window, true)
+        applyBrowserSystemBars()
     }
 
     private fun fullscreenDp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
@@ -3897,8 +4008,18 @@ $js
     override fun onResume() {
         super.onResume()
         shellWebView.resumeTimers()
+        if (!isInPictureInPictureMode) {
+            applyBrowserSystemBars()
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !isInPictureInPictureMode) {
             notifyShellPipMode(false)
+        }
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        if (customView == null && !isInPictureInPictureMode) {
+            applyBrowserSystemBars()
         }
     }
 

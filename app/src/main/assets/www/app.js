@@ -57,6 +57,10 @@ const els = {
   forwardBtn: document.getElementById("forwardBtn"),
   reloadBtn: document.getElementById("reloadBtn"),
   menuBtn: document.getElementById("menuBtn"),
+  screenOrientationMenuBtn: document.getElementById("screenOrientationMenuBtn"),
+  screenOrientationMenuIcon: document.getElementById("screenOrientationMenuIcon"),
+  screenOrientationMenuLabel: document.getElementById("screenOrientationMenuLabel"),
+  screenOrientationMenuHint: document.getElementById("screenOrientationMenuHint"),
   chromeMenu: document.getElementById("chromeMenu"),
   toolsMenu: document.getElementById("toolsMenu"),
   pageView: document.getElementById("pageView"),
@@ -991,6 +995,39 @@ function closeMenus() {
   els.toolsMenu.classList.add("hidden");
 }
 
+function browserIsLandscape() {
+  return window.matchMedia?.("(orientation: landscape)")?.matches ||
+    window.innerWidth > window.innerHeight;
+}
+
+function syncScreenOrientationMenu() {
+  if (!els.screenOrientationMenuBtn) return;
+  const landscape = browserIsLandscape();
+  els.screenOrientationMenuIcon.textContent = landscape ? "↕" : "↔";
+  els.screenOrientationMenuLabel.textContent = landscape
+    ? "Quay dọc · chế độ điện thoại"
+    : "Quay ngang · chế độ PC";
+  els.screenOrientationMenuHint.textContent = landscape
+    ? "Trở lại giao diện điện thoại dọc"
+    : "Ẩn thanh trên và chừa vùng nút Android";
+}
+
+async function toggleBrowserOrientation() {
+  const landscape = browserIsLandscape();
+  const target = landscape ? "portrait" : "landscape";
+
+  if (typeof window.LqlqAndroid?.setScreenOrientation === "function") {
+    window.LqlqAndroid.setScreenOrientation(target);
+    return;
+  }
+
+  try {
+    await screen.orientation?.lock?.(target);
+  } catch (_) {
+    toast("Thiết bị không cho phép khóa hướng màn hình.");
+  }
+}
+
 function handleAction(action) {
   switch (action) {
     case "new-tab":
@@ -1067,6 +1104,11 @@ function handleAction(action) {
     case "fullscreen":
       closeMenus();
       document.documentElement.requestFullscreen?.();
+      break;
+
+    case "screen-orientation":
+      closeMenus();
+      toggleBrowserOrientation();
       break;
 
     case "print":
@@ -2102,9 +2144,15 @@ els.forwardBtn.addEventListener("click", () => {
 
 els.menuBtn.addEventListener("click", event => {
   event.stopPropagation();
+  syncScreenOrientationMenu();
   els.toolsMenu.classList.add("hidden");
   els.chromeMenu.classList.toggle("hidden");
 });
+
+window.addEventListener("resize", syncScreenOrientationMenu);
+window.addEventListener("orientationchange", syncScreenOrientationMenu);
+window.addEventListener("lqlq-orientation-changed", syncScreenOrientationMenu);
+syncScreenOrientationMenu();
 
 els.chromeMenu.addEventListener("click", event => {
   const button = event.target.closest("button[data-action]");
