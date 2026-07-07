@@ -273,7 +273,9 @@
     { id: "chapterClipperPanel", kind: "aria", closeBtn: "chapterClipperClose" },
     { id: "storyReaderPanel", kind: "aria", closeBtn: "closeStoryReader" },
     { id: "securityCenterOverlay", kind: "hidden", closeBtn: "closeSecurityCenter" },
-    { id: "adventureProfileOverlay", kind: "hidden", closeBtn: "adventureProfileClose" },
+    // Back Android ở màn chính của Hồ sơ Phiêu lưu phải lùi về Menu chức
+    // năng (giống nút "‹"), KHÔNG đóng thẳng ra trang web như nút "×".
+    { id: "adventureProfileOverlay", kind: "hidden", closeBtn: "adventureProfileBack" },
     { id: "chromeMenu", kind: "hidden", closeBtn: null },
     { id: "toolsMenu", kind: "hidden", closeBtn: null },
     { id: "sideDrawer", kind: "open", closeBtn: "closeDrawer" }

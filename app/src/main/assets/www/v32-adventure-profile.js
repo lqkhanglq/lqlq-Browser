@@ -439,26 +439,38 @@
     requestAnimationFrame(reset);
   }
 
-  /**
-   * Thoát Hồ sơ Phiêu lưu (nút X hoặc back) quay về Menu chức năng
-   * (chromeMenu) thay vì đóng thẳng ra trang web — vì hồ sơ được mở
-   * từ trong menu đó, "thoát 1 lần" nên lùi lại đúng 1 cấp menu.
-   */
-  function closeProfile() {
+  function hideOverlayCommon() {
     editing = false;
     activeSubView = "";
     elements.overlay.classList.add("hidden");
     elements.overlay.setAttribute("aria-hidden", "true");
     setFormError("");
+  }
 
-    // Sự kiện click của nút Back/X tiếp tục nổi bọt lên document. app.js có
-    // bộ đóng menu khi chạm ngoài, nên nếu mở chromeMenu ngay tại đây thì nó
-    // sẽ bị đóng lại trong chính cú chạm đó. Mở ở frame kế tiếp để thật sự
-    // quay về đúng Menu chức năng — nơi người dùng đã bấm avatar để vào hồ sơ.
+  /**
+   * Nút "‹" (quay lại) và nút Back Android: lùi về Menu chức năng
+   * (chromeMenu) thay vì đóng thẳng ra trang web — vì hồ sơ được mở
+   * từ trong menu đó, "thoát 1 lần" nên lùi lại đúng 1 cấp menu.
+   */
+  function backToChromeMenu() {
+    hideOverlayCommon();
+
+    // Sự kiện click tiếp tục nổi bọt lên document. app.js có bộ đóng menu
+    // khi chạm ngoài, nên nếu mở chromeMenu ngay tại đây thì nó sẽ bị đóng
+    // lại trong chính cú chạm đó. Mở ở frame kế tiếp để thật sự quay về
+    // đúng Menu chức năng — nơi người dùng đã bấm avatar để vào hồ sơ.
     requestAnimationFrame(() => {
       $("toolsMenu")?.classList.add("hidden");
       $("chromeMenu")?.classList.remove("hidden");
     });
+  }
+
+  /**
+   * Nút "×" (đóng): đóng hẳn bảng Hồ sơ Phiêu lưu, quay thẳng về trang
+   * web — KHÔNG mở lại Menu chức năng, khác với nút "‹".
+   */
+  function closeProfile() {
+    hideOverlayCommon();
   }
 
   /**
@@ -880,11 +892,11 @@
   elements.close.addEventListener("click", closeProfile);
   elements.back?.addEventListener("click", () => {
     if (activeSubView) showView("dashboard");
-    else closeProfile();
+    else backToChromeMenu();
   });
   elements.createLater.addEventListener("click", () => {
     if (editing) { editing = false; showView("dashboard"); }
-    else closeProfile();
+    else backToChromeMenu();
   });
   elements.createSubmit.addEventListener("click", submitProfile);
   elements.nickname.addEventListener("keydown", event => { if (event.key === "Enter") submitProfile(); });
