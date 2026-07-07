@@ -1385,6 +1385,12 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     private fun setupShellWebView() {
         applyCommonSettings(shellWebView.settings)
+        // Giao diện shell (index.html/CSS/JS) nằm trong chính APK — không có
+        // lý do gì để cache HTTP giữa các phiên bản app, và cache CÓ THỂ
+        // khiến WebView tiếp tục hiển thị html/css/js CŨ sau khi app đã được
+        // cập nhật (giao diện Hồ sơ Phiêu lưu bị "kẹt" ở bản cũ dù APK mới đã
+        // cài đè). Luôn tải thẳng từ APK, không qua cache HTTP.
+        shellWebView.settings.cacheMode = WebSettings.LOAD_NO_CACHE
 
         // Việc 3 (v0.23.4): đặt nền trong suốt NGAY từ đầu, giữ nguyên mãi —
         // không toggle WHITE/TRANSPARENT lúc mở/đóng menu nữa. Lý do: nếu
