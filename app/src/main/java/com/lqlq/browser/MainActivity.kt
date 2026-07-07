@@ -1034,9 +1034,12 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
                     val host = runCatching { Uri.parse(url).host.orEmpty() }.getOrDefault("")
-                    // "Hiệu ứng nhận Linh Thạch" (adventureEffectsToggle) tắt thì
-                    // Toast hệ thống này cũng phải tắt theo — trước đây quên gate.
-                    if (result.snapshot.effectsEnabled) {
+                    // Toast này phải tắt khi "Hiệu ứng nhận Linh Thạch"
+                    // (adventureEffectsToggle) HOẶC "Thông báo khi chặn"
+                    // (blockNoticeToastsEnabled, menu Công cụ → Chặn quảng
+                    // cáo) tắt — người dùng coi đây là công tắc tắt-thông-báo
+                    // chung, không chỉ áp dụng cho riêng thông báo chặn quảng cáo.
+                    if (result.snapshot.effectsEnabled && blockNoticeToastsEnabled) {
                         if (result.rewarded) {
                             Toast.makeText(
                                 this@MainActivity,
@@ -1196,7 +1199,7 @@ class MainActivity : AppCompatActivity() {
         dynamicLootHideRunnable?.let { adventureLootLayer.removeCallbacks(it) }
         val hide = Runnable {
             if (pendingDynamicLoot?.id == item.id) {
-                if (adventureProfileStore.snapshot().effectsEnabled) {
+                if (adventureProfileStore.snapshot().effectsEnabled && blockNoticeToastsEnabled) {
                     Toast.makeText(this, "Kỳ Vật ${item.name} đã tan vào Vạn Giới.", Toast.LENGTH_SHORT).show()
                 }
                 hideDynamicLootEncounter()
@@ -1382,7 +1385,7 @@ class MainActivity : AppCompatActivity() {
         spiritBeastHideRunnable?.let { adventureLootLayer.removeCallbacks(it) }
         val hide = Runnable {
             if (pendingSpiritBeast?.id == beast.id) {
-                if (adventureProfileStore.snapshot().effectsEnabled) {
+                if (adventureProfileStore.snapshot().effectsEnabled && blockNoticeToastsEnabled) {
                     Toast.makeText(this, "${beast.name} đã rời khỏi vùng đất.", Toast.LENGTH_SHORT).show()
                 }
                 hideSpiritBeastEncounter()
