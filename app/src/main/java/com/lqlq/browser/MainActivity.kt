@@ -18,6 +18,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.drawable.GradientDrawable
@@ -53,11 +54,13 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.webkit.JsResult
 import android.widget.FrameLayout
+import android.widget.ProgressBar
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -75,6 +78,8 @@ import org.json.JSONObject
 import java.io.File
 import java.io.FileInputStream
 import java.io.InputStream
+import java.net.HttpURLConnection
+import java.net.URL
 import java.text.Collator
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
@@ -3291,21 +3296,129 @@ $js
     }
 
     private fun showImageLongPressMenu(imageUrl: String) {
-        val options = arrayOf("Tải ảnh về máy", "Mở ảnh trong thẻ mới", "Sao chép liên kết ảnh")
+        val options = arrayOf(
+            "Mở ảnh trong thẻ mới",
+            "Xem trước hình ảnh",
+            "Sao chép ảnh",
+            "Tải hình ảnh xuống",
+            "Tìm hình ảnh bằng Google Ống Kính",
+            "Chia sẻ hình ảnh"
+        )
         AlertDialog.Builder(this)
             .setTitle(imageUrl.take(80))
             .setItems(options) { _, which ->
                 when (which) {
-                    0 -> startDownload(imageUrl, "", "", "image/*")
-                    1 -> createNativeTab(imageUrl, tabStore.currentMode)
-                    2 -> {
-                        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("image url", imageUrl))
-                        Toast.makeText(this, "Đã sao chép liên kết ảnh.", Toast.LENGTH_SHORT).show()
+                    0 -> createNativeTab(imageUrl, tabStore.currentMode)
+                    1 -> previewImage(imageUrl)
+                    2 -> copyImageToClipboard(imageUrl)
+                    3 -> startDownload(imageUrl, "", "", "image/*")
+                    4 -> {
+                        val lensUrl = "https://lens.google.com/uploadbyurl?url=" + Uri.encode(imageUrl)
+                        createNativeTab(lensUrl, tabStore.currentMode)
                     }
+                    5 -> shareImage(imageUrl)
                 }
             }
             .show()
+    }
+
+    /** Tải ảnh về 1 File tạm trong cache (dùng chung cho xem trước/sao chép/chia sẻ ảnh). */
+    private fun fetchImageToCacheFile(imageUrl: String, onReady: (File?) -> Unit) {
+        dynamicLootExecutor.execute {
+            val file = try {
+                val connection = (URL(imageUrl).openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 10_000
+                    readTimeout = 15_000
+                    instanceFollowRedirects = true
+                    setRequestProperty("User-Agent", "lqlq-browser-android/0.32 (image-menu)")
+                    setRequestProperty("Cookie", CookieManager.getInstance().getCookie(imageUrl) ?: "")
+                }
+                connection.connect()
+                if (connection.responseCode !in 200..299) {
+                    connection.disconnect()
+                    null
+                } else {
+                    val dir = File(cacheDir, "shared_images").apply { mkdirs() }
+                    val extension = URLUtil.guessFileName(imageUrl, null, connection.contentType).substringAfterLast('.', "jpg")
+                    val target = File(dir, "img_${System.currentTimeMillis()}.$extension")
+                    connection.inputStream.use { input ->
+                        target.outputStream().use { output -> input.copyTo(output) }
+                    }
+                    connection.disconnect()
+                    target
+                }
+            } catch (_: Exception) {
+                null
+            }
+            mainHandler.post { onReady(file) }
+        }
+    }
+
+    private fun previewImage(imageUrl: String) {
+        val dialog = AlertDialog.Builder(this).setView(ProgressBar(this).apply {
+            val pad = dp(24)
+            setPadding(pad, pad, pad, pad)
+        }).setCancelable(true).show()
+        fetchImageToCacheFile(imageUrl) { file ->
+            dialog.dismiss()
+            if (file == null) {
+                Toast.makeText(this, "Không tải được ảnh để xem trước.", Toast.LENGTH_SHORT).show()
+                return@fetchImageToCacheFile
+            }
+            val bitmap = try {
+                BitmapFactory.decodeFile(file.absolutePath)
+            } catch (_: Exception) {
+                null
+            }
+            if (bitmap == null) {
+                Toast.makeText(this, "Không xem trước được ảnh này.", Toast.LENGTH_SHORT).show()
+                return@fetchImageToCacheFile
+            }
+            val imageView = ImageView(this).apply {
+                setImageBitmap(bitmap)
+                adjustViewBounds = true
+                scaleType = ImageView.ScaleType.FIT_CENTER
+            }
+            AlertDialog.Builder(this)
+                .setView(imageView)
+                .setPositiveButton("Đóng", null)
+                .show()
+        }
+    }
+
+    private fun imageContentUri(file: File): Uri =
+        FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+
+    private fun copyImageToClipboard(imageUrl: String) {
+        Toast.makeText(this, "Đang sao chép ảnh…", Toast.LENGTH_SHORT).show()
+        fetchImageToCacheFile(imageUrl) { file ->
+            if (file == null) {
+                Toast.makeText(this, "Không sao chép được ảnh này.", Toast.LENGTH_SHORT).show()
+                return@fetchImageToCacheFile
+            }
+            val uri = imageContentUri(file)
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newUri(contentResolver, "image", uri))
+            Toast.makeText(this, "Đã sao chép ảnh.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun shareImage(imageUrl: String) {
+        Toast.makeText(this, "Đang chuẩn bị chia sẻ…", Toast.LENGTH_SHORT).show()
+        fetchImageToCacheFile(imageUrl) { file ->
+            if (file == null) {
+                Toast.makeText(this, "Không chia sẻ được ảnh này.", Toast.LENGTH_SHORT).show()
+                return@fetchImageToCacheFile
+            }
+            val uri = imageContentUri(file)
+            val mime = contentResolver.getType(uri) ?: "image/*"
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = mime
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(intent, "Chia sẻ hình ảnh"))
+        }
     }
 
     private fun notifyShellPage(tabId: String, url: String, title: String, loading: Boolean) {
