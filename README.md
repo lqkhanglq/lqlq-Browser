@@ -97,3 +97,9 @@ gradle assembleRelease \
 GitHub Actions đọc repository variable `LQLQ_DYNAMIC_LOOT_ENDPOINT`. Nếu để trống, APK vẫn dùng nguồn Wikipedia/Wikimedia trực tiếp.
 
 Mã Worker nằm trong thư mục `dynamic-loot-worker/`.
+
+## v0.32.6 — Xoay ngang và chế độ PC an toàn
+
+- Menu chức năng có nút **Quay ngang · chế độ PC** và nút quay dọc tương ứng.
+- Chế độ ngang ẩn status bar, giữ Back/Home/Đa nhiệm và chừa đúng vùng an toàn Android.
+- Nền app phủ vùng cutout/camera để giảm dải đen thừa; nội dung web không nằm dưới các nút hệ thống.

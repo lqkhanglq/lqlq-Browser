@@ -138,6 +138,31 @@
     document.querySelectorAll(`[data-action="${action}"]`).forEach(element => element.remove());
   });
 
+  // Nút xoay toàn bộ trình duyệt chỉ hiện trong APK. Khi ngang, CSS hiện
+  // tại tự đi qua breakpoint desktop/PC; khi dọc, trở lại giao diện mobile.
+  const orientationMenuButton = $("screenOrientationMenuBtn");
+  const orientationMenuTitle = $("screenOrientationMenuTitle");
+  const orientationMenuText = $("screenOrientationMenuText");
+
+  function refreshOrientationMenu() {
+    const landscape = window.matchMedia?.("(orientation: landscape)")?.matches;
+    orientationMenuButton?.classList.remove("hidden");
+    if (orientationMenuTitle) {
+      orientationMenuTitle.textContent = landscape
+        ? "Quay dọc · chế độ điện thoại"
+        : "Quay ngang · chế độ PC";
+    }
+    if (orientationMenuText) {
+      orientationMenuText.textContent = landscape
+        ? "Trở về giao diện điện thoại"
+        : "Xoay ngang để dùng giao diện máy tính";
+    }
+  }
+
+  refreshOrientationMenu();
+  window.addEventListener("orientationchange", () => setTimeout(refreshOrientationMenu, 100));
+  window.addEventListener("resize", refreshOrientationMenu);
+
   // ==================================================================
   // 0c. Đồng bộ chủ đề (v09-theme.js) sang bộ chuyển thẻ native, để màu
   //     lưới thẻ luôn khớp với chế độ sáng/tối + màu chủ đạo người dùng

@@ -1069,6 +1069,15 @@ function handleAction(action) {
       document.documentElement.requestFullscreen?.();
       break;
 
+    case "toggle-screen-orientation":
+      closeMenus();
+      if (typeof window.LqlqAndroid?.toggleScreenOrientation === "function") {
+        window.LqlqAndroid.toggleScreenOrientation();
+      } else {
+        toast("Nút xoay màn hình chỉ hoạt động trong ứng dụng Android.");
+      }
+      break;
+
     case "print":
       closeMenus();
       if (typeof window.LqlqAndroid?.printPage === "function") {

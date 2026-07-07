@@ -150,6 +150,12 @@ class ShellBridge(private val activity: MainActivity) {
         activity.runOnUiThread { activity.setToolbarHeightCss(cssPx) }
     }
 
+    /** Xoay dọc/ngang toàn bộ trình duyệt từ mục trong menu web. */
+    @JavascriptInterface
+    fun toggleScreenOrientation() {
+        activity.runOnUiThread { activity.toggleBrowserOrientation() }
+    }
+
     @JavascriptInterface
     fun injectChapterClipper() {
         activity.runOnUiThread { activity.injectChapterClipper() }

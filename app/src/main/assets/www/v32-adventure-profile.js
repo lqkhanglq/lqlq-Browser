@@ -421,7 +421,22 @@
    * đổi màn hình.
    */
   function resetProfileScroll() {
-    elements.overlay.querySelector(".adventure-profile-card")?.scrollTo(0, 0);
+    const card = elements.overlay.querySelector(".adventure-profile-card");
+    const reset = () => {
+      // Trên WebView Android, cả overlay và card đều từng có thể trở thành
+      // vùng cuộn. Chỉ đặt scrollTop cho card khiến vị trí cuộn cũ của
+      // overlay vẫn giữ lại, làm phần header bị trượt lên dưới thanh địa chỉ.
+      elements.overlay.scrollTop = 0;
+      elements.overlay.scrollLeft = 0;
+      if (card) {
+        card.scrollTop = 0;
+        card.scrollLeft = 0;
+      }
+    };
+
+    reset();
+    // Chạy lại sau khi class hidden/view vừa đổi và WebView đã tính layout.
+    requestAnimationFrame(reset);
   }
 
   /**
@@ -435,7 +450,15 @@
     elements.overlay.classList.add("hidden");
     elements.overlay.setAttribute("aria-hidden", "true");
     setFormError("");
-    $("chromeMenu")?.classList.remove("hidden");
+
+    // Sự kiện click của nút Back/X tiếp tục nổi bọt lên document. app.js có
+    // bộ đóng menu khi chạm ngoài, nên nếu mở chromeMenu ngay tại đây thì nó
+    // sẽ bị đóng lại trong chính cú chạm đó. Mở ở frame kế tiếp để thật sự
+    // quay về đúng Menu chức năng — nơi người dùng đã bấm avatar để vào hồ sơ.
+    requestAnimationFrame(() => {
+      $("toolsMenu")?.classList.add("hidden");
+      $("chromeMenu")?.classList.remove("hidden");
+    });
   }
 
   /**

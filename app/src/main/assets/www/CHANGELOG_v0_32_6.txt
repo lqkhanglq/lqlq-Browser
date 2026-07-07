@@ -1,0 +1,8 @@
+lqlq Browser v0.32.6
+
+- Thêm mục “Quay ngang · chế độ PC” trong menu chức năng web.
+- Khi xoay ngang, giao diện tự dùng bố cục PC như trước.
+- Ẩn thanh trạng thái phía trên trong chế độ ngang để tăng không gian hiển thị.
+- Giữ thanh Back/Home/Đa nhiệm của Android và chừa vùng an toàn để nội dung không bị nút hệ thống che.
+- Cho cửa sổ dùng vùng cutout/camera ở cạnh ngang để giảm dải đen thừa.
+- Khi quay dọc, thanh trạng thái và giao diện điện thoại được phục hồi.

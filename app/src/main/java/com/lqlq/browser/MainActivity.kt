@@ -36,6 +36,7 @@ import android.view.Gravity
 import android.view.animation.AccelerateDecelerateInterpolator
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.widget.TextView
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -56,6 +57,7 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -564,7 +566,11 @@ class MainActivity : AppCompatActivity() {
         characterPortraitStore = CharacterPortraitStore(applicationContext)
         activeTabId = tabStore.activeTabId()
 
-        root = FrameLayout(this)
+        root = FrameLayout(this).apply {
+            // Màu nền an toàn khi Android dành vùng cho camera/cutout hoặc
+            // thanh điều hướng trong lúc xoay ngang.
+            setBackgroundColor(Color.rgb(0xf8, 0xfb, 0xff))
+        }
         shellWebView = WebView(this)
         pageContainer = FrameLayout(this).apply {
             visibility = View.GONE
@@ -596,6 +602,8 @@ class MainActivity : AppCompatActivity() {
         setupMediaBubble()
         setupNativeTabSwitcher()
         setContentView(root)
+        installBrowserInsetsHandling()
+        applyBrowserSystemUiForOrientation()
 
         assetLoader = WebViewAssetLoader.Builder()
             .setDomain(SHELL_HOST)
@@ -853,8 +861,8 @@ class MainActivity : AppCompatActivity() {
         adventureLootIcon.visibility = View.VISIBLE
         updateAdventureOverlayVisibility()
         val size = dp(72)
-        val width = root.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
-        val height = root.height.takeIf { it > 0 } ?: resources.displayMetrics.heightPixels
+        val width = browserContentWidth()
+        val height = browserContentHeight()
         val minX = dp(18)
         val maxX = (width - size - dp(18)).coerceAtLeast(minX)
         val minY = (toolbarHeightPx + dp(96)).coerceAtLeast(dp(120))
@@ -894,7 +902,7 @@ class MainActivity : AppCompatActivity() {
         if (!::adventureLootIcon.isInitialized) return
         val startX = adventureLootIcon.x
         val startY = adventureLootIcon.y
-        val targetX = (root.width - dp(38) - adventureLootIcon.width).toFloat().coerceAtLeast(0f)
+        val targetX = (browserContentWidth() - dp(38) - adventureLootIcon.width).toFloat().coerceAtLeast(0f)
         val targetY = dp(18).toFloat()
         val moveX = ObjectAnimator.ofFloat(adventureLootIcon, View.X, startX, targetX)
         val moveY = ObjectAnimator.ofFloat(adventureLootIcon, View.Y, startY, targetY)
@@ -1043,8 +1051,8 @@ class MainActivity : AppCompatActivity() {
         dynamicLootName.setTextColor(colors.third)
         dynamicLootMeta.setTextColor(colors.third)
 
-        val width = root.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
-        val height = root.height.takeIf { it > 0 } ?: resources.displayMetrics.heightPixels
+        val width = browserContentWidth()
+        val height = browserContentHeight()
         val cardWidth = dp(158)
         val cardHeight = dp(178)
         val minX = dp(16)
@@ -1228,8 +1236,8 @@ class MainActivity : AppCompatActivity() {
         spiritBeastName.setTextColor(colors.third)
         spiritBeastMeta.setTextColor(colors.third)
 
-        val width = root.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
-        val height = root.height.takeIf { it > 0 } ?: resources.displayMetrics.heightPixels
+        val width = browserContentWidth()
+        val height = browserContentHeight()
         val cardWidth = dp(132)
         val cardHeight = dp(124)
         val minX = dp(18)
@@ -1346,6 +1354,18 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    private fun browserContentWidth(): Int =
+        (root.width - root.paddingLeft - root.paddingRight)
+            .takeIf { it > 0 }
+            ?: (resources.displayMetrics.widthPixels - root.paddingLeft - root.paddingRight)
+                .coerceAtLeast(1)
+
+    private fun browserContentHeight(): Int =
+        (root.height - root.paddingTop - root.paddingBottom)
+            .takeIf { it > 0 }
+            ?: (resources.displayMetrics.heightPixels - root.paddingTop - root.paddingBottom)
+                .coerceAtLeast(1)
 
     private fun registerBridgeHub() {
         BridgeHub.jsRunner = { script ->
@@ -2798,10 +2818,96 @@ $js
         val systemBarColor = if (dark) Color.rgb(0x0d, 0x15, 0x10) else Color.rgb(0xf8, 0xfb, 0xff)
         window.statusBarColor = systemBarColor
         window.navigationBarColor = systemBarColor
+        if (::root.isInitialized) root.setBackgroundColor(systemBarColor)
         WindowCompat.getInsetsController(window, window.decorView).apply {
             isAppearanceLightStatusBars = !dark
             isAppearanceLightNavigationBars = !dark
         }
+        applyBrowserSystemUiForOrientation()
+    }
+
+    /**
+     * Nút trong menu web: dọc = giao diện điện thoại, ngang = breakpoint PC.
+     * Dùng SENSOR_* để người dùng vẫn có thể xoay sang cạnh ngang thuận tay.
+     */
+    fun toggleBrowserOrientation() {
+        requestedOrientation = if (
+            resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        ) {
+            android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+        } else {
+            android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        }
+    }
+
+    /**
+     * Chế độ ngang thường của trình duyệt:
+     * - ẩn thanh trạng thái phía trên để lấy lại chiều cao;
+     * - giữ thanh điều hướng Android (Back/Home/Đa nhiệm) và để Android chừa
+     *   vùng an toàn, nên nội dung web không bị các nút hệ thống che;
+     * - cho nền app phủ vùng cutout/camera ở cạnh ngắn để không còn dải đen
+     *   thừa, trong khi decor vẫn giữ nội dung tương tác ở vùng an toàn.
+     */
+    private fun installBrowserInsetsHandling() {
+        // targetSdk 35 dùng edge-to-edge theo mặc định trên Android 15. Tự
+        // nhận insets để nền có thể phủ kín cutout/thanh hệ thống, nhưng toàn
+        // bộ nội dung và nút bấm vẫn nằm trong vùng an toàn.
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+            if (customView != null) {
+                view.setPadding(0, 0, 0, 0)
+                return@setOnApplyWindowInsetsListener insets
+            }
+
+            val landscape =
+                resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+            val status = insets.getInsets(WindowInsetsCompat.Type.statusBars())
+            val navigation = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
+            val cutout = insets.getInsets(WindowInsetsCompat.Type.displayCutout())
+            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+
+            val safeLeft = maxOf(navigation.left, cutout.left)
+            val safeTop = if (landscape) cutout.top else maxOf(status.top, cutout.top)
+            val safeRight = maxOf(navigation.right, cutout.right)
+            val safeBottom = maxOf(navigation.bottom, cutout.bottom, ime.bottom)
+            view.setPadding(safeLeft, safeTop, safeRight, safeBottom)
+            insets
+        }
+        ViewCompat.requestApplyInsets(root)
+    }
+
+    private fun applyBrowserSystemUiForOrientation(
+        orientation: Int = resources.configuration.orientation
+    ) {
+        if (!::root.isInitialized) return
+        if (customView != null) {
+            enterImmersiveFullscreen()
+            return
+        }
+
+        val landscape = orientation == Configuration.ORIENTATION_LANDSCAPE
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        WindowInsetsControllerCompat(window, root).apply {
+            systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            show(WindowInsetsCompat.Type.navigationBars())
+            if (landscape) {
+                hide(WindowInsetsCompat.Type.statusBars())
+            } else {
+                show(WindowInsetsCompat.Type.statusBars())
+            }
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val attributes = window.attributes
+            attributes.layoutInDisplayCutoutMode = if (landscape) {
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            } else {
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
+            }
+            window.attributes = attributes
+        }
+        ViewCompat.requestApplyInsets(root)
     }
 
     private fun updatePageVisibility() {
@@ -3653,12 +3759,12 @@ $js
 
     private fun exitCustomView() {
         removeFullscreenControls()
-        exitImmersiveFullscreen()
         requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         customView?.let { root.removeView(it) }
         customView = null
         customViewCallback?.onCustomViewHidden()
         customViewCallback = null
+        exitImmersiveFullscreen()
     }
 
     // ------------------------------------------------------------------
@@ -3669,15 +3775,16 @@ $js
 
     private fun enterImmersiveFullscreen() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
+        root.setPadding(0, 0, 0, 0)
         WindowInsetsControllerCompat(window, root).apply {
             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             hide(WindowInsetsCompat.Type.systemBars())
         }
+        ViewCompat.requestApplyInsets(root)
     }
 
     private fun exitImmersiveFullscreen() {
-        WindowInsetsControllerCompat(window, root).show(WindowInsetsCompat.Type.systemBars())
-        WindowCompat.setDecorFitsSystemWindows(window, true)
+        applyBrowserSystemUiForOrientation()
     }
 
     private fun fullscreenDp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
@@ -3897,9 +4004,20 @@ $js
     override fun onResume() {
         super.onResume()
         shellWebView.resumeTimers()
+        applyBrowserSystemUiForOrientation()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !isInPictureInPictureMode) {
             notifyShellPipMode(false)
         }
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        applyBrowserSystemUiForOrientation(newConfig.orientation)
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) applyBrowserSystemUiForOrientation()
     }
 
     override fun onTrimMemory(level: Int) {
