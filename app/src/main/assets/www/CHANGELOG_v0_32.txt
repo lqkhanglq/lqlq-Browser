@@ -9,3 +9,10 @@ lqlq Browser v0.32.0 — LQLQ Dynamic Loot Engine
 - Thêm công tắc bật/tắt Kỳ Vật động trên trang web.
 - Thêm cấu hình GitHub Actions cho endpoint Worker.
 - Phiên bản: versionCode 69, versionName 0.32.0.
+
+lqlq Browser v0.32.5 — Sửa vị trí và điều hướng Hồ sơ Phiêu lưu
+
+- Neo Hồ sơ Phiêu lưu ngay bên dưới thanh địa chỉ trên điện thoại, không còn bị thanh tìm kiếm che phần đầu.
+- Chỉ để bảng hồ sơ cuộn và đặt lại đồng thời vị trí cuộn của overlay/card mỗi lần mở hoặc đổi màn hình.
+- Nút Quay lại ở màn hồ sơ chính nay trở về đúng Menu chức năng chứa avatar, không bị bộ đóng menu toàn trang đóng lại ngay lập tức.
+- Phiên bản: versionCode 72, versionName 0.32.5.
