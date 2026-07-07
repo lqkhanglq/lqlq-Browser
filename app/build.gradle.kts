@@ -17,8 +17,8 @@ android {
         applicationId = "com.lqlq.browser"
         minSdk = 24
         targetSdk = 35
-        versionCode = 78
-        versionName = "0.32.11"
+        versionCode = 79
+        versionName = "0.32.12"
         buildConfigField("String", "DYNAMIC_LOOT_ENDPOINT", "\"$dynamicLootEndpoint\"")
     }
 

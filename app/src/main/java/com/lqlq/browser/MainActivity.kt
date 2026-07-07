@@ -91,6 +91,23 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val SHELL_HOST = "appassets.androidapp.com"
+
+        /** Cửa sổ tin cậy sau 1 cú chạm thật để cho qua các bước redirect không mang gesture (OAuth, link rút gọn...). */
+        private const val TRUSTED_REDIRECT_WINDOW_MS = 20_000L
+
+        // Hậu tố nhiều nhãn phổ biến — KHÔNG phải Public Suffix List đầy đủ,
+        // nhưng đủ để domain guard không gộp nhầm 2 site khác nhau vào 1
+        // "domain gốc" (vd trước đây a.co.uk và b.co.uk bị coi là cùng site
+        // vì chỉ cắt 2 nhãn cuối "co.uk").
+        private val MULTI_LABEL_SUFFIXES = setOf(
+            "co.uk", "org.uk", "gov.uk", "ac.uk", "me.uk", "net.uk",
+            "com.vn", "net.vn", "org.vn", "edu.vn", "gov.vn",
+            "com.br", "com.au", "net.au", "org.au", "gov.au",
+            "co.jp", "co.kr", "co.in", "co.nz", "co.za", "co.id", "co.th",
+            "com.cn", "com.hk", "com.tw", "com.sg", "com.my",
+            "github.io", "gitlab.io", "blogspot.com", "herokuapp.com",
+            "pages.dev", "netlify.app", "vercel.app", "web.app", "firebaseapp.com"
+        )
         private const val SHELL_URL = "https://$SHELL_HOST/assets/www/index.html"
 
         // Các trang công cụ tìm kiếm/chatbot AI mà người dùng chủ yếu vào để
@@ -221,6 +238,9 @@ class MainActivity : AppCompatActivity() {
      */
     private val tabRootDomain = ConcurrentHashMap<String, String>()
 
+    /** Thời điểm gần nhất mỗi tab có 1 cú chạm thật (WebResourceRequest.hasGesture()), dùng cho cửa sổ redirect tin cậy của domain guard. */
+    private val lastUserGestureNavAt = ConcurrentHashMap<String, Long>()
+
     /**
      * Bật/tắt lớp chặn quảng cáo domain đã biết + chặn nhảy trang sang domain
      * lạ (root-domain guard). Mặc định BẬT. KHÔNG xét gesture: một cú chạm
@@ -349,7 +369,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var dynamicLootRepository: DynamicLootRepository
     private lateinit var dynamicLootImageCache: DynamicLootImageCache
     private lateinit var characterPortraitStore: CharacterPortraitStore
-    private lateinit var pageToolsBridge: PageToolsBridge
     private lateinit var pageBridge: PageBridge
     private lateinit var faviconStore: FaviconStore
 
@@ -1528,7 +1547,6 @@ class MainActivity : AppCompatActivity() {
         ttsBridge = TtsBridge(applicationContext)
         shellBridge = ShellBridge(this)
         adventureProfileBridge = AdventureProfileBridge(this, adventureProfileStore, dynamicLootStore, characterPortraitStore)
-        pageToolsBridge = PageToolsBridge(shellBridge)
         pageBridge = PageBridge { currentPageWebView() }
         shellWebView.addJavascriptInterface(shellBridge, "LqlqAndroid")
         shellWebView.addJavascriptInterface(adventureProfileBridge, "LqlqAdventure")
@@ -2541,6 +2559,7 @@ class MainActivity : AppCompatActivity() {
         destroyPageWebView(tabId)
         chapterClipperEnabledTabs.remove(tabId)
         tabRootDomain.remove(tabId)
+        lastUserGestureNavAt.remove(tabId)
         val next = tabStore.closeTab(tabId)
         activeTabId = next.id
         activateTab(next)
@@ -2554,6 +2573,7 @@ class MainActivity : AppCompatActivity() {
             destroyPageWebView(id)
             chapterClipperEnabledTabs.remove(id)
             tabRootDomain.remove(id)
+            lastUserGestureNavAt.remove(id)
         }
         val keep = tabStore.closeOtherTabs(keepId)
         activeTabId = keep.id
@@ -2567,6 +2587,7 @@ class MainActivity : AppCompatActivity() {
             destroyPageWebView(id)
             chapterClipperEnabledTabs.remove(id)
             tabRootDomain.remove(id)
+            lastUserGestureNavAt.remove(id)
         }
         val blank = tabStore.closeAllTabs()
         activeTabId = blank.id
@@ -2851,9 +2872,16 @@ $js
      */
     private fun isSameRootDomain(hostA: String, hostB: String): Boolean {
         fun rootOf(host: String): String {
-            val stripped = host.removePrefix("www.").removePrefix("m.")
+            val stripped = host.removePrefix("www.").removePrefix("m.").lowercase(Locale.ROOT)
             val parts = stripped.split(".")
-            return if (parts.size >= 2) parts.takeLast(2).joinToString(".") else stripped
+            if (parts.size < 2) return stripped
+            val lastTwo = parts.takeLast(2).joinToString(".")
+            // "co.uk"/"com.vn"/"github.io"... không phải domain đăng ký thật
+            // — phải lấy thêm 1 nhãn nữa (vd "example.co.uk") mới đúng.
+            if (MULTI_LABEL_SUFFIXES.contains(lastTwo) && parts.size >= 3) {
+                return parts.takeLast(3).joinToString(".")
+            }
+            return lastTwo
         }
         return rootOf(hostA).equals(rootOf(hostB), ignoreCase = true)
     }
@@ -3028,8 +3056,14 @@ $js
 
         // Chapter Clipper cần duy nhất API saveTextFile(). Website bên ngoài
         // chỉ nhận PageToolsBridge tối thiểu, không được thấy API quản lý thẻ
-        // và các quyền đặc biệt khác của ShellBridge.
-        webView.addJavascriptInterface(pageToolsBridge, "LqlqAndroid")
+        // và các quyền đặc biệt khác của ShellBridge. Mỗi tab có 1 instance
+        // riêng, chỉ cho lưu khi CHÍNH tab đó đã được người dùng bật Chapter
+        // Clipper — trước đây gắn chung 1 instance không kiểm tra gì, nên
+        // MỌI website đều gọi được saveTextFile() dù chưa bật công cụ.
+        webView.addJavascriptInterface(
+            PageToolsBridge(shellBridge) { chapterClipperEnabledTabs.contains(tabId) },
+            "LqlqAndroid"
+        )
 
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
@@ -3065,15 +3099,33 @@ $js
                     return true
                 }
 
-                // Chặn TUYỆT ĐỐI mọi điều hướng main-frame tự phát sang domain
-                // khác domain gốc hiện tại của tab, KHÔNG xét gesture. Chỉ áp
-                // dụng cho khung chính; iframe/tài nguyên con không bị lớp này
-                // can thiệp. Công cụ tìm kiếm/AI được miễn trừ để kết quả tìm
-                // kiếm hoạt động bình thường. Điều hướng chủ động từ thanh địa
-                // chỉ/trang chủ đi qua openPage() và cập nhật domain trước.
+                // Cú chạm thật của người dùng (không phải quảng cáo, đã qua
+                // được lớp chặn ad-host ở trên) được ghi lại thời điểm, để
+                // cho phép các bước redirect KHÔNG mang gesture (OAuth,
+                // link rút gọn, cổng thanh toán...) bắt nguồn từ đúng cú
+                // chạm đó vẫn đi qua trong 1 cửa sổ ngắn — không đánh đồng
+                // với điều hướng tự phát của trang.
+                if (request.hasGesture()) {
+                    lastUserGestureNavAt[tabId] = System.currentTimeMillis()
+                }
+
+                // Chặn điều hướng main-frame tự phát sang domain khác domain
+                // gốc hiện tại của tab — TRỪ KHI đây là cú chạm thật của
+                // người dùng, hoặc nằm trong cửa sổ 20 giây ngay sau 1 cú
+                // chạm thật (redirect chuỗi OAuth/link rút gọn/www). Trước
+                // đây chặn tuyệt đối không xét gesture, khiến cả link người
+                // dùng bấm thật ra site khác cũng bị chặn nhầm (đăng nhập
+                // Google/Facebook, cổng thanh toán, link ngoài Wikipedia...).
+                // Chỉ áp dụng cho khung chính; iframe/tài nguyên con không bị
+                // lớp này can thiệp. Công cụ tìm kiếm/AI được miễn trừ để kết
+                // quả tìm kiếm hoạt động bình thường. Điều hướng chủ động từ
+                // thanh địa chỉ/trang chủ đi qua openPage() và cập nhật
+                // domain trước.
                 val safeHost = tabRootDomain[tabId]
                 val targetHost = request.url.host
-                if (domainGuardEnabled && request.isForMainFrame &&
+                val recentGesture = request.hasGesture() ||
+                    (System.currentTimeMillis() - (lastUserGestureNavAt[tabId] ?: 0L) < TRUSTED_REDIRECT_WINDOW_MS)
+                if (domainGuardEnabled && request.isForMainFrame && !recentGesture &&
                     !isSearchOrAiToolHost(safeHost) && !isSearchOrAiToolHost(targetHost) &&
                     !safeHost.isNullOrEmpty() && !targetHost.isNullOrEmpty() &&
                     !isSameRootDomain(safeHost, targetHost)
