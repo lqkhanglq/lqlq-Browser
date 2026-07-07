@@ -9802,13 +9802,19 @@ html.lqlq-native-page-open .story-reader-panel {
   inset: 0;
   z-index: 180;
   display: grid;
-  place-items: center;
+  /* v0.32.4: FIX THẬT SỰ của lỗi "đầu bảng luôn bị che/mất nút thoát" —
+     `place-items: center` cũ căn bảng theo chiều dọc bên trong 1 khung có
+     overflow-y:auto. Đây là lỗi kinh điển của Chromium/WebView: khi nội
+     dung được căn giữa cao hơn khung chứa, trình duyệt KHÔNG cho cuộn lên
+     để thấy phần bị tràn phía trên — phần đầu bảng (tiêu đề, nút back/X)
+     coi như bị nhốt ngoài vùng xem được, không cách nào cuộn tới. Đổi
+     sang align-items: start để bảng luôn neo từ mép trên, đầu bảng luôn
+     nằm trong vùng nhìn thấy ngay từ đầu, không phụ thuộc việc cuộn.
+     Không dùng center nữa dù bảng ngắn hơn màn hình cũng không sao. */
+  align-items: start;
+  justify-items: center;
   overflow-y: auto;
   background: rgba(13, 25, 18, .48);
-  /* v0.32.2: nâng thêm khoảng đệm trên (ngoài safe-area) vì thanh công cụ
-     của trình duyệt (URL/tab) là view native riêng, không tính vào
-     env(safe-area-inset-top) — nếu chỉ dùng safe-area, đầu bảng vẫn sát
-     mép trên, dễ bị thanh công cụ che một phần. */
   padding: calc(env(safe-area-inset-top, 0px) + 48px) 14px calc(env(safe-area-inset-bottom, 0px) + 18px);
   backdrop-filter: blur(12px);
 }
