@@ -459,11 +459,158 @@
         <span class="menu-icon">⌘</span>
         <span class="menu-copy"><b>Công cụ dành cho nhà phát triển</b><small>Kiểm tra và gỡ lỗi trang</small></span>
       </button>
+      <button data-action="automation-center">
+        <span class="menu-icon">▶</span>
+        <span class="menu-copy"><b>Tự động hóa video</b><small>Tạo nội dung, giọng đọc, video và chuẩn bị đăng tự động</small></span>
+        <span class="menu-chevron">›</span>
+      </button>
       <button data-action="warp-tools" class="warp-menu-item">
         <span class="menu-icon warp">1</span>
         <span class="menu-copy"><b>1.1.1.1 / WARP</b><small>Mở kết nối riêng tư Cloudflare</small></span>
         <span class="menu-chevron">›</span>
       </button>
+    </div>
+
+
+
+    <div class="automation-center-overlay hidden" id="automationCenterOverlay" aria-hidden="true">
+      <section class="automation-center-card" role="dialog" aria-modal="true" aria-labelledby="automationCenterTitle">
+        <header class="automation-center-head">
+          <button type="button" class="automation-icon-button" id="automationCenterBack" aria-label="Quay lại Công cụ">‹</button>
+          <div class="automation-center-title">
+            <span class="automation-kicker">LQLQ AUTOMATION</span>
+            <h2 id="automationCenterTitle">Automation Center</h2>
+            <p>MVP mô phỏng pipeline tạo video ngắn ngay trong shell của trình duyệt.</p>
+          </div>
+          <button type="button" class="automation-icon-button" id="automationCenterClose" aria-label="Đóng">×</button>
+        </header>
+
+        <div class="automation-center-body">
+          <section class="automation-hero-card">
+            <div>
+              <span class="automation-pill">Mock only</span>
+              <b>Tự động hóa video</b>
+              <small>Tác vụ này chỉ tạo job mock, lưu pipeline và mô phỏng tiến trình. Chưa có AI thật, chưa render video thật và chưa tải lên nền tảng nào.</small>
+            </div>
+            <div class="automation-hero-badges">
+              <span>Content</span>
+              <span>Voice</span>
+              <span>Video</span>
+              <span>Publish</span>
+            </div>
+          </section>
+
+          <label class="automation-field" for="automationTopicInput">
+            <span>Chủ đề nội dung</span>
+            <textarea
+              id="automationTopicInput"
+              rows="4"
+              maxlength="280"
+              placeholder="Ví dụ: 3 mẹo nhỏ giúp quay video review sản phẩm bằng điện thoại"
+            ></textarea>
+            <small id="automationTopicMeta">Tối đa 280 ký tự. Chỉ nhận text thuần, không nhận script hoặc HTML.</small>
+          </label>
+
+          <div class="automation-service-grid">
+            <label class="automation-service-card" for="automationContentService">
+              <span>Nội dung</span>
+              <select id="automationContentService">
+                <option value="mock-content">Mock Content</option>
+                <option disabled>OpenAI Content • Sắp hỗ trợ</option>
+                <option disabled>Claude Content • Sắp hỗ trợ</option>
+              </select>
+            </label>
+
+            <label class="automation-service-card" for="automationVoiceService">
+              <span>Giọng đọc</span>
+              <select id="automationVoiceService">
+                <option value="mock-voice">Mock Voice</option>
+                <option disabled>ElevenLabs • Sắp hỗ trợ</option>
+                <option disabled>Native TTS • Sắp hỗ trợ</option>
+              </select>
+            </label>
+
+            <label class="automation-service-card" for="automationVideoService">
+              <span>Video</span>
+              <select id="automationVideoService">
+                <option value="mock-video">Mock Video</option>
+                <option disabled>CapCut Pipeline • Sắp hỗ trợ</option>
+                <option disabled>FFmpeg Template • Sắp hỗ trợ</option>
+              </select>
+            </label>
+
+            <label class="automation-service-card" for="automationPublishService">
+              <span>Đăng bài</span>
+              <select id="automationPublishService">
+                <option value="mock-publish-draft">Mock Publish Draft</option>
+                <option disabled>YouTube • Sắp hỗ trợ</option>
+                <option disabled>TikTok • Sắp hỗ trợ</option>
+              </select>
+            </label>
+          </div>
+
+          <section class="automation-publish-card" aria-labelledby="automationPublishModeTitle">
+            <div class="automation-section-head">
+              <span class="automation-kicker muted">PUBLISH MODE</span>
+              <b id="automationPublishModeTitle">Chế độ duyệt</b>
+            </div>
+
+            <div class="automation-choice-row">
+              <label class="automation-choice active">
+                <input type="radio" name="automationPublishMode" value="review-before-post" checked />
+                <span>
+                  <b>Duyệt trước khi đăng</b>
+                  <small>Bản nháp được chuẩn bị để bạn kiểm tra lại.</small>
+                </span>
+              </label>
+
+              <label class="automation-choice disabled">
+                <input type="radio" name="automationPublishMode" value="post-immediately" disabled />
+                <span>
+                  <b>Đăng ngay</b>
+                  <small>Sắp hỗ trợ</small>
+                </span>
+              </label>
+            </div>
+          </section>
+
+          <div class="automation-notice" id="automationNotice">
+            MVP này chỉ mô phỏng trình tự 4 bước và lưu job vào database cục bộ. Không có AI thật, không tạo file video thật, không upload thật.
+          </div>
+
+          <div class="automation-actions">
+            <button type="button" class="automation-primary-button" id="automationStartBtn">Bắt đầu tự động</button>
+            <button type="button" class="automation-secondary-button" id="automationResetBtn">Tạo quy trình mới</button>
+          </div>
+
+          <div class="automation-error hidden" id="automationErrorBox"></div>
+
+          <section class="automation-runtime-card">
+            <div class="automation-section-head">
+              <span class="automation-kicker muted">PIPELINE</span>
+              <b>Tiến trình mô phỏng</b>
+            </div>
+            <p class="automation-runtime-copy" id="automationRuntimeCopy">Sẵn sàng tạo job mock mới. Mỗi bước sẽ mô phỏng khoảng 1 giây.</p>
+            <div class="automation-step-list" id="automationStepList"></div>
+          </section>
+
+          <section class="automation-result-card hidden" id="automationResultCard">
+            <div class="automation-section-head">
+              <span class="automation-kicker muted">RESULT</span>
+              <b>Kết quả job</b>
+            </div>
+            <div class="automation-result-summary" id="automationResultSummary"></div>
+          </section>
+
+          <section class="automation-runtime-card">
+            <div class="automation-section-head">
+              <span class="automation-kicker muted">RECENT JOBS</span>
+              <b>Job gần đây</b>
+            </div>
+            <div class="automation-recent-list" id="automationRecentJobs"></div>
+          </section>
+        </div>
+      </section>
     </div>
 
 
@@ -1985,6 +2132,7 @@
   <script src="v21-mobile-batch-tools.js"></script>
   <script src="v22-mobile-toolbar.js"></script>
   <script src="v32-adventure-profile.js"></script>
+  <script src="v33-automation-center.js"></script>
   <script src="android-glue.js"></script>
 </body>
 </html>

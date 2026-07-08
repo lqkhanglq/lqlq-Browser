@@ -381,6 +381,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var assetLoader: WebViewAssetLoader
     private var ttsBridge: TtsBridge? = null
     private lateinit var shellBridge: ShellBridge
+    private lateinit var automationBridge: AutomationBridge
     private lateinit var adventureProfileStore: AdventureProfileStore
     private lateinit var adventureProfileBridge: AdventureProfileBridge
     private lateinit var dynamicLootStore: DynamicLootStore
@@ -1564,9 +1565,11 @@ class MainActivity : AppCompatActivity() {
 
         ttsBridge = TtsBridge(applicationContext)
         shellBridge = ShellBridge(this)
+        automationBridge = AutomationBridge((application as LqlqApp).automationFacade)
         adventureProfileBridge = AdventureProfileBridge(this, adventureProfileStore, dynamicLootStore, characterPortraitStore)
         pageBridge = PageBridge { currentPageWebView() }
         shellWebView.addJavascriptInterface(shellBridge, "LqlqAndroid")
+        shellWebView.addJavascriptInterface(automationBridge, "LqlqAutomation")
         shellWebView.addJavascriptInterface(adventureProfileBridge, "LqlqAdventure")
         shellWebView.addJavascriptInterface(ttsBridge!!, "LqlqTtsBridge")
         shellWebView.addJavascriptInterface(pageBridge, "LqlqPageBridge")

@@ -1147,6 +1147,11 @@ function handleAction(action) {
       els.chromeMenu.classList.remove("hidden");
       break;
 
+    case "automation-center":
+      closeMenus();
+      window.LqlqAutomationCenter?.openFromTools?.();
+      break;
+
     case "warp-tools":
       openWarpModal();
       break;
@@ -1700,7 +1705,7 @@ function looksLikeAdElement(element) {
 
 function blockAdElement(element) {
   if (!(element instanceof Element)) return;
-  if (element.closest("#chromeMenu, #toolsMenu, #videoPanel, #contextVideoToolbar, #globalScreenLock, #imageEditorShell, #imageEditorBackdrop, #chapterClipperPanel")) {
+  if (element.closest("#chromeMenu, #toolsMenu, #automationCenterOverlay, #videoPanel, #contextVideoToolbar, #globalScreenLock, #imageEditorShell, #imageEditorBackdrop, #chapterClipperPanel")) {
     return;
   }
 
@@ -1754,7 +1759,7 @@ function sanitizeElement(element) {
 function isOverlayAdvertisement(element) {
   const candidate = element?.closest?.("a,button,div,section,aside,iframe");
   if (!candidate) return false;
-  if (candidate.closest("#chromeMenu, #toolsMenu, #videoPanel, #contextVideoToolbar, #globalScreenLock, #imageEditorShell, #imageEditorBackdrop, #chapterClipperPanel")) {
+  if (candidate.closest("#chromeMenu, #toolsMenu, #automationCenterOverlay, #videoPanel, #contextVideoToolbar, #globalScreenLock, #imageEditorShell, #imageEditorBackdrop, #chapterClipperPanel")) {
     return false;
   }
 
