@@ -5,10 +5,14 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
 import com.lqlq.browser.automation.AutomationFacade
+import com.lqlq.browser.automation.database.AutomationDatabase
 
 class LqlqApp : Application() {
     lateinit var automationFacade: AutomationFacade
         private set
+    val automationDatabase: AutomationDatabase by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        AutomationDatabase.create(applicationContext)
+    }
 
     override fun onCreate() {
         super.onCreate()

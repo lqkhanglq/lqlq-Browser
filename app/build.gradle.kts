@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("com.google.devtools.ksp")
 }
 
 val dynamicLootEndpoint = providers.gradleProperty("LQLQ_DYNAMIC_LOOT_ENDPOINT")
@@ -59,6 +60,11 @@ android {
     }
 }
 
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas/automation")
+    arg("room.incremental", "true")
+}
+
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
@@ -68,6 +74,9 @@ dependencies {
     implementation("androidx.recyclerview:recyclerview:1.3.2")
     implementation("androidx.media3:media3-exoplayer:1.4.1")
     implementation("androidx.media3:media3-session:1.4.1")
+    implementation("androidx.room:room-runtime:2.6.1")
+    implementation("androidx.room:room-ktx:2.6.1")
+    ksp("androidx.room:room-compiler:2.6.1")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("androidx.test:core:1.6.1")
