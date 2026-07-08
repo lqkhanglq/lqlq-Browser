@@ -31,7 +31,11 @@ Workflow:
 3. Run the workflow.
 4. Download the `lqlq-browser-apk` artifact.
 
-If release signing secrets are missing, the workflow still produces a release APK for testing, but it will be unsigned.
+Artifact behavior:
+
+- Always includes `lqlq-browser-v...-debug.apk`
+- Includes `lqlq-browser-v...-release-signed.apk` only when signing secrets are configured
+- Includes `RELEASE_SIGNING_REQUIRED.txt` when signed release was skipped
 
 ## Local release build
 

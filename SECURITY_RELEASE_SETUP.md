@@ -15,7 +15,7 @@ Provide release signing values through Gradle properties or environment variable
   -PLQLQ_DYNAMIC_LOOT_ENDPOINT="https://example.workers.dev"
 ```
 
-If those values are missing, `assembleRelease` still builds an unsigned release APK for testing.
+If those values are missing, `assembleRelease` will build an unsigned release locally, but GitHub Actions is now configured to skip uploading a misleading unsigned `release.apk`.
 
 ## GitHub Actions secrets
 
