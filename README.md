@@ -1,99 +1,62 @@
-# lqlq Browser — Android APK (v0.27.0)
+# lqlq Browser Android
 
-Project Android của lqlq Browser. Bản v0.27.0 giữ toàn bộ hệ thẻ native, Trang đã lưu và trình phát Media3 của v0.26, đồng thời bổ sung **YouTube Picture-in-Picture**, **lặp lại một bài** và **playlist tự động theo thư mục**.
+Android project for `lqlq Browser`.
 
-## Cách build bằng GitHub Actions
+Current app version in source:
 
-1. Đưa toàn bộ thư mục project lên repository GitHub, bao gồm `.github/` và `keystore/`.
-2. Mở **Actions** → **Build lqlq Browser APK** → **Run workflow**.
-3. Tải artifact `lqlq-browser-apk` sau khi build xong.
-4. Gói artifact chứa:
-   - `lqlq-browser-v0.27.0-debug.apk`
-   - `lqlq-browser-v0.27.0-release.apk`
+- `versionName`: `0.32.12`
+- `versionCode`: `79`
+- `minSdk`: `24`
+- `targetSdk`: `35`
 
-Bản release tiếp tục dùng keystore ổn định của project, vì vậy có thể cài đè lên bản cũ có cùng chữ ký.
+## Build with GitHub Actions
 
-## YouTube Picture-in-Picture
+The repository should not store a release keystore anymore.
 
-- Dán link video hoặc playlist YouTube và phát như bình thường.
-- Khi video đang phát, bấm Home hoặc vuốt về màn hình chính: ứng dụng chuyển sang cửa sổ video nổi 16:9.
-- Có nút **Picture-in-Picture** để mở thủ công.
-- Có nút **Mở bằng YouTube** để chuyển sang ứng dụng YouTube chính thức.
-- PiP chỉ tự mở khi nội dung YouTube thật sự đang phát; video đã tạm dừng không tự bật PiP.
-- YouTube vẫn chạy bằng iframe chính thức, không trích xuất luồng âm thanh/video.
+Required GitHub secrets for a signed release build:
 
-## Playlist và tự chuyển bài
+- `LQLQ_RELEASE_KEYSTORE_BASE64`
+- `LQLQ_RELEASE_STORE_PASSWORD`
+- `LQLQ_RELEASE_KEY_ALIAS`
+- `LQLQ_RELEASE_KEY_PASSWORD`
 
-### File trong máy
+Optional GitHub variable:
 
-- Khi chọn một file MP3/MP4, ứng dụng cố tìm toàn bộ file media cùng loại trong thư mục chứa file đó.
-- Danh sách được sắp theo tên và đưa vào Media3; hết bài hiện tại sẽ tự chuyển sang bài kế tiếp.
-- Trên Android 13+, ứng dụng chỉ xin `READ_MEDIA_AUDIO` hoặc `READ_MEDIA_VIDEO` đúng lúc cần tạo playlist thư mục.
-- Trên Android 7–12, ứng dụng dùng quyền đọc media cũ khi cần.
-- Nếu nhà cung cấp file không cho xác định thư mục hoặc người dùng từ chối quyền, file đã chọn vẫn phát bình thường như một bài đơn.
-- Nút **Chọn thư mục** dùng Storage Access Framework, không cần quyền đọc toàn bộ thư viện và tạo playlist từ các file trực tiếp trong thư mục đã chọn.
+- `LQLQ_DYNAMIC_LOOT_ENDPOINT`
 
-### YouTube
+Workflow:
 
-- Link playlist hoặc link video có tham số `list=` dùng hàng đợi chính thức của YouTube và tự chuyển video tiếp theo.
-- Nút **Bài trước/Bài tiếp theo** gửi lệnh trực tiếp tới YouTube IFrame Player.
-- Với link video đơn không có playlist, bài tiếp theo phụ thuộc hàng đợi/đề xuất mà trình nhúng YouTube cung cấp; ứng dụng không tự thu thập hay trích xuất video liên quan.
+1. Push the project to GitHub.
+2. Open `Actions` -> `Build lqlq Browser APK`.
+3. Run the workflow.
+4. Download the `lqlq-browser-apk` artifact.
 
-## Lặp lại một bài
+If release signing secrets are missing, the workflow still produces a release APK for testing, but it will be unsigned.
 
-- Nút **Lặp lại một bài** hoạt động với file local, URL media trực tiếp, playlist local và YouTube.
-- Trạng thái được lưu lại giữa các lần mở ứng dụng.
-- Với Media3, chế độ lặp được đặt ở `Player.REPEAT_MODE_ONE`; tắt lặp sẽ quay lại tự chuyển bài trong playlist.
+## Local release build
 
-## Chạy ngoài nền
+Provide signing values through Gradle properties or environment variables:
 
-- File local và URL media trực tiếp vẫn chạy trong `NativeMediaPlaybackService` (`MediaSessionService` + ExoPlayer).
-- Bấm Home, chuyển ứng dụng hoặc khóa màn hình vẫn phát; Android cung cấp notification, màn hình khóa và điều khiển tai nghe/Bluetooth.
-- YouTube tiếp tục bằng PiP, không biến thành luồng âm thanh ẩn.
-
-## Kiến trúc chính
-
-- `NativeMediaPlaybackService.kt`: ExoPlayer, MediaSession, khôi phục repeat-one.
-- `MainActivity.kt`: playlist MediaStore/SAF, điều khiển MediaController, PiP Activity và mở YouTube ngoài ứng dụng.
-- `ShellBridge.kt`: cầu nối JavaScript cho chọn file/thư mục, next/previous/repeat và PiP.
-- `v13-media.js`: điều phối backend native/YouTube, YouTube IFrame API, repeat-one và trạng thái playlist.
-- `AndroidManifest.xml`: khai báo PiP và quyền media theo phiên bản Android.
-
-## Yêu cầu
-
-- `minSdk 24`, `targetSdk 35`, Java 17.
-- AndroidX Media3 `1.10.1`.
-- Android 8.0 trở lên để dùng Picture-in-Picture.
-- Android 13+ cần cho phép thông báo để thấy thanh điều khiển media native.
-
-
-## v0.29.0 — Hồ sơ Phiêu lưu tùy chọn
-
-- Người chưa tạo hồ sơ vẫn dùng lqlq Browser như trình duyệt bình thường.
-- Nhấn khu vực logo/tên trong menu để tạo Hồ sơ Phiêu lưu lưu cục bộ.
-- Hồ sơ hỗ trợ biệt danh, 8 avatar mặc định, Linh Thạch, thống kê Shield và bật/tắt hiệu ứng.
-- Shield chỉ cộng `+1 Linh Thạch` cho lần chặn điều hướng main-frame hợp lệ sau khi đã có hồ sơ.
-- Chống cộng trùng trong 2,2 giây và giới hạn 30 Linh Thạch/ngày; request ảnh/script/iframe không được thưởng.
-- Xóa hồ sơ không xóa lịch sử, dấu trang, thẻ hay dữ liệu trình duyệt.
-- Chưa có Google/Facebook Login, máy chủ, bán Linh Thạch, nhiệm vụ hoặc cửa hàng trang bị.
-
-## v0.32.0 — LQLQ Dynamic Loot Engine
-
-Project có thêm hệ **Kỳ Vật Vạn Giới động**:
-
-- khi người dùng có Hồ sơ Phiêu lưu và đi tới web mới, app tự quay tỷ lệ rơi;
-- thẻ Kỳ Vật có thể lấy từ Cloudflare Worker + Workers AI;
-- nếu Worker chưa được cấu hình hoặc lỗi, app tự dùng Wikipedia/Wikimedia;
-- ảnh đã thu thập được nén WebP và lưu cục bộ, không đóng sẵn hàng nghìn ảnh vào APK;
-- bộ sưu tập hiển thị trong **Vạn Giới Đồ Giám**.
-
-### Cấu hình endpoint khi build
-
-```bash
-gradle assembleRelease \
-  -PLQLQ_DYNAMIC_LOOT_ENDPOINT="https://lqlq-dynamic-loot.<account>.workers.dev"
+```powershell
+gradle assembleRelease `
+  -PLQLQ_RELEASE_STORE_FILE=keystore/release-upload.jks `
+  -PLQLQ_RELEASE_STORE_PASSWORD=... `
+  -PLQLQ_RELEASE_KEY_ALIAS=... `
+  -PLQLQ_RELEASE_KEY_PASSWORD=... `
+  -PLQLQ_DYNAMIC_LOOT_ENDPOINT="https://example.workers.dev"
 ```
 
-GitHub Actions đọc repository variable `LQLQ_DYNAMIC_LOOT_ENDPOINT`. Nếu để trống, APK vẫn dùng nguồn Wikipedia/Wikimedia trực tiếp.
+## Security changes already applied
 
-Mã Worker nằm trong thư mục `dynamic-loot-worker/`.
+- Release signing is no longer hardcoded in `app/build.gradle.kts`.
+- GitHub Actions reads the release keystore from secrets.
+- `android:allowBackup` is disabled.
+- Mixed content is blocked by default in WebView.
+- HTTP pages and HTTP downloads now show explicit warnings.
+- `PageToolsBridge.saveTextFile()` is gated and rate-limited.
+
+## Known follow-up work
+
+- The old release key must still be treated as exposed if it was ever committed publicly.
+- Git history cleanup is still needed if you want the old keystore removed from past commits too.
+- Full incognito isolation is still a larger architectural task.

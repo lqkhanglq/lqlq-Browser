@@ -10,35 +10,51 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Lấy mã nguồn
+      - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Cài JDK 17
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
 
-      - name: Cài Gradle
+      - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
-          gradle-version: '8.7'
+          gradle-version: "8.7"
 
-      - name: Build APK (debug + release, cùng chữ ký ổn định)
+      - name: Prepare release keystore
+        if: ${{ secrets.LQLQ_RELEASE_KEYSTORE_BASE64 != '' }}
+        shell: bash
+        run: |
+          mkdir -p keystore
+          echo "${{ secrets.LQLQ_RELEASE_KEYSTORE_BASE64 }}" | base64 --decode > keystore/release-upload.jks
+
+      - name: Build APK
         env:
           LQLQ_DYNAMIC_LOOT_ENDPOINT: ${{ vars.LQLQ_DYNAMIC_LOOT_ENDPOINT }}
+          LQLQ_RELEASE_STORE_FILE: keystore/release-upload.jks
+          LQLQ_RELEASE_STORE_PASSWORD: ${{ secrets.LQLQ_RELEASE_STORE_PASSWORD }}
+          LQLQ_RELEASE_KEY_ALIAS: ${{ secrets.LQLQ_RELEASE_KEY_ALIAS }}
+          LQLQ_RELEASE_KEY_PASSWORD: ${{ secrets.LQLQ_RELEASE_KEY_PASSWORD }}
         run: |
           gradle assembleDebug assembleRelease --no-daemon \
             -PLQLQ_DYNAMIC_LOOT_ENDPOINT="${LQLQ_DYNAMIC_LOOT_ENDPOINT:-}"
 
-      - name: Đổi tên APK
+      - name: Collect APK outputs
+        shell: bash
         run: |
           mkdir -p out
           VERSION_NAME=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts)
           cp app/build/outputs/apk/debug/app-debug.apk "out/lqlq-browser-v${VERSION_NAME}-debug.apk"
-          cp app/build/outputs/apk/release/app-release.apk "out/lqlq-browser-v${VERSION_NAME}-release.apk"
+          RELEASE_APK="app/build/outputs/apk/release/app-release.apk"
+          if [ ! -f "$RELEASE_APK" ]; then
+            RELEASE_APK="app/build/outputs/apk/release/app-release-unsigned.apk"
+          fi
+          cp "$RELEASE_APK" "out/lqlq-browser-v${VERSION_NAME}-release.apk"
 
-      - name: Tải APK lên Artifacts
+      - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
         with:
           name: lqlq-browser-apk

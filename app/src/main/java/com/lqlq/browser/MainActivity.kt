@@ -91,6 +91,9 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val SHELL_HOST = "appassets.androidapp.com"
+        private const val MAX_SHARED_IMAGE_BYTES = 25L * 1024L * 1024L
+        private const val MAX_SHARED_IMAGE_CACHE_BYTES = 100L * 1024L * 1024L
+        private const val MAX_SHARED_IMAGE_CACHE_FILES = 24
 
         /** Cửa sổ tin cậy sau 1 cú chạm thật để cho qua các bước redirect không mang gesture (OAuth, link rút gọn...). */
         private const val TRUSTED_REDIRECT_WINDOW_MS = 20_000L
@@ -240,6 +243,7 @@ class MainActivity : AppCompatActivity() {
 
     /** Thời điểm gần nhất mỗi tab có 1 cú chạm thật (WebResourceRequest.hasGesture()), dùng cho cửa sổ redirect tin cậy của domain guard. */
     private val lastUserGestureNavAt = ConcurrentHashMap<String, Long>()
+    private val lastCleartextWarningUrl = ConcurrentHashMap<String, String>()
 
     /**
      * Bật/tắt lớp chặn quảng cáo domain đã biết + chặn nhảy trang sang domain
@@ -270,6 +274,20 @@ class MainActivity : AppCompatActivity() {
     private fun showBlockNoticeToast(message: String) {
         if (!blockNoticeToastsEnabled) return
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun isCleartextHttpUrl(url: String): Boolean =
+        url.startsWith("http://", ignoreCase = true)
+
+    private fun maybeWarnCleartextPage(tabId: String, url: String) {
+        if (!isCleartextHttpUrl(url)) return
+        if (lastCleartextWarningUrl[tabId] == url) return
+        lastCleartextWarningUrl[tabId] = url
+        Toast.makeText(
+            this,
+            "Cảnh báo: trang này đang dùng HTTP không mã hóa.",
+            Toast.LENGTH_LONG
+        ).show()
     }
 
     /**
@@ -2410,7 +2428,7 @@ class MainActivity : AppCompatActivity() {
         settings.builtInZoomControls = true
         settings.displayZoomControls = false
         settings.setSupportZoom(true)
-        settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+        settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             settings.safeBrowsingEnabled = true
         }
@@ -2422,8 +2440,7 @@ class MainActivity : AppCompatActivity() {
         // bộ mới bật tạm allowFileAccess trong openOfflineMhtFile().
         settings.allowFileAccess = false
 
-        // Giữ hành vi media hiện có của ứng dụng.
-        settings.mediaPlaybackRequiresUserGesture = false
+        settings.mediaPlaybackRequiresUserGesture = true
     }
 
     /**
@@ -2560,6 +2577,7 @@ class MainActivity : AppCompatActivity() {
         chapterClipperEnabledTabs.remove(tabId)
         tabRootDomain.remove(tabId)
         lastUserGestureNavAt.remove(tabId)
+        lastCleartextWarningUrl.remove(tabId)
         val next = tabStore.closeTab(tabId)
         activeTabId = next.id
         activateTab(next)
@@ -2574,6 +2592,7 @@ class MainActivity : AppCompatActivity() {
             chapterClipperEnabledTabs.remove(id)
             tabRootDomain.remove(id)
             lastUserGestureNavAt.remove(id)
+            lastCleartextWarningUrl.remove(id)
         }
         val keep = tabStore.closeOtherTabs(keepId)
         activeTabId = keep.id
@@ -2588,6 +2607,7 @@ class MainActivity : AppCompatActivity() {
             chapterClipperEnabledTabs.remove(id)
             tabRootDomain.remove(id)
             lastUserGestureNavAt.remove(id)
+            lastCleartextWarningUrl.remove(id)
         }
         val blank = tabStore.closeAllTabs()
         activeTabId = blank.id
@@ -3066,7 +3086,7 @@ $js
         )
 
         CookieManager.getInstance().setAcceptCookie(true)
-        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
+        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, false)
 
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(
@@ -3197,6 +3217,7 @@ $js
                 favicon: android.graphics.Bitmap?
             ) {
                 if (tabId == activeTabId) {
+                    maybeWarnCleartextPage(tabId, url)
                     hideAdventureLoot()
                     hideSpiritBeastEncounter()
                     hideDynamicLootEncounter()
@@ -3378,6 +3399,12 @@ $js
     private fun fetchImageToCacheFile(imageUrl: String, onReady: (File?) -> Unit) {
         dynamicLootExecutor.execute {
             val file = try {
+                val uri = Uri.parse(imageUrl)
+                val scheme = uri.scheme?.lowercase(Locale.ROOT)
+                if (scheme != "http" && scheme != "https") {
+                    mainHandler.post { onReady(null) }
+                    return@execute
+                }
                 val connection = (URL(imageUrl).openConnection() as HttpURLConnection).apply {
                     connectTimeout = 10_000
                     readTimeout = 15_000
@@ -3386,17 +3413,29 @@ $js
                     setRequestProperty("Cookie", CookieManager.getInstance().getCookie(imageUrl) ?: "")
                 }
                 connection.connect()
-                if (connection.responseCode !in 200..299) {
+                val contentType = connection.contentType?.substringBefore(';')?.trim()?.lowercase(Locale.ROOT)
+                val declaredLength = connection.contentLengthLong
+                if (connection.responseCode !in 200..299 ||
+                    contentType.isNullOrBlank() ||
+                    !contentType.startsWith("image/") ||
+                    declaredLength > MAX_SHARED_IMAGE_BYTES
+                ) {
                     connection.disconnect()
                     null
                 } else {
-                    val dir = File(cacheDir, "shared_images").apply { mkdirs() }
+                    val dir = File(cacheDir, "shared_images").apply {
+                        mkdirs()
+                        trimSharedImageCache(this)
+                    }
                     val extension = URLUtil.guessFileName(imageUrl, null, connection.contentType).substringAfterLast('.', "jpg")
                     val target = File(dir, "img_${System.currentTimeMillis()}.$extension")
                     connection.inputStream.use { input ->
-                        target.outputStream().use { output -> input.copyTo(output) }
+                        target.outputStream().use { output ->
+                            copyStreamWithLimit(input, output, MAX_SHARED_IMAGE_BYTES)
+                        }
                     }
                     connection.disconnect()
+                    trimSharedImageCache(dir)
                     target
                 }
             } catch (_: Exception) {
@@ -3418,7 +3457,7 @@ $js
                 return@fetchImageToCacheFile
             }
             val bitmap = try {
-                BitmapFactory.decodeFile(file.absolutePath)
+                decodePreviewBitmap(file)
             } catch (_: Exception) {
                 null
             }
@@ -3436,6 +3475,80 @@ $js
                 .setPositiveButton("Đóng", null)
                 .show()
         }
+    }
+
+    private fun copyStreamWithLimit(
+        input: InputStream,
+        output: java.io.OutputStream,
+        maxBytes: Long
+    ) {
+        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        var total = 0L
+        while (true) {
+            val read = input.read(buffer)
+            if (read == -1) break
+            total += read
+            if (total > maxBytes) {
+                throw IllegalStateException("image too large")
+            }
+            output.write(buffer, 0, read)
+        }
+    }
+
+    private fun trimSharedImageCache(dir: File) {
+        val files = dir.listFiles()?.sortedBy { it.lastModified() } ?: return
+        var totalBytes = files.sumOf { it.length() }
+        var totalFiles = files.size
+        for (file in files) {
+            if (totalBytes <= MAX_SHARED_IMAGE_CACHE_BYTES && totalFiles <= MAX_SHARED_IMAGE_CACHE_FILES) {
+                break
+            }
+            totalBytes -= file.length()
+            totalFiles -= 1
+            runCatching { file.delete() }
+        }
+    }
+
+    private fun decodePreviewBitmap(file: File): Bitmap? {
+        val bounds = BitmapFactory.Options().apply {
+            inJustDecodeBounds = true
+        }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+
+        val metrics = resources.displayMetrics
+        val reqWidth = (metrics.widthPixels.coerceAtLeast(1) * 2).coerceAtLeast(1080)
+        val reqHeight = (metrics.heightPixels.coerceAtLeast(1) * 2).coerceAtLeast(1920)
+        val sampleSize = calculateInSampleSize(bounds, reqWidth, reqHeight)
+
+        return BitmapFactory.decodeFile(
+            file.absolutePath,
+            BitmapFactory.Options().apply {
+                inSampleSize = sampleSize
+            }
+        )
+    }
+
+    private fun calculateInSampleSize(
+        options: BitmapFactory.Options,
+        reqWidth: Int,
+        reqHeight: Int
+    ): Int {
+        val height = options.outHeight
+        val width = options.outWidth
+        var inSampleSize = 1
+
+        if (height > reqHeight || width > reqWidth) {
+            val halfHeight = height / 2
+            val halfWidth = width / 2
+            while ((halfHeight / inSampleSize) >= reqHeight &&
+                (halfWidth / inSampleSize) >= reqWidth
+            ) {
+                inSampleSize *= 2
+            }
+        }
+
+        return inSampleSize.coerceAtLeast(1)
     }
 
     private fun imageContentUri(file: File): Uri =
@@ -3509,6 +3622,26 @@ $js
             Toast.makeText(this, "Tệp này cần lưu bằng nút lưu trong ứng dụng.", Toast.LENGTH_SHORT).show()
             return
         }
+        if (isCleartextHttpUrl(url)) {
+            AlertDialog.Builder(this)
+                .setTitle("Tải xuống qua HTTP?")
+                .setMessage("Liên kết này không được mã hóa. Nội dung tải xuống có thể bị đọc hoặc sửa trên đường truyền.")
+                .setNegativeButton("Hủy", null)
+                .setPositiveButton("Vẫn tải") { _, _ ->
+                    enqueueDownload(url, userAgent, contentDisposition, mimeType)
+                }
+                .show()
+            return
+        }
+        enqueueDownload(url, userAgent, contentDisposition, mimeType)
+    }
+
+    private fun enqueueDownload(
+        url: String,
+        userAgent: String,
+        contentDisposition: String,
+        mimeType: String
+    ) {
         try {
             val fileName = URLUtil.guessFileName(url, contentDisposition, mimeType)
             val request = DownloadManager.Request(Uri.parse(url)).apply {
