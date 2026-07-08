@@ -24,22 +24,6 @@ jobs:
         with:
           gradle-version: "8.7"
 
-      - name: Prepare release keystore
-        shell: bash
-        env:
-          LQLQ_RELEASE_KEYSTORE_BASE64: ${{ secrets.LQLQ_RELEASE_KEYSTORE_BASE64 }}
-          LQLQ_RELEASE_STORE_PASSWORD: ${{ secrets.LQLQ_RELEASE_STORE_PASSWORD }}
-          LQLQ_RELEASE_KEY_ALIAS: ${{ secrets.LQLQ_RELEASE_KEY_ALIAS }}
-          LQLQ_RELEASE_KEY_PASSWORD: ${{ secrets.LQLQ_RELEASE_KEY_PASSWORD }}
-        run: |
-          if [ -n "${LQLQ_RELEASE_KEYSTORE_BASE64}" ] && [ -n "${LQLQ_RELEASE_STORE_PASSWORD}" ] && [ -n "${LQLQ_RELEASE_KEY_ALIAS}" ] && [ -n "${LQLQ_RELEASE_KEY_PASSWORD}" ]; then
-            mkdir -p keystore
-            echo "${LQLQ_RELEASE_KEYSTORE_BASE64}" | base64 --decode > keystore/release-upload.jks
-            echo "LQLQ_SIGNED_RELEASE=true" >> "$GITHUB_ENV"
-          else
-            echo "LQLQ_SIGNED_RELEASE=false" >> "$GITHUB_ENV"
-          fi
-
       - name: Build debug APK
         env:
           LQLQ_DYNAMIC_LOOT_ENDPOINT: ${{ vars.LQLQ_DYNAMIC_LOOT_ENDPOINT }}
@@ -47,14 +31,9 @@ jobs:
           gradle assembleDebug --no-daemon \
             -PLQLQ_DYNAMIC_LOOT_ENDPOINT="${LQLQ_DYNAMIC_LOOT_ENDPOINT:-}"
 
-      - name: Build signed release APK
-        if: ${{ env.LQLQ_SIGNED_RELEASE == 'true' }}
+      - name: Build release APK
         env:
           LQLQ_DYNAMIC_LOOT_ENDPOINT: ${{ vars.LQLQ_DYNAMIC_LOOT_ENDPOINT }}
-          LQLQ_RELEASE_STORE_FILE: keystore/release-upload.jks
-          LQLQ_RELEASE_STORE_PASSWORD: ${{ secrets.LQLQ_RELEASE_STORE_PASSWORD }}
-          LQLQ_RELEASE_KEY_ALIAS: ${{ secrets.LQLQ_RELEASE_KEY_ALIAS }}
-          LQLQ_RELEASE_KEY_PASSWORD: ${{ secrets.LQLQ_RELEASE_KEY_PASSWORD }}
         run: |
           gradle assembleRelease --no-daemon \
             -PLQLQ_DYNAMIC_LOOT_ENDPOINT="${LQLQ_DYNAMIC_LOOT_ENDPOINT:-}"
@@ -65,20 +44,7 @@ jobs:
           mkdir -p out
           VERSION_NAME=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts)
           cp app/build/outputs/apk/debug/app-debug.apk "out/lqlq-browser-v${VERSION_NAME}-debug.apk"
-          if [ "${LQLQ_SIGNED_RELEASE}" = "true" ]; then
-            RELEASE_APK="app/build/outputs/apk/release/app-release.apk"
-            cp "$RELEASE_APK" "out/lqlq-browser-v${VERSION_NAME}-release-signed.apk"
-          else
-            printf '%s\n' \
-              'Signed release APK was skipped because GitHub signing secrets are missing.' \
-              '' \
-              'Required secrets:' \
-              '- LQLQ_RELEASE_KEYSTORE_BASE64' \
-              '- LQLQ_RELEASE_STORE_PASSWORD' \
-              '- LQLQ_RELEASE_KEY_ALIAS' \
-              '- LQLQ_RELEASE_KEY_PASSWORD' \
-              > "out/RELEASE_SIGNING_REQUIRED.txt"
-          fi
+          cp app/build/outputs/apk/release/app-release.apk "out/lqlq-browser-v${VERSION_NAME}-release.apk"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4

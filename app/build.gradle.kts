@@ -9,22 +9,6 @@ val dynamicLootEndpoint = providers.gradleProperty("LQLQ_DYNAMIC_LOOT_ENDPOINT")
     .replace("\\", "\\\\")
     .replace("\"", "\\\"")
 
-val releaseStoreFile = providers.gradleProperty("LQLQ_RELEASE_STORE_FILE")
-    .orElse(providers.environmentVariable("LQLQ_RELEASE_STORE_FILE"))
-val releaseStorePassword = providers.gradleProperty("LQLQ_RELEASE_STORE_PASSWORD")
-    .orElse(providers.environmentVariable("LQLQ_RELEASE_STORE_PASSWORD"))
-val releaseKeyAlias = providers.gradleProperty("LQLQ_RELEASE_KEY_ALIAS")
-    .orElse(providers.environmentVariable("LQLQ_RELEASE_KEY_ALIAS"))
-val releaseKeyPassword = providers.gradleProperty("LQLQ_RELEASE_KEY_PASSWORD")
-    .orElse(providers.environmentVariable("LQLQ_RELEASE_KEY_PASSWORD"))
-
-val hasReleaseSigning = listOf(
-    releaseStoreFile,
-    releaseStorePassword,
-    releaseKeyAlias,
-    releaseKeyPassword
-).all { !it.orNull.isNullOrBlank() }
-
 android {
     namespace = "com.lqlq.browser"
     compileSdk = 35
@@ -43,22 +27,21 @@ android {
     }
 
     signingConfigs {
-        if (hasReleaseSigning) {
-            create("release") {
-                storeFile = rootProject.file(releaseStoreFile.get())
-                storePassword = releaseStorePassword.get()
-                keyAlias = releaseKeyAlias.get()
-                keyPassword = releaseKeyPassword.get()
-            }
+        create("lqlq") {
+            storeFile = rootProject.file("keystore/lqlq-release.keystore")
+            storePassword = "lqlq123456"
+            keyAlias = "lqlq"
+            keyPassword = "lqlq123456"
         }
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("lqlq")
+        }
         release {
             isMinifyEnabled = false
-            if (hasReleaseSigning) {
-                signingConfig = signingConfigs.getByName("release")
-            }
+            signingConfig = signingConfigs.getByName("lqlq")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

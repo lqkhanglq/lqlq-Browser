@@ -13,7 +13,5 @@ node_modules/
 .wrangler/
 .dev.vars
 *.jks
-*.keystore
 *.p12
-keystore/
 release-signing-secrets/
