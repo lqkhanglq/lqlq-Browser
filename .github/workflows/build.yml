@@ -69,15 +69,15 @@ jobs:
             RELEASE_APK="app/build/outputs/apk/release/app-release.apk"
             cp "$RELEASE_APK" "out/lqlq-browser-v${VERSION_NAME}-release-signed.apk"
           else
-            cat <<'EOF' > "out/RELEASE_SIGNING_REQUIRED.txt"
-            Signed release APK was skipped because GitHub signing secrets are missing.
-
-            Required secrets:
-            - LQLQ_RELEASE_KEYSTORE_BASE64
-            - LQLQ_RELEASE_STORE_PASSWORD
-            - LQLQ_RELEASE_KEY_ALIAS
-            - LQLQ_RELEASE_KEY_PASSWORD
-            EOF
+            printf '%s\n' \
+              'Signed release APK was skipped because GitHub signing secrets are missing.' \
+              '' \
+              'Required secrets:' \
+              '- LQLQ_RELEASE_KEYSTORE_BASE64' \
+              '- LQLQ_RELEASE_STORE_PASSWORD' \
+              '- LQLQ_RELEASE_KEY_ALIAS' \
+              '- LQLQ_RELEASE_KEY_PASSWORD' \
+              > "out/RELEASE_SIGNING_REQUIRED.txt"
           fi
 
       - name: Upload build artifacts
