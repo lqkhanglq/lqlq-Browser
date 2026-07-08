@@ -25,11 +25,14 @@ jobs:
           gradle-version: "8.7"
 
       - name: Prepare release keystore
-        if: ${{ secrets.LQLQ_RELEASE_KEYSTORE_BASE64 != '' }}
         shell: bash
+        env:
+          LQLQ_RELEASE_KEYSTORE_BASE64: ${{ secrets.LQLQ_RELEASE_KEYSTORE_BASE64 }}
         run: |
-          mkdir -p keystore
-          echo "${{ secrets.LQLQ_RELEASE_KEYSTORE_BASE64 }}" | base64 --decode > keystore/release-upload.jks
+          if [ -n "${LQLQ_RELEASE_KEYSTORE_BASE64}" ]; then
+            mkdir -p keystore
+            echo "${LQLQ_RELEASE_KEYSTORE_BASE64}" | base64 --decode > keystore/release-upload.jks
+          fi
 
       - name: Build APK
         env:
