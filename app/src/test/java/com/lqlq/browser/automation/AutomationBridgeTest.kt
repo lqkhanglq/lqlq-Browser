@@ -60,25 +60,49 @@ class AutomationBridgeTest {
     }
 
     @Test
-    fun overlyLongTopicRejected() {
+    fun normalTopicAccepted() {
         val bridge = AutomationBridge(AutomationFacade.create(repository))
-        val longTopic = "a".repeat(AutomationFacade.MAX_TOPIC_LENGTH + 1)
+        val response = JSONObject(bridge.startMockAutomation(validRequestJson("Noi dung binh thuong")))
+
+        assertTrue(response.getBoolean("ok"))
+        assertEquals("Noi dung binh thuong", response.getJSONObject("job").getString("topic"))
+    }
+
+    @Test
+    fun topicLongerThan4000ButWithin50000Accepted() {
+        val bridge = AutomationBridge(AutomationFacade.create(repository))
+        val longTopic = "a".repeat(12_000)
 
         val response = JSONObject(
             bridge.startMockAutomation(
-                JSONObject()
-                    .put("topic", longTopic)
-                    .put("contentServiceId", "mock-content")
-                    .put("voiceServiceId", "mock-voice")
-                    .put("videoServiceId", "mock-video")
-                    .put("publishServiceId", "mock-publish-draft")
-                    .put("publishMode", "review-before-post")
-                    .toString()
+                validRequestJson(longTopic)
             )
         )
 
+        assertTrue(response.getBoolean("ok"))
+        assertEquals(longTopic, response.getJSONObject("job").getString("topic"))
+    }
+
+    @Test
+    fun topicLongerThan50000Rejected() {
+        val bridge = AutomationBridge(AutomationFacade.create(repository))
+        val longTopic = "a".repeat(AutomationFacade.MAX_AUTOMATION_CONTENT_LENGTH + 1)
+
+        val response = JSONObject(bridge.startMockAutomation(validRequestJson(longTopic)))
+
         assertFalse(response.getBoolean("ok"))
         assertEquals("VALIDATION", response.getString("errorCode"))
+    }
+
+    @Test
+    fun htmlAndScriptAreTreatedAsPlainText() {
+        val bridge = AutomationBridge(AutomationFacade.create(repository))
+        val topic = "<script>alert('x')</script><b>hello</b>"
+
+        val response = JSONObject(bridge.startMockAutomation(validRequestJson(topic)))
+
+        assertTrue(response.getBoolean("ok"))
+        assertEquals(topic, response.getJSONObject("job").getString("topic"))
     }
 
     @Test

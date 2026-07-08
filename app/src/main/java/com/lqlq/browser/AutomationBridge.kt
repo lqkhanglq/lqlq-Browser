@@ -82,11 +82,11 @@ class AutomationBridge(
         val publishMode = payload.optString("publishMode").trim()
 
         require(topic.isNotBlank()) { "Hay nhap chu de noi dung." }
-        require(topic.length <= AutomationFacade.MAX_TOPIC_LENGTH) {
-            "Chu de qua dai. Hay rut gon de tiep tuc."
+        require(topic.length <= AutomationFacade.MAX_AUTOMATION_CONTENT_LENGTH) {
+            "Noi dung qua dai. Gioi han toi da la 50000 ky tu."
         }
-        require(!DISALLOWED_TOPIC_PATTERN.containsMatchIn(topic)) {
-            "Chu de chua noi dung khong hop le."
+        require(!CALLBACK_OR_PATH_PATTERN.matches(topic)) {
+            "Noi dung khong duoc la callback URL hoac filesystem path."
         }
         require(contentServiceId in ALLOWED_CONTENT_SERVICES) { "Dich vu tao noi dung chua duoc ho tro." }
         require(voiceServiceId in ALLOWED_VOICE_SERVICES) { "Dich vu giong doc chua duoc ho tro." }
@@ -196,14 +196,16 @@ class AutomationBridge(
     }
 
     companion object {
-        private const val MAX_REQUEST_JSON_LENGTH = 8_192
+        private const val MAX_REQUEST_JSON_LENGTH = 262_144
         private const val ALLOWED_PUBLISH_MODE = "review-before-post"
 
         private val ALLOWED_CONTENT_SERVICES = setOf("mock-content")
         private val ALLOWED_VOICE_SERVICES = setOf("mock-voice")
         private val ALLOWED_VIDEO_SERVICES = setOf("mock-video")
         private val ALLOWED_PUBLISH_SERVICES = setOf("mock-publish-draft")
-        private val DISALLOWED_TOPIC_PATTERN =
-            Regex("(<|>|javascript:|<script|</script|data:)", RegexOption.IGNORE_CASE)
+        private val CALLBACK_OR_PATH_PATTERN = Regex(
+            pattern = "^\\s*(?:(?:https?|javascript|data|file|content)://\\S+|[A-Za-z]:\\\\.*|/.*)\\s*$",
+            options = setOf(RegexOption.IGNORE_CASE)
+        )
     }
 }

@@ -361,7 +361,7 @@ class AutomationFacade private constructor(
     private fun AutomationStartRequest.normalized(): AutomationStartRequest {
         val normalizedTopic = topic.trim().replace(Regex("\\s+"), " ")
         require(normalizedTopic.isNotBlank()) { "Topic is required." }
-        require(normalizedTopic.length <= MAX_TOPIC_LENGTH) { "Topic is too long." }
+        require(normalizedTopic.length <= MAX_AUTOMATION_CONTENT_LENGTH) { "Topic is too long." }
         return copy(topic = normalizedTopic)
     }
 
@@ -424,7 +424,7 @@ class AutomationFacade private constructor(
         const val MOCK_WORKFLOW_ID: String = "automation-ui-mock-video-pipeline"
         const val MOCK_WORKFLOW_VERSION: Int = 1
         const val DEFAULT_RECENT_LIMIT: Int = 8
-        const val MAX_TOPIC_LENGTH: Int = 280
+        const val MAX_AUTOMATION_CONTENT_LENGTH: Int = 50_000
 
         private val STEP_DISPLAY_ORDER = mapOf(
             "CONTENT" to 0,

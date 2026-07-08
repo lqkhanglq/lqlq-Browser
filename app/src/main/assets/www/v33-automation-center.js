@@ -70,7 +70,7 @@
 
   function setTopicMeta() {
     const length = refs.topic.value.trim().length;
-    refs.topicMeta.textContent = `${length}/280 ký tự. Chỉ nhận text thuần, không nhận script hoặc HTML.`;
+    refs.topicMeta.textContent = `${length}/50000 ký tự. Mô tả càng chi tiết càng tốt. Nội dung sẽ được xem là text thuần.`;
   }
 
   function setControlsDisabled(disabled) {
