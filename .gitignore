@@ -16,3 +16,4 @@ node_modules/
 *.keystore
 *.p12
 keystore/
+release-signing-secrets/
