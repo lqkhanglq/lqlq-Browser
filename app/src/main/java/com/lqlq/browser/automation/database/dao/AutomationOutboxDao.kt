@@ -25,4 +25,14 @@ interface AutomationOutboxDao {
         status: String = "PENDING",
         availableAtOrBeforeEpochMs: Long
     ): List<AutomationOutboxEventEntity>
+
+    @Query(
+        "SELECT * FROM automation_outbox_events " +
+            "WHERE aggregateType = :aggregateType AND aggregateId = :aggregateId " +
+            "ORDER BY availableAtEpochMs ASC, outboxEventId ASC"
+    )
+    fun listByAggregate(
+        aggregateType: String,
+        aggregateId: String
+    ): List<AutomationOutboxEventEntity>
 }

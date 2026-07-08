@@ -21,4 +21,10 @@ interface AutomationConnectorBindingDao {
             "WHERE jobId = :jobId ORDER BY createdAtEpochMs ASC"
     )
     fun listByJob(jobId: String): List<AutomationConnectorBindingEntity>
+
+    @Query(
+        "SELECT * FROM automation_connector_bindings " +
+            "WHERE projectId = :projectId AND bindingScope = 'PROJECT' ORDER BY createdAtEpochMs ASC"
+    )
+    fun listByProject(projectId: String): List<AutomationConnectorBindingEntity>
 }

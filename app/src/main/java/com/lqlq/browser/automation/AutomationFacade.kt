@@ -12,16 +12,25 @@ class AutomationFacade private constructor(
     fun getFoundationStatus(): AutomationFoundationStatus = engine.getFoundationStatus()
 
     companion object {
-        fun createDefault(): AutomationFacade {
-            val registry = AutomationConnectorRegistry.empty()
-            val repository = AutomationRepository.empty()
-            val artifactStore = AutomationArtifactStore.empty()
+        fun create(
+            repository: AutomationRepository,
+            artifactStore: AutomationArtifactStore = AutomationArtifactStore.empty(),
+            connectorRegistry: AutomationConnectorRegistry = AutomationConnectorRegistry.empty()
+        ): AutomationFacade {
             val engine = AutomationEngine(
                 repository = repository,
                 artifactStore = artifactStore,
-                connectorRegistry = registry
+                connectorRegistry = connectorRegistry
             )
             return AutomationFacade(engine)
+        }
+
+        fun createDefault(): AutomationFacade {
+            return create(
+                repository = AutomationRepository.empty(),
+                artifactStore = AutomationArtifactStore.empty(),
+                connectorRegistry = AutomationConnectorRegistry.empty()
+            )
         }
     }
 }

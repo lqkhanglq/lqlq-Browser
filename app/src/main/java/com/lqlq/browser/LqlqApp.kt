@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.os.Build
 import com.lqlq.browser.automation.AutomationFacade
 import com.lqlq.browser.automation.database.AutomationDatabase
+import com.lqlq.browser.automation.repository.RoomAutomationRepository
 
 class LqlqApp : Application() {
     lateinit var automationFacade: AutomationFacade
@@ -16,7 +17,9 @@ class LqlqApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        automationFacade = AutomationFacade.createDefault()
+        automationFacade = AutomationFacade.create(
+            repository = RoomAutomationRepository(automationDatabase)
+        )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val manager = getSystemService(NotificationManager::class.java)
             val channel = NotificationChannel(

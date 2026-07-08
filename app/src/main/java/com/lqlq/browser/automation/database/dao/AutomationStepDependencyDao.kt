@@ -12,6 +12,12 @@ interface AutomationStepDependencyDao {
 
     @Query(
         "SELECT * FROM automation_step_dependencies " +
+            "WHERE jobId = :jobId ORDER BY dependencyId ASC"
+    )
+    fun listByJob(jobId: String): List<AutomationStepDependencyEntity>
+
+    @Query(
+        "SELECT * FROM automation_step_dependencies " +
             "WHERE toStepId = :stepId ORDER BY dependencyId ASC"
     )
     fun listIncoming(stepId: String): List<AutomationStepDependencyEntity>
