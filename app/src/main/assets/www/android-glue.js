@@ -278,7 +278,8 @@
     { id: "adventureProfileOverlay", kind: "hidden", closeBtn: "adventureProfileBack" },
     { id: "chromeMenu", kind: "hidden", closeBtn: null },
     { id: "toolsMenu", kind: "hidden", closeBtn: null },
-    { id: "sideDrawer", kind: "open", closeBtn: "closeDrawer" }
+    { id: "sideDrawer", kind: "open", closeBtn: "closeDrawer" },
+    { id: "videoAutomationWorkspaceRoot", kind: "hidden", closeBtn: "videoWorkspaceCloseBtn" }
   ];
 
   function overlayIsOpen(spec) {

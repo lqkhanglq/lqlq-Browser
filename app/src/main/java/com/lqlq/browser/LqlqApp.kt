@@ -5,20 +5,76 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
 import com.lqlq.browser.automation.AutomationFacade
+import com.lqlq.browser.automation.AutomationJobNotificationPublisher
+import com.lqlq.browser.automation.artifact.AppPrivateAutomationArtifactStore
+import com.lqlq.browser.automation.connector.AutomationConnectorRegistry
+import com.lqlq.browser.automation.connector.content.GeminiContentConnector
+import com.lqlq.browser.automation.connector.image.AutomationImageProviders
+import com.lqlq.browser.automation.connector.image.CloudflareWorkersAiImageConnector
+import com.lqlq.browser.automation.connector.image.DefaultImageProviderRegistry
+import com.lqlq.browser.automation.connector.image.OpenAiImageConnector
+import com.lqlq.browser.automation.connector.image.PexelsStockImageConnector
+import com.lqlq.browser.automation.connector.voice.AndroidSystemTtsConnector
+import com.lqlq.browser.automation.connector.voice.AutomationVoiceProviders
+import com.lqlq.browser.automation.connector.voice.DefaultVoiceProviderRegistry
+import com.lqlq.browser.automation.connector.voice.FptAiVoiceConnector
+import com.lqlq.browser.automation.connector.voice.VbeeVoiceConnector
+import com.lqlq.browser.automation.credential.AndroidKeystoreAutomationCredentialStore
 import com.lqlq.browser.automation.database.AutomationDatabase
+import com.lqlq.browser.automation.image.ScriptScenePromptGenerator
 import com.lqlq.browser.automation.repository.RoomAutomationRepository
 
 class LqlqApp : Application() {
     lateinit var automationFacade: AutomationFacade
         private set
+    private lateinit var automationJobNotificationPublisher: AutomationJobNotificationPublisher
     val automationDatabase: AutomationDatabase by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         AutomationDatabase.create(applicationContext)
     }
 
     override fun onCreate() {
         super.onCreate()
+        automationJobNotificationPublisher = AutomationJobNotificationPublisher(applicationContext)
         automationFacade = AutomationFacade.create(
-            repository = RoomAutomationRepository(automationDatabase)
+            repository = RoomAutomationRepository(automationDatabase),
+            artifactStore = AppPrivateAutomationArtifactStore(applicationContext),
+            connectorRegistry = AutomationConnectorRegistry.of(
+                GeminiContentConnector.GEMINI_PROVIDER_ID,
+                OpenAiImageConnector.PROVIDER_ID,
+                CloudflareWorkersAiImageConnector.PROVIDER_ID,
+                PexelsStockImageConnector.PROVIDER_ID,
+                AutomationVoiceProviders.VBEE_TTS,
+                AutomationVoiceProviders.FPT_AI_TTS,
+                AutomationVoiceProviders.ANDROID_SYSTEM_TTS
+            ),
+            credentialStore = AndroidKeystoreAutomationCredentialStore(applicationContext),
+            contentConnector = GeminiContentConnector(),
+            scenePromptGenerator = ScriptScenePromptGenerator(),
+            imageProviderRegistry = DefaultImageProviderRegistry(
+                implementedProviderIds = setOf(
+                    AutomationImageProviders.OPENAI_IMAGES,
+                    AutomationImageProviders.CLOUDFLARE_WORKERS_AI,
+                    AutomationImageProviders.PEXELS
+                )
+            ),
+            imageConnectors = mapOf(
+                AutomationImageProviders.OPENAI_IMAGES to OpenAiImageConnector(),
+                AutomationImageProviders.CLOUDFLARE_WORKERS_AI to CloudflareWorkersAiImageConnector(),
+                AutomationImageProviders.PEXELS to PexelsStockImageConnector()
+            ),
+            voiceProviderRegistry = DefaultVoiceProviderRegistry(
+                implementedProviderIds = setOf(
+                    AutomationVoiceProviders.VBEE_TTS,
+                    AutomationVoiceProviders.FPT_AI_TTS,
+                    AutomationVoiceProviders.ANDROID_SYSTEM_TTS
+                )
+            ),
+            voiceConnectors = mapOf(
+                AutomationVoiceProviders.VBEE_TTS to VbeeVoiceConnector(),
+                AutomationVoiceProviders.FPT_AI_TTS to FptAiVoiceConnector(),
+                AutomationVoiceProviders.ANDROID_SYSTEM_TTS to AndroidSystemTtsConnector(applicationContext)
+            ),
+            progressListener = automationJobNotificationPublisher
         )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val manager = getSystemService(NotificationManager::class.java)
@@ -31,6 +87,16 @@ class LqlqApp : Application() {
                 setShowBadge(false)
             }
             manager.createNotificationChannel(channel)
+
+            val automationChannel = NotificationChannel(
+                com.lqlq.browser.automation.worker.AutomationNotifications.CHANNEL_ID,
+                "Automation tự động hoá",
+                NotificationManager.IMPORTANCE_DEFAULT
+            ).apply {
+                description = "Tiến độ tạo nội dung/ảnh/giọng đọc/video chạy nền."
+            }
+            manager.createNotificationChannel(automationChannel)
         }
+        automationJobNotificationPublisher.ensureChannel()
     }
 }

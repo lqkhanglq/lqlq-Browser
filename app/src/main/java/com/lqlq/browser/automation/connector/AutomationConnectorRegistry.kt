@@ -11,5 +11,14 @@ class AutomationConnectorRegistry private constructor(
 
     companion object {
         fun empty(): AutomationConnectorRegistry = AutomationConnectorRegistry(emptyList())
+
+        fun of(vararg connectorIds: String): AutomationConnectorRegistry {
+            return AutomationConnectorRegistry(
+                connectorIds
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() }
+                    .distinct()
+            )
+        }
     }
 }

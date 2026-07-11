@@ -65,6 +65,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -75,6 +76,7 @@ import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import androidx.webkit.WebViewAssetLoader
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.InputStream
@@ -85,6 +87,8 @@ import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlin.random.Random
 
 class MainActivity : AppCompatActivity() {
@@ -95,13 +99,13 @@ class MainActivity : AppCompatActivity() {
         private const val MAX_SHARED_IMAGE_CACHE_BYTES = 100L * 1024L * 1024L
         private const val MAX_SHARED_IMAGE_CACHE_FILES = 24
 
-        /** Cửa sổ tin cậy sau 1 cú chạm thật để cho qua các bước redirect không mang gesture (OAuth, link rút gọn...). */
+        /** Cá»­a sá»• tin cáº­y sau 1 cÃº cháº¡m tháº­t Ä‘á»ƒ cho qua cÃ¡c bÆ°á»›c redirect khÃ´ng mang gesture (OAuth, link rÃºt gá»n...). */
         private const val TRUSTED_REDIRECT_WINDOW_MS = 20_000L
 
-        // Hậu tố nhiều nhãn phổ biến — KHÔNG phải Public Suffix List đầy đủ,
-        // nhưng đủ để domain guard không gộp nhầm 2 site khác nhau vào 1
-        // "domain gốc" (vd trước đây a.co.uk và b.co.uk bị coi là cùng site
-        // vì chỉ cắt 2 nhãn cuối "co.uk").
+        // Háº­u tá»‘ nhiá»u nhÃ£n phá»• biáº¿n â€” KHÃ”NG pháº£i Public Suffix List Ä‘áº§y Ä‘á»§,
+        // nhÆ°ng Ä‘á»§ Ä‘á»ƒ domain guard khÃ´ng gá»™p nháº§m 2 site khÃ¡c nhau vÃ o 1
+        // "domain gá»‘c" (vd trÆ°á»›c Ä‘Ã¢y a.co.uk vÃ  b.co.uk bá»‹ coi lÃ  cÃ¹ng site
+        // vÃ¬ chá»‰ cáº¯t 2 nhÃ£n cuá»‘i "co.uk").
         private val MULTI_LABEL_SUFFIXES = setOf(
             "co.uk", "org.uk", "gov.uk", "ac.uk", "me.uk", "net.uk",
             "com.vn", "net.vn", "org.vn", "edu.vn", "gov.vn",
@@ -113,9 +117,9 @@ class MainActivity : AppCompatActivity() {
         )
         private const val SHELL_URL = "https://$SHELL_HOST/assets/www/index.html"
 
-        // Các trang công cụ tìm kiếm/chatbot AI mà người dùng chủ yếu vào để
-        // TRA CỨU — không phù hợp để Linh Thạch/Linh Thú/Thẻ Kỳ Vật xuất hiện
-        // (khác với các trang đọc truyện/tin tức thông thường).
+        // CÃ¡c trang cÃ´ng cá»¥ tÃ¬m kiáº¿m/chatbot AI mÃ  ngÆ°á»i dÃ¹ng chá»§ yáº¿u vÃ o Ä‘á»ƒ
+        // TRA Cá»¨U â€” khÃ´ng phÃ¹ há»£p Ä‘á»ƒ Linh Tháº¡ch/Linh ThÃº/Tháº» Ká»³ Váº­t xuáº¥t hiá»‡n
+        // (khÃ¡c vá»›i cÃ¡c trang Ä‘á»c truyá»‡n/tin tá»©c thÃ´ng thÆ°á»ng).
         private val ADVENTURE_LOOT_EXCLUDED_DOMAINS = setOf(
             "google.com", "google.com.vn", "bing.com", "duckduckgo.com",
             "search.yahoo.com", "yandex.com", "baidu.com", "you.com",
@@ -130,14 +134,14 @@ class MainActivity : AppCompatActivity() {
             return ADVENTURE_LOOT_EXCLUDED_DOMAINS.any { domain -> host == domain || host.endsWith(".$domain") }
         }
 
-        // Việc "chặn quảng cáo/nhảy trang giống metruyenchu_clipper_android_project"
-        // (v0.23.11): project tham khảo chặn TUYỆT ĐỐI theo danh sách domain quảng
-        // cáo/redirect đã biết (rules.json của Chapter Clipper gốc), không phụ
-        // thuộc gesture — vì vậy trang web không hề bị đổi/nhảy dù chỉ 1 khoảnh
-        // khắc. Đây là danh sách mạng quảng cáo/redirect phổ biến (mở rộng từ
-        // rules.json gốc: doubleclick, googlesyndication, googleadservices,
-        // popads, popcash + vài mạng phổ biến khác hay gặp trên site đọc truyện/
-        // xem phim lậu). Khớp theo domain gốc (endsWith) nên bao gồm mọi subdomain.
+        // Viá»‡c "cháº·n quáº£ng cÃ¡o/nháº£y trang giá»‘ng metruyenchu_clipper_android_project"
+        // (v0.23.11): project tham kháº£o cháº·n TUYá»†T Äá»I theo danh sÃ¡ch domain quáº£ng
+        // cÃ¡o/redirect Ä‘Ã£ biáº¿t (rules.json cá»§a Chapter Clipper gá»‘c), khÃ´ng phá»¥
+        // thuá»™c gesture â€” vÃ¬ váº­y trang web khÃ´ng há» bá»‹ Ä‘á»•i/nháº£y dÃ¹ chá»‰ 1 khoáº£nh
+        // kháº¯c. ÄÃ¢y lÃ  danh sÃ¡ch máº¡ng quáº£ng cÃ¡o/redirect phá»• biáº¿n (má»Ÿ rá»™ng tá»«
+        // rules.json gá»‘c: doubleclick, googlesyndication, googleadservices,
+        // popads, popcash + vÃ i máº¡ng phá»• biáº¿n khÃ¡c hay gáº·p trÃªn site Ä‘á»c truyá»‡n/
+        // xem phim láº­u). Khá»›p theo domain gá»‘c (endsWith) nÃªn bao gá»“m má»i subdomain.
         private val AD_HOST_BLOCKLIST = listOf(
             "doubleclick.net",
             "googlesyndication.com",
@@ -166,11 +170,11 @@ class MainActivity : AppCompatActivity() {
             return AD_HOST_BLOCKLIST.any { h == it || h.endsWith(".$it") }
         }
 
-        // Việc (v0.23.14): công cụ tìm kiếm/trợ lý AI — người dùng bấm vào
-        // kết quả tìm kiếm/liên kết do chính các trang này tạo ra LÀ mục
-        // đích sử dụng bình thường, không phải bị quảng cáo lừa nhảy trang.
-        // Khi tab đang ở 1 trong các domain này, bỏ qua lớp khoá domain
-        // (Việc v0.23.13) — vẫn giữ nguyên chặn danh sách quảng cáo đã biết.
+        // Viá»‡c (v0.23.14): cÃ´ng cá»¥ tÃ¬m kiáº¿m/trá»£ lÃ½ AI â€” ngÆ°á»i dÃ¹ng báº¥m vÃ o
+        // káº¿t quáº£ tÃ¬m kiáº¿m/liÃªn káº¿t do chÃ­nh cÃ¡c trang nÃ y táº¡o ra LÃ€ má»¥c
+        // Ä‘Ã­ch sá»­ dá»¥ng bÃ¬nh thÆ°á»ng, khÃ´ng pháº£i bá»‹ quáº£ng cÃ¡o lá»«a nháº£y trang.
+        // Khi tab Ä‘ang á»Ÿ 1 trong cÃ¡c domain nÃ y, bá» qua lá»›p khoÃ¡ domain
+        // (Viá»‡c v0.23.13) â€” váº«n giá»¯ nguyÃªn cháº·n danh sÃ¡ch quáº£ng cÃ¡o Ä‘Ã£ biáº¿t.
         private val SEARCH_AND_AI_TOOL_HOSTS = listOf(
             "google.com",
             "google.com.vn",
@@ -205,8 +209,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var pageContainer: FrameLayout
 
     /**
-     * Hệ thống thẻ native: BrowserTabStore là nguồn dữ liệu duy nhất.
-     * pageWebViews chỉ là bộ nhớ đệm renderer cho một số thẻ gần đây.
+     * Há»‡ thá»‘ng tháº» native: BrowserTabStore lÃ  nguá»“n dá»¯ liá»‡u duy nháº¥t.
+     * pageWebViews chá»‰ lÃ  bá»™ nhá»› Ä‘á»‡m renderer cho má»™t sá»‘ tháº» gáº§n Ä‘Ã¢y.
      */
     private lateinit var tabStore: BrowserTabStore
     private lateinit var nativeTabSwitcher: NativeTabSwitcherView
@@ -223,50 +227,50 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Các tab đã bật Chapter Clipper (việc 1, v0.23.5): một khi người dùng
-     * bật cho tab này, script phải tự tiêm lại ở MỌI trang mới trong tab đó
-     * (kể cả sau khi next-chapter) cho đến khi người dùng bấm tắt hẳn.
+     * CÃ¡c tab Ä‘Ã£ báº­t Chapter Clipper (viá»‡c 1, v0.23.5): má»™t khi ngÆ°á»i dÃ¹ng
+     * báº­t cho tab nÃ y, script pháº£i tá»± tiÃªm láº¡i á»Ÿ Má»ŒI trang má»›i trong tab Ä‘Ã³
+     * (ká»ƒ cáº£ sau khi next-chapter) cho Ä‘áº¿n khi ngÆ°á»i dÃ¹ng báº¥m táº¯t háº³n.
      */
     private val chapterClipperEnabledTabs = mutableSetOf<String>()
 
     /**
-     * Domain gốc "hợp lệ" của từng tab (v0.23.12) — ghi lại mỗi khi 1 trang
-     * THẬT SỰ tải xong (onPageFinished), không phải đoán từ view.url() giữa
-     * chừng 1 redirect (không đáng tin trong shouldInterceptRequest). Đây là
-     * cơ sở để chặn TUYỆT ĐỐI mọi điều hướng không do người dùng bấm thật
-     * sang domain khác — giống hệt cách metruyenchu_clipper_android_project
-     * chỉ whitelist 1 domain và chặn mọi thứ khác, thay vì đoán theo danh
-     * sách domain quảng cáo đã biết (danh sách tĩnh không theo kịp domain
-     * rác đổi liên tục kiểu "scouplayen.qp").
+     * Domain gá»‘c "há»£p lá»‡" cá»§a tá»«ng tab (v0.23.12) â€” ghi láº¡i má»—i khi 1 trang
+     * THáº¬T Sá»° táº£i xong (onPageFinished), khÃ´ng pháº£i Ä‘oÃ¡n tá»« view.url() giá»¯a
+     * chá»«ng 1 redirect (khÃ´ng Ä‘Ã¡ng tin trong shouldInterceptRequest). ÄÃ¢y lÃ 
+     * cÆ¡ sá»Ÿ Ä‘á»ƒ cháº·n TUYá»†T Äá»I má»i Ä‘iá»u hÆ°á»›ng khÃ´ng do ngÆ°á»i dÃ¹ng báº¥m tháº­t
+     * sang domain khÃ¡c â€” giá»‘ng há»‡t cÃ¡ch metruyenchu_clipper_android_project
+     * chá»‰ whitelist 1 domain vÃ  cháº·n má»i thá»© khÃ¡c, thay vÃ¬ Ä‘oÃ¡n theo danh
+     * sÃ¡ch domain quáº£ng cÃ¡o Ä‘Ã£ biáº¿t (danh sÃ¡ch tÄ©nh khÃ´ng theo ká»‹p domain
+     * rÃ¡c Ä‘á»•i liÃªn tá»¥c kiá»ƒu "scouplayen.qp").
      */
     private val tabRootDomain = ConcurrentHashMap<String, String>()
 
-    /** Thời điểm gần nhất mỗi tab có 1 cú chạm thật (WebResourceRequest.hasGesture()), dùng cho cửa sổ redirect tin cậy của domain guard. */
+    /** Thá»i Ä‘iá»ƒm gáº§n nháº¥t má»—i tab cÃ³ 1 cÃº cháº¡m tháº­t (WebResourceRequest.hasGesture()), dÃ¹ng cho cá»­a sá»• redirect tin cáº­y cá»§a domain guard. */
     private val lastUserGestureNavAt = ConcurrentHashMap<String, Long>()
     private val lastCleartextWarningUrl = ConcurrentHashMap<String, String>()
 
     /**
-     * Bật/tắt lớp chặn quảng cáo domain đã biết + chặn nhảy trang sang domain
-     * lạ (root-domain guard). Mặc định BẬT. KHÔNG xét gesture: một cú chạm
-     * thật có thể bị lớp phủ quảng cáo vô hình "đánh cắp", nên không dùng làm
-     * căn cứ cho phép nhảy domain — xem ShellBridge.setDomainGuardEnabled().
+     * Báº­t/táº¯t lá»›p cháº·n quáº£ng cÃ¡o domain Ä‘Ã£ biáº¿t + cháº·n nháº£y trang sang domain
+     * láº¡ (root-domain guard). Máº·c Ä‘á»‹nh Báº¬T. KHÃ”NG xÃ©t gesture: má»™t cÃº cháº¡m
+     * tháº­t cÃ³ thá»ƒ bá»‹ lá»›p phá»§ quáº£ng cÃ¡o vÃ´ hÃ¬nh "Ä‘Ã¡nh cáº¯p", nÃªn khÃ´ng dÃ¹ng lÃ m
+     * cÄƒn cá»© cho phÃ©p nháº£y domain â€” xem ShellBridge.setDomainGuardEnabled().
      */
     @Volatile
     var domainGuardEnabled: Boolean = true
 
     /**
-     * Tự bấm Back khi trang chính tải xong nhưng trả mã lỗi HTTP ≥ 400 (xem
-     * onReceivedHttpError bên dưới). Mặc định TẮT: lỗi 503/502 thường chỉ là
-     * server đích đang quá tải/bảo trì tạm thời, không phải quảng cáo hay
-     * nguy hiểm gì cả — xem ShellBridge.setBadLoadRecoveryEnabled().
+     * Tá»± báº¥m Back khi trang chÃ­nh táº£i xong nhÆ°ng tráº£ mÃ£ lá»—i HTTP â‰¥ 400 (xem
+     * onReceivedHttpError bÃªn dÆ°á»›i). Máº·c Ä‘á»‹nh Táº®T: lá»—i 503/502 thÆ°á»ng chá»‰ lÃ 
+     * server Ä‘Ã­ch Ä‘ang quÃ¡ táº£i/báº£o trÃ¬ táº¡m thá»i, khÃ´ng pháº£i quáº£ng cÃ¡o hay
+     * nguy hiá»ƒm gÃ¬ cáº£ â€” xem ShellBridge.setBadLoadRecoveryEnabled().
      */
     @Volatile
     var badLoadRecoveryEnabled: Boolean = false
 
     /**
-     * Hiện Toast mỗi khi chặn quảng cáo/chuyển hướng lạ hoặc tự quay lại do
-     * trang lỗi. Mặc định BẬT. Tắt cờ này không tắt việc CHẶN — chỉ ẩn dòng
-     * thông báo — xem ShellBridge.setBlockNoticeToastsEnabled().
+     * Hiá»‡n Toast má»—i khi cháº·n quáº£ng cÃ¡o/chuyá»ƒn hÆ°á»›ng láº¡ hoáº·c tá»± quay láº¡i do
+     * trang lá»—i. Máº·c Ä‘á»‹nh Báº¬T. Táº¯t cá» nÃ y khÃ´ng táº¯t viá»‡c CHáº¶N â€” chá»‰ áº©n dÃ²ng
+     * thÃ´ng bÃ¡o â€” xem ShellBridge.setBlockNoticeToastsEnabled().
      */
     @Volatile
     var blockNoticeToastsEnabled: Boolean = true
@@ -285,16 +289,16 @@ class MainActivity : AppCompatActivity() {
         lastCleartextWarningUrl[tabId] = url
         Toast.makeText(
             this,
-            "Cảnh báo: trang này đang dùng HTTP không mã hóa.",
+            "Cáº£nh bÃ¡o: trang nÃ y Ä‘ang dÃ¹ng HTTP khÃ´ng mÃ£ hÃ³a.",
             Toast.LENGTH_LONG
         ).show()
     }
 
     /**
-     * Ghi một lần bảo vệ đủ điều kiện cho Hồ sơ Phiêu lưu. Chỉ điều hướng
-     * main-frame mới gọi hàm này; request ảnh/script/iframe không được thưởng.
-     * Key tab + host và cửa sổ 2,2 giây loại bỏ trường hợp cùng redirect bị
-     * báo ở cả shouldOverrideUrlLoading và shouldInterceptRequest.
+     * Ghi má»™t láº§n báº£o vá»‡ Ä‘á»§ Ä‘iá»u kiá»‡n cho Há»“ sÆ¡ PhiÃªu lÆ°u. Chá»‰ Ä‘iá»u hÆ°á»›ng
+     * main-frame má»›i gá»i hÃ m nÃ y; request áº£nh/script/iframe khÃ´ng Ä‘Æ°á»£c thÆ°á»Ÿng.
+     * Key tab + host vÃ  cá»­a sá»• 2,2 giÃ¢y loáº¡i bá» trÆ°á»ng há»£p cÃ¹ng redirect bá»‹
+     * bÃ¡o á»Ÿ cáº£ shouldOverrideUrlLoading vÃ  shouldInterceptRequest.
      */
     private fun recordAdventureShieldProtection(
         tabId: String,
@@ -325,7 +329,7 @@ class MainActivity : AppCompatActivity() {
     private fun withAdventureReward(
         message: String,
         result: AdventureProfileStore.RewardResult?
-    ): String = if (result?.rewarded == true) "$message · +1 Linh Thạch" else message
+    ): String = if (result?.rewarded == true) "$message Â· +1 Linh Tháº¡ch" else message
 
     internal fun dispatchAdventureProfileState(snapshot: AdventureProfileStore.Snapshot) {
         val payloadObject = snapshot.toJson()
@@ -372,7 +376,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Lớp phủ của giao diện (menu, panel...) đang mở → phải nổi trên trang web. */
+    /** Lá»›p phá»§ cá»§a giao diá»‡n (menu, panel...) Ä‘ang má»Ÿ â†’ pháº£i ná»•i trÃªn trang web. */
     @Volatile
     private var overlayOpen = false
 
@@ -391,7 +395,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var pageBridge: PageBridge
     private lateinit var faviconStore: FaviconStore
 
-    /** Chống cộng Linh Thạch hai lần khi cùng redirect đi qua nhiều callback. */
+    /** Chá»‘ng cá»™ng Linh Tháº¡ch hai láº§n khi cÃ¹ng redirect Ä‘i qua nhiá»u callback. */
     private val recentAdventureShieldEvents = ConcurrentHashMap<String, Long>()
 
     private lateinit var adventureLootLayer: FrameLayout
@@ -449,6 +453,7 @@ class MainActivity : AppCompatActivity() {
     )
 
     private var pendingMediaSelection: PendingMediaSelection? = null
+    private var pendingAutomationImageImportJobId: String? = null
 
     @Volatile
     private var youtubePipActive = false
@@ -463,7 +468,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         override fun onPlayerError(error: PlaybackException) {
-            lastNativeMediaError = error.localizedMessage ?: "Không phát được nội dung này."
+            lastNativeMediaError = error.localizedMessage ?: "KhÃ´ng phÃ¡t Ä‘Æ°á»£c ná»™i dung nÃ y."
             publishNativeMediaState(nativeMediaController)
         }
     }
@@ -481,7 +486,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ------------------------------------------------------------------
-    // Chọn tệp (input type=file) — dùng chung cho shell và trang web
+    // Chá»n tá»‡p (input type=file) â€” dÃ¹ng chung cho shell vÃ  trang web
     // ------------------------------------------------------------------
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
     private val fileChooserLauncher = registerForActivityResult(
@@ -509,7 +514,7 @@ class MainActivity : AppCompatActivity() {
         val data = result.data
         val uri = data?.data
         if (result.resultCode != RESULT_OK || uri == null) {
-            // Khôi phục đúng trạng thái player trước đó nếu người dùng hủy chọn.
+            // KhÃ´i phá»¥c Ä‘Ãºng tráº¡ng thÃ¡i player trÆ°á»›c Ä‘Ã³ náº¿u ngÆ°á»i dÃ¹ng há»§y chá»n.
             publishNativeMediaState(nativeMediaController)
             return@registerForActivityResult
         }
@@ -519,18 +524,18 @@ class MainActivity : AppCompatActivity() {
             try {
                 contentResolver.takePersistableUriPermission(uri, takeFlags)
             } catch (_: SecurityException) {
-                // Một số document provider chỉ cấp quyền trong phiên hiện tại.
+                // Má»™t sá»‘ document provider chá»‰ cáº¥p quyá»n trong phiÃªn hiá»‡n táº¡i.
             }
         }
 
         val displayName = queryOpenableDisplayName(uri)
-            .ifBlank { uri.lastPathSegment?.substringAfterLast('/') ?: "Tệp media" }
+            .ifBlank { uri.lastPathSegment?.substringAfterLast('/') ?: "Tá»‡p media" }
         val mimeType = inferMediaMimeType(
             contentResolver.getType(uri).orEmpty(),
             displayName
         )
         if (!mimeType.startsWith("audio/") && !mimeType.startsWith("video/")) {
-            Toast.makeText(this, "Tệp đã chọn không phải MP3/MP4 hoặc media được hỗ trợ.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Tá»‡p Ä‘Ã£ chá»n khÃ´ng pháº£i MP3/MP4 hoáº·c media Ä‘Æ°á»£c há»— trá»£.", Toast.LENGTH_SHORT).show()
             publishNativeMediaState(nativeMediaController)
             return@registerForActivityResult
         }
@@ -556,11 +561,68 @@ class MainActivity : AppCompatActivity() {
                 takeFlags and Intent.FLAG_GRANT_READ_URI_PERMISSION
             )
         } catch (_: Exception) {
-            // Một số provider chỉ cấp quyền trong phiên hiện tại.
+            // Má»™t sá»‘ provider chá»‰ cáº¥p quyá»n trong phiÃªn hiá»‡n táº¡i.
         }
 
         playNativeMediaFolder(treeUri)
     }
+
+    private val automationImageImportLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        val jobId = pendingAutomationImageImportJobId
+        pendingAutomationImageImportJobId = null
+        if (jobId.isNullOrBlank() || uris.isNullOrEmpty()) return@registerForActivityResult
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val imported = mutableListOf<com.lqlq.browser.automation.ImportedAutomationImage>()
+                var importedTotalBytes = 0L
+                for (uri in uris.take(24)) {
+                    val displayName = queryOpenableDisplayName(uri)
+                        .ifBlank { uri.lastPathSegment?.substringAfterLast('/') ?: "Anh tu may" }
+                    val mimeType = inferMediaMimeType(
+                        contentResolver.getType(uri).orEmpty(),
+                        displayName
+                    ).ifBlank { "image/jpeg" }
+                    if (!mimeType.startsWith("image/")) continue
+                    val bytes = runCatching {
+                        contentResolver.openInputStream(uri)?.use { input ->
+                            ByteArrayOutputStream().use { output ->
+                                copyStreamWithLimit(input, output, MAX_SHARED_IMAGE_BYTES)
+                                output.toByteArray()
+                            }
+                        }
+                    }.getOrNull() ?: continue
+                    if (importedTotalBytes + bytes.size > MAX_SHARED_IMAGE_CACHE_BYTES) continue
+                    importedTotalBytes += bytes.size
+                    imported += com.lqlq.browser.automation.ImportedAutomationImage(
+                        displayName = displayName,
+                        mimeType = mimeType,
+                        bytes = bytes
+                    )
+                }
+                if (imported.isEmpty()) {
+                    runOnUiThread {
+                        Toast.makeText(this@MainActivity, "Khong co anh hop le de nhap.", Toast.LENGTH_SHORT).show()
+                    }
+                    return@launch
+                }
+                (application as LqlqApp).automationFacade.importImageArtifacts(jobId, imported)
+                runOnUiThread {
+                    Toast.makeText(this@MainActivity, "Da nhap ${imported.size} anh vao phien hien tai.", Toast.LENGTH_SHORT).show()
+                }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    Toast.makeText(
+                        this@MainActivity,
+                        error.localizedMessage ?: "Khong the nhap anh cho phien nay.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
+    }
+
 
     private val mediaLibraryPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -580,10 +642,10 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.RequestMultiplePermissions()
     ) { }
 
-    // Video toàn màn hình (onShowCustomView của WebChromeClient — video HTML5
-    // fullscreen của BẤT KỲ website nào, khác với "Nhạc và video nền" của
-    // riêng app). Trước đây chỉ MATCH_PARENT view của trang, không ẩn thanh
-    // trạng thái/điều hướng Android và không có nút xoay/khoá.
+    // Video toÃ n mÃ n hÃ¬nh (onShowCustomView cá»§a WebChromeClient â€” video HTML5
+    // fullscreen cá»§a Báº¤T Ká»² website nÃ o, khÃ¡c vá»›i "Nháº¡c vÃ  video ná»n" cá»§a
+    // riÃªng app). TrÆ°á»›c Ä‘Ã¢y chá»‰ MATCH_PARENT view cá»§a trang, khÃ´ng áº©n thanh
+    // tráº¡ng thÃ¡i/Ä‘iá»u hÆ°á»›ng Android vÃ  khÃ´ng cÃ³ nÃºt xoay/khoÃ¡.
     private var customView: View? = null
     private var customViewCallback: WebChromeClient.CustomViewCallback? = null
     private var fullscreenControlsOverlay: FrameLayout? = null
@@ -598,7 +660,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Nút âm lượng vật lý điều khiển kênh media (nhạc + TTS).
+        // NÃºt Ã¢m lÆ°á»£ng váº­t lÃ½ Ä‘iá»u khiá»ƒn kÃªnh media (nháº¡c + TTS).
         volumeControlStream = AudioManager.STREAM_MUSIC
 
         tabStore = BrowserTabStore(this)
@@ -660,17 +722,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Quản lý thanh hệ thống riêng cho trình duyệt thường (không phải video
+     * Quáº£n lÃ½ thanh há»‡ thá»‘ng riÃªng cho trÃ¬nh duyá»‡t thÆ°á»ng (khÃ´ng pháº£i video
      * fullscreen):
-     * - dọc: giữ nguyên status bar + navigation bar như giao diện ổn định cũ;
-     * - ngang: ẩn riêng status bar để lấy lại chiều cao, vẫn giữ các nút hệ
-     *   thống Android và chừa đúng phần navigation bar ở cạnh tương ứng.
+     * - dá»c: giá»¯ nguyÃªn status bar + navigation bar nhÆ° giao diá»‡n á»•n Ä‘á»‹nh cÅ©;
+     * - ngang: áº©n riÃªng status bar Ä‘á»ƒ láº¥y láº¡i chiá»u cao, váº«n giá»¯ cÃ¡c nÃºt há»‡
+     *   thá»‘ng Android vÃ  chá»«a Ä‘Ãºng pháº§n navigation bar á»Ÿ cáº¡nh tÆ°Æ¡ng á»©ng.
      *
-     * Activity target SDK 35 chạy edge-to-edge, vì vậy không được dựa vào
-     * khoảng đệm mặc định của hệ thống. Root tự nhận insets để trang web không
-     * nằm dưới Back/Home/Đa nhiệm, nhưng cũng không tạo dải trắng giả ở cạnh
-     * đối diện. Vùng camera/cutout được phép dùng ở cạnh ngắn; các nút quan
-     * trọng của giao diện nằm bên phải vẫn được bảo vệ bởi navigation inset.
+     * Activity target SDK 35 cháº¡y edge-to-edge, vÃ¬ váº­y khÃ´ng Ä‘Æ°á»£c dá»±a vÃ o
+     * khoáº£ng Ä‘á»‡m máº·c Ä‘á»‹nh cá»§a há»‡ thá»‘ng. Root tá»± nháº­n insets Ä‘á»ƒ trang web khÃ´ng
+     * náº±m dÆ°á»›i Back/Home/Äa nhiá»‡m, nhÆ°ng cÅ©ng khÃ´ng táº¡o dáº£i tráº¯ng giáº£ á»Ÿ cáº¡nh
+     * Ä‘á»‘i diá»‡n. VÃ¹ng camera/cutout Ä‘Æ°á»£c phÃ©p dÃ¹ng á»Ÿ cáº¡nh ngáº¯n; cÃ¡c nÃºt quan
+     * trá»ng cá»§a giao diá»‡n náº±m bÃªn pháº£i váº«n Ä‘Æ°á»£c báº£o vá»‡ bá»Ÿi navigation inset.
      */
     private fun installBrowserWindowInsets() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -694,8 +756,8 @@ class MainActivity : AppCompatActivity() {
             val landscape =
                 resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
             if (landscape) {
-                // Chỉ chừa đúng cạnh đang chứa navigation bar. Không cộng
-                // status-bar/cutout inset nên không sinh dải trắng bên trái.
+                // Chá»‰ chá»«a Ä‘Ãºng cáº¡nh Ä‘ang chá»©a navigation bar. KhÃ´ng cá»™ng
+                // status-bar/cutout inset nÃªn khÃ´ng sinh dáº£i tráº¯ng bÃªn trÃ¡i.
                 val navigation = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
                 view.setPadding(
                     navigation.left,
@@ -704,8 +766,8 @@ class MainActivity : AppCompatActivity() {
                     navigation.bottom
                 )
             } else {
-                // Giữ nguyên bố cục dọc trước đây: nội dung nằm giữa hai thanh
-                // hệ thống, không đụng tới kích thước toolbar HTML hiện có.
+                // Giá»¯ nguyÃªn bá»‘ cá»¥c dá»c trÆ°á»›c Ä‘Ã¢y: ná»™i dung náº±m giá»¯a hai thanh
+                // há»‡ thá»‘ng, khÃ´ng Ä‘á»¥ng tá»›i kÃ­ch thÆ°á»›c toolbar HTML hiá»‡n cÃ³.
                 val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
                 view.setPadding(
                     systemBars.left,
@@ -715,9 +777,9 @@ class MainActivity : AppCompatActivity() {
                 )
             }
 
-            // Root đã tự chừa system bars; không truyền lại cùng các inset
-            // này cho WebView, tránh CSS env(safe-area-inset-*) cộng lần hai
-            // và tạo thanh trắng/thanh đệm giả. IME vẫn được giữ nguyên.
+            // Root Ä‘Ã£ tá»± chá»«a system bars; khÃ´ng truyá»n láº¡i cÃ¹ng cÃ¡c inset
+            // nÃ y cho WebView, trÃ¡nh CSS env(safe-area-inset-*) cá»™ng láº§n hai
+            // vÃ  táº¡o thanh tráº¯ng/thanh Ä‘á»‡m giáº£. IME váº«n Ä‘Æ°á»£c giá»¯ nguyÃªn.
             WindowInsetsCompat.Builder(insets)
                 .setInsets(
                     WindowInsetsCompat.Type.systemBars(),
@@ -780,7 +842,7 @@ class MainActivity : AppCompatActivity() {
             alpha = 0f
             scaleX = 0.92f
             scaleY = 0.92f
-            contentDescription = "Linh Thạch có thể nhặt"
+            contentDescription = "Linh Tháº¡ch cÃ³ thá»ƒ nháº·t"
             setOnClickListener { collectAdventureLoot() }
             isClickable = true
             isFocusable = true
@@ -825,7 +887,7 @@ class MainActivity : AppCompatActivity() {
             visibility = View.GONE
             isClickable = true
             isFocusable = true
-            contentDescription = "Linh Thú Vạn Giới"
+            contentDescription = "Linh ThÃº Váº¡n Giá»›i"
             elevation = dp(10).toFloat()
             addView(spiritBeastIcon, LinearLayout.LayoutParams(dp(72), dp(60)))
             addView(spiritBeastName, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(24)))
@@ -843,7 +905,7 @@ class MainActivity : AppCompatActivity() {
 
         dynamicLootImage = ImageView(this).apply {
             scaleType = ImageView.ScaleType.CENTER_CROP
-            contentDescription = "Ảnh Kỳ Vật Vạn Giới"
+            contentDescription = "áº¢nh Ká»³ Váº­t Váº¡n Giá»›i"
             background = roundedBackground(Color.rgb(235, 245, 240), Color.rgb(92, 168, 130))
             clipToOutline = true
         }
@@ -870,7 +932,7 @@ class MainActivity : AppCompatActivity() {
             visibility = View.GONE
             isClickable = true
             isFocusable = true
-            contentDescription = "Kỳ Vật Vạn Giới động"
+            contentDescription = "Ká»³ Váº­t Váº¡n Giá»›i Ä‘á»™ng"
             elevation = dp(12).toFloat()
             background = roundedBackground(Color.rgb(244, 251, 247), Color.rgb(60, 157, 107))
             addView(dynamicLootImage, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(98)))
@@ -1079,22 +1141,22 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
                     val host = runCatching { Uri.parse(url).host.orEmpty() }.getOrDefault("")
-                    // Toast này phải tắt khi "Hiệu ứng nhận Linh Thạch"
-                    // (adventureEffectsToggle) HOẶC "Thông báo khi chặn"
-                    // (blockNoticeToastsEnabled, menu Công cụ → Chặn quảng
-                    // cáo) tắt — người dùng coi đây là công tắc tắt-thông-báo
-                    // chung, không chỉ áp dụng cho riêng thông báo chặn quảng cáo.
+                    // Toast nÃ y pháº£i táº¯t khi "Hiá»‡u á»©ng nháº­n Linh Tháº¡ch"
+                    // (adventureEffectsToggle) HOáº¶C "ThÃ´ng bÃ¡o khi cháº·n"
+                    // (blockNoticeToastsEnabled, menu CÃ´ng cá»¥ â†’ Cháº·n quáº£ng
+                    // cÃ¡o) táº¯t â€” ngÆ°á»i dÃ¹ng coi Ä‘Ã¢y lÃ  cÃ´ng táº¯c táº¯t-thÃ´ng-bÃ¡o
+                    // chung, khÃ´ng chá»‰ Ã¡p dá»¥ng cho riÃªng thÃ´ng bÃ¡o cháº·n quáº£ng cÃ¡o.
                     if (result.snapshot.effectsEnabled && blockNoticeToastsEnabled) {
                         if (result.rewarded) {
                             Toast.makeText(
                                 this@MainActivity,
-                                if (host.isNotBlank()) "Nhặt được 1 Linh Thạch tại $host" else "Nhặt được 1 Linh Thạch",
+                                if (host.isNotBlank()) "Nháº·t Ä‘Æ°á»£c 1 Linh Tháº¡ch táº¡i $host" else "Nháº·t Ä‘Æ°á»£c 1 Linh Tháº¡ch",
                                 Toast.LENGTH_SHORT
                             ).show()
                         } else if (result.dailyLimitReached) {
                             Toast.makeText(
                                 this@MainActivity,
-                                "Bạn đã đầy hạn mức Linh Thạch hôm nay, nhưng vùng đất này vẫn được ghi nhận.",
+                                "Báº¡n Ä‘Ã£ Ä‘áº§y háº¡n má»©c Linh Tháº¡ch hÃ´m nay, nhÆ°ng vÃ¹ng Ä‘áº¥t nÃ y váº«n Ä‘Æ°á»£c ghi nháº­n.",
                                 Toast.LENGTH_SHORT
                             ).show()
                         }
@@ -1128,8 +1190,8 @@ class MainActivity : AppCompatActivity() {
         lastDynamicLootUrlByTab[tabId] = normalized
 
         val dynamicCount = dynamicLootStore.stateJson().optInt("dynamicCollectionCount", 0)
-        // TẠM THỜI ĐỂ TEST (v0.32.1): luôn 100% để người dùng thấy Kỳ Vật ở
-        // mọi trang khi thử nghiệm. Đổi lại "if (dynamicCount == 0) 0.86 else
+        // Táº M THá»œI Äá»‚ TEST (v0.32.1): luÃ´n 100% Ä‘á»ƒ ngÆ°á»i dÃ¹ng tháº¥y Ká»³ Váº­t á»Ÿ
+        // má»i trang khi thá»­ nghiá»‡m. Äá»•i láº¡i "if (dynamicCount == 0) 0.86 else
         // 0.24" khi test xong.
         val encounterChance = 1.0
         val chanceRoll = deterministicRoll("$normalized|${adventureProfileStore.currentDayKey()}|dynamic-encounter")
@@ -1177,11 +1239,11 @@ class MainActivity : AppCompatActivity() {
     private fun rollDynamicRarity(seed: String): String {
         val roll = deterministicRoll("$seed|rarity")
         return when {
-            roll < 0.003 -> "Thần Thoại"
-            roll < 0.020 -> "Huyền Thoại"
-            roll < 0.080 -> "Sử Thi"
-            roll < 0.280 -> "Hiếm"
-            else -> "Thường"
+            roll < 0.003 -> "Tháº§n Thoáº¡i"
+            roll < 0.020 -> "Huyá»n Thoáº¡i"
+            roll < 0.080 -> "Sá»­ Thi"
+            roll < 0.280 -> "Hiáº¿m"
+            else -> "ThÆ°á»ng"
         }
     }
 
@@ -1199,7 +1261,7 @@ class MainActivity : AppCompatActivity() {
         dynamicLootCard.background = roundedBackground(colors.first, colors.second)
         dynamicLootImage.setImageBitmap(bitmap)
         dynamicLootName.text = item.name
-        dynamicLootMeta.text = "${item.category} · ${item.rarity} · ${"★".repeat(item.stars.coerceIn(1, 5))}"
+        dynamicLootMeta.text = "${item.category} Â· ${item.rarity} Â· ${"â˜…".repeat(item.stars.coerceIn(1, 5))}"
         dynamicLootName.setTextColor(colors.third)
         dynamicLootMeta.setTextColor(colors.third)
 
@@ -1245,7 +1307,7 @@ class MainActivity : AppCompatActivity() {
         val hide = Runnable {
             if (pendingDynamicLoot?.id == item.id) {
                 if (adventureProfileStore.snapshot().effectsEnabled && blockNoticeToastsEnabled) {
-                    Toast.makeText(this, "Kỳ Vật ${item.name} đã tan vào Vạn Giới.", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "Ká»³ Váº­t ${item.name} Ä‘Ã£ tan vÃ o Váº¡n Giá»›i.", Toast.LENGTH_SHORT).show()
                 }
                 hideDynamicLootEncounter()
             }
@@ -1267,7 +1329,7 @@ class MainActivity : AppCompatActivity() {
             background = roundedBackground(Color.rgb(239, 247, 243), rarityColors(item.rarity).second)
         }
         val textView = TextView(this).apply {
-            text = "${item.category} · ${item.rarity} · ${"★".repeat(item.stars.coerceIn(1, 5))}\n\n${item.description}\n\nTìm thấy tại: ${pendingDynamicLootDomain.ifBlank { "Vạn Giới" }}\nNguồn: ${dynamicSourceLabel(item)}"
+            text = "${item.category} Â· ${item.rarity} Â· ${"â˜…".repeat(item.stars.coerceIn(1, 5))}\n\n${item.description}\n\nTÃ¬m tháº¥y táº¡i: ${pendingDynamicLootDomain.ifBlank { "Váº¡n Giá»›i" }}\nNguá»“n: ${dynamicSourceLabel(item)}"
             setPadding(dp(4), dp(14), dp(4), dp(4))
             textSize = 14f
             setTextColor(Color.rgb(42, 58, 50))
@@ -1280,13 +1342,13 @@ class MainActivity : AppCompatActivity() {
         }
 
         val builder = AlertDialog.Builder(this)
-            .setTitle("Kỳ Vật xuất hiện: ${item.name}")
+            .setTitle("Ká»³ Váº­t xuáº¥t hiá»‡n: ${item.name}")
             .setView(content)
-            .setPositiveButton("Thu thập thẻ") { _, _ -> collectDynamicLoot(item, bitmap) }
-            .setNegativeButton("Bỏ qua") { _, _ -> hideDynamicLootEncounter() }
+            .setPositiveButton("Thu tháº­p tháº»") { _, _ -> collectDynamicLoot(item, bitmap) }
+            .setNegativeButton("Bá» qua") { _, _ -> hideDynamicLootEncounter() }
             .setOnCancelListener { hideDynamicLootEncounter() }
         if (item.sourceUrl.startsWith("http")) {
-            builder.setNeutralButton("Xem nguồn") { _, _ -> openExternalUri(Uri.parse(item.sourceUrl)) }
+            builder.setNeutralButton("Xem nguá»“n") { _, _ -> openExternalUri(Uri.parse(item.sourceUrl)) }
         }
         builder.show()
     }
@@ -1321,16 +1383,16 @@ class MainActivity : AppCompatActivity() {
             return
         }
         AlertDialog.Builder(this)
-            .setTitle("Đã ghi vào Vạn Giới Đồ Giám!")
-            .setMessage("${item.name}\n${item.category} · ${item.rarity} · ${"★".repeat(item.stars.coerceIn(1, 5))}\n\n${item.description}")
-            .setPositiveButton("Tuyệt vời", null)
+            .setTitle("ÄÃ£ ghi vÃ o Váº¡n Giá»›i Äá»“ GiÃ¡m!")
+            .setMessage("${item.name}\n${item.category} Â· ${item.rarity} Â· ${"â˜…".repeat(item.stars.coerceIn(1, 5))}\n\n${item.description}")
+            .setPositiveButton("Tuyá»‡t vá»i", null)
             .show()
     }
 
     private fun dynamicSourceLabel(item: DynamicLootItem): String = when (item.sourceType.lowercase(Locale.ROOT)) {
-        "ai", "workers-ai" -> "AI tạo nguyên bản"
+        "ai", "workers-ai" -> "AI táº¡o nguyÃªn báº£n"
         "wikimedia", "wikipedia", "knowledge" -> "Wikipedia / Wikimedia"
-        else -> item.sourceType.ifBlank { "Vạn Giới" }
+        else -> item.sourceType.ifBlank { "Váº¡n Giá»›i" }
     }
 
     private fun maybeScheduleSpiritBeast(tabId: String, url: String, title: String) {
@@ -1355,10 +1417,10 @@ class MainActivity : AppCompatActivity() {
         if (lastSpiritBeastUrlByTab[tabId] == normalized) return
         lastSpiritBeastUrlByTab[tabId] = normalized
 
-        // TẠM THỜI ĐỂ TEST (v0.32.1): luôn 100%. Đổi lại
+        // Táº M THá»œI Äá»‚ TEST (v0.32.1): luÃ´n 100%. Äá»•i láº¡i
         // "if (snapshot.totalBeastEncounters < 3 && snapshot.collection.isEmpty()) 0.78 else 0.32"
-        // khi test xong (những lần đầu cho tỷ lệ cao để hiểu hệ thống, sau đó
-        // về mức 32% để Linh Thú vẫn có cảm giác bất ngờ và giá trị sưu tầm).
+        // khi test xong (nhá»¯ng láº§n Ä‘áº§u cho tá»· lá»‡ cao Ä‘á»ƒ hiá»ƒu há»‡ thá»‘ng, sau Ä‘Ã³
+        // vá» má»©c 32% Ä‘á»ƒ Linh ThÃº váº«n cÃ³ cáº£m giÃ¡c báº¥t ngá» vÃ  giÃ¡ trá»‹ sÆ°u táº§m).
         val chance = 1.0
         val roll = (("$normalized|${adventureProfileStore.currentDayKey()}|encounter".hashCode().toLong() and 0x7fffffffL) % 10_000L) / 10_000.0
         if (roll > chance) return
@@ -1384,7 +1446,7 @@ class MainActivity : AppCompatActivity() {
         spiritBeastCard.background = roundedBackground(colors.first, colors.second)
         spiritBeastIcon.text = beast.icon
         spiritBeastName.text = beast.name
-        spiritBeastMeta.text = "${beast.family} · ${beast.rarity}"
+        spiritBeastMeta.text = "${beast.family} Â· ${beast.rarity}"
         spiritBeastName.setTextColor(colors.third)
         spiritBeastMeta.setTextColor(colors.third)
 
@@ -1431,7 +1493,7 @@ class MainActivity : AppCompatActivity() {
         val hide = Runnable {
             if (pendingSpiritBeast?.id == beast.id) {
                 if (adventureProfileStore.snapshot().effectsEnabled && blockNoticeToastsEnabled) {
-                    Toast.makeText(this, "${beast.name} đã rời khỏi vùng đất.", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "${beast.name} Ä‘Ã£ rá»i khá»i vÃ¹ng Ä‘áº¥t.", Toast.LENGTH_SHORT).show()
                 }
                 hideSpiritBeastEncounter()
             }
@@ -1445,15 +1507,15 @@ class MainActivity : AppCompatActivity() {
         spiritBeastHideRunnable?.let { adventureLootLayer.removeCallbacks(it) }
         spiritBeastHideRunnable = null
         val snapshot = adventureProfileStore.snapshot()
-        val domain = pendingSpiritBeastDomain.ifBlank { "vùng đất chưa biết" }
+        val domain = pendingSpiritBeastDomain.ifBlank { "vÃ¹ng Ä‘áº¥t chÆ°a biáº¿t" }
         val options = arrayOf(
-            "Linh Cầu Thô ×${snapshot.orbBasic}  •  ${(beast.baseCatchChance * 100).toInt()}%",
-            "Linh Cầu Bạc ×${snapshot.orbSilver}  •  ${(minOf(0.95, beast.baseCatchChance * 1.35) * 100).toInt()}%",
-            "Linh Cầu Hoàng Kim ×${snapshot.orbGold}  •  ${(minOf(0.95, beast.baseCatchChance * 1.8) * 100).toInt()}%"
+            "Linh Cáº§u ThÃ´ Ã—${snapshot.orbBasic}  â€¢  ${(beast.baseCatchChance * 100).toInt()}%",
+            "Linh Cáº§u Báº¡c Ã—${snapshot.orbSilver}  â€¢  ${(minOf(0.95, beast.baseCatchChance * 1.35) * 100).toInt()}%",
+            "Linh Cáº§u HoÃ ng Kim Ã—${snapshot.orbGold}  â€¢  ${(minOf(0.95, beast.baseCatchChance * 1.8) * 100).toInt()}%"
         )
         AlertDialog.Builder(this)
-            .setTitle("${beast.icon} ${beast.name} — ${beast.rarity}")
-            .setMessage("${beast.family} · Hệ ${beast.habitat}\n\n${beast.description}\n\nNơi gặp: $domain\nChọn Linh Cầu để thử thu phục.")
+            .setTitle("${beast.icon} ${beast.name} â€” ${beast.rarity}")
+            .setMessage("${beast.family} Â· Há»‡ ${beast.habitat}\n\n${beast.description}\n\nNÆ¡i gáº·p: $domain\nChá»n Linh Cáº§u Ä‘á»ƒ thá»­ thu phá»¥c.")
             .setItems(options) { _, index ->
                 val type = when (index) {
                     1 -> "silver"
@@ -1462,7 +1524,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 attemptSpiritBeastCapture(beast, domain, type)
             }
-            .setNegativeButton("Bỏ qua") { _, _ -> hideSpiritBeastEncounter() }
+            .setNegativeButton("Bá» qua") { _, _ -> hideSpiritBeastEncounter() }
             .setOnCancelListener { hideSpiritBeastEncounter() }
             .show()
     }
@@ -1484,24 +1546,24 @@ class MainActivity : AppCompatActivity() {
         }
         if (result.success) {
             AlertDialog.Builder(this)
-                .setTitle("Thu phục thành công!")
-                .setMessage("${beast.icon} ${beast.name} đã gia nhập Đồ Giám Vạn Giới của bạn.\n\nĐộ hiếm: ${beast.rarity}\nHệ: ${beast.habitat}")
-                .setPositiveButton("Tuyệt vời", null)
+                .setTitle("Thu phá»¥c thÃ nh cÃ´ng!")
+                .setMessage("${beast.icon} ${beast.name} Ä‘Ã£ gia nháº­p Äá»“ GiÃ¡m Váº¡n Giá»›i cá»§a báº¡n.\n\nÄá»™ hiáº¿m: ${beast.rarity}\nHá»‡: ${beast.habitat}")
+                .setPositiveButton("Tuyá»‡t vá»i", null)
                 .show()
         } else {
             AlertDialog.Builder(this)
-                .setTitle("Linh Thú đã thoát")
-                .setMessage("${beast.name} phá vỡ phong ấn và biến mất. Những lần thất bại liên tiếp sẽ tăng nhẹ cơ hội ở lần thu phục sau.")
-                .setPositiveButton("Tiếp tục hành trình", null)
+                .setTitle("Linh ThÃº Ä‘Ã£ thoÃ¡t")
+                .setMessage("${beast.name} phÃ¡ vá»¡ phong áº¥n vÃ  biáº¿n máº¥t. Nhá»¯ng láº§n tháº¥t báº¡i liÃªn tiáº¿p sáº½ tÄƒng nháº¹ cÆ¡ há»™i á»Ÿ láº§n thu phá»¥c sau.")
+                .setPositiveButton("Tiáº¿p tá»¥c hÃ nh trÃ¬nh", null)
                 .show()
         }
     }
 
     private fun rarityColors(rarity: String): Triple<Int, Int, Int> = when (rarity) {
-        "Thần Thoại" -> Triple(Color.rgb(255, 239, 250), Color.rgb(210, 83, 180), Color.rgb(112, 34, 94))
-        "Huyền Thoại" -> Triple(Color.rgb(255, 247, 222), Color.rgb(224, 163, 46), Color.rgb(118, 73, 12))
-        "Sử Thi" -> Triple(Color.rgb(244, 235, 255), Color.rgb(143, 85, 210), Color.rgb(82, 40, 128))
-        "Hiếm" -> Triple(Color.rgb(230, 245, 255), Color.rgb(69, 147, 206), Color.rgb(31, 84, 124))
+        "Tháº§n Thoáº¡i" -> Triple(Color.rgb(255, 239, 250), Color.rgb(210, 83, 180), Color.rgb(112, 34, 94))
+        "Huyá»n Thoáº¡i" -> Triple(Color.rgb(255, 247, 222), Color.rgb(224, 163, 46), Color.rgb(118, 73, 12))
+        "Sá»­ Thi" -> Triple(Color.rgb(244, 235, 255), Color.rgb(143, 85, 210), Color.rgb(82, 40, 128))
+        "Hiáº¿m" -> Triple(Color.rgb(230, 245, 255), Color.rgb(69, 147, 206), Color.rgb(31, 84, 124))
         else -> Triple(Color.rgb(233, 250, 241), Color.rgb(72, 171, 119), Color.rgb(32, 91, 60))
     }
 
@@ -1520,9 +1582,9 @@ class MainActivity : AppCompatActivity() {
     private fun requestStartupPermissions() {
         val wanted = mutableListOf<String>()
 
-        // Trình chọn tệp dùng Storage Access Framework và lưu trang dùng
-        // MediaStore, nên Android 13+ không cần quyền đọc toàn bộ ảnh/video/
-        // âm thanh. Chỉ xin quyền thật sự cần: thông báo và ghi Downloads cũ.
+        // TrÃ¬nh chá»n tá»‡p dÃ¹ng Storage Access Framework vÃ  lÆ°u trang dÃ¹ng
+        // MediaStore, nÃªn Android 13+ khÃ´ng cáº§n quyá»n Ä‘á»c toÃ n bá»™ áº£nh/video/
+        // Ã¢m thanh. Chá»‰ xin quyá»n tháº­t sá»± cáº§n: thÃ´ng bÃ¡o vÃ  ghi Downloads cÅ©.
         if (Build.VERSION.SDK_INT >= 33) {
             wanted += Manifest.permission.POST_NOTIFICATIONS
         }
@@ -1539,33 +1601,49 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ------------------------------------------------------------------
-    // Shell WebView (giao diện lqlq)
+    // Shell WebView (giao diá»‡n lqlq)
     // ------------------------------------------------------------------
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun setupShellWebView() {
         applyCommonSettings(shellWebView.settings)
-        // Giao diện shell (index.html/CSS/JS) nằm trong chính APK — không có
-        // lý do gì để cache HTTP giữa các phiên bản app, và cache CÓ THỂ
-        // khiến WebView tiếp tục hiển thị html/css/js CŨ sau khi app đã được
-        // cập nhật (giao diện Hồ sơ Phiêu lưu bị "kẹt" ở bản cũ dù APK mới đã
-        // cài đè). Luôn tải thẳng từ APK, không qua cache HTTP.
+        // Giao diá»‡n shell (index.html/CSS/JS) náº±m trong chÃ­nh APK â€” khÃ´ng cÃ³
+        // lÃ½ do gÃ¬ Ä‘á»ƒ cache HTTP giá»¯a cÃ¡c phiÃªn báº£n app, vÃ  cache CÃ“ THá»‚
+        // khiáº¿n WebView tiáº¿p tá»¥c hiá»ƒn thá»‹ html/css/js CÅ¨ sau khi app Ä‘Ã£ Ä‘Æ°á»£c
+        // cáº­p nháº­t (giao diá»‡n Há»“ sÆ¡ PhiÃªu lÆ°u bá»‹ "káº¹t" á»Ÿ báº£n cÅ© dÃ¹ APK má»›i Ä‘Ã£
+        // cÃ i Ä‘Ã¨). LuÃ´n táº£i tháº³ng tá»« APK, khÃ´ng qua cache HTTP.
         shellWebView.settings.cacheMode = WebSettings.LOAD_NO_CACHE
 
-        // Việc 3 (v0.23.4): đặt nền trong suốt NGAY từ đầu, giữ nguyên mãi —
-        // không toggle WHITE/TRANSPARENT lúc mở/đóng menu nữa. Lý do: nếu
-        // WebView từng vẽ 1 khung hình với nền trắng đục (ngay cả trong quá
-        // khứ), khung hình đó có thể bị hiển thị lại y hệt trong khoảnh khắc
-        // bringChildToFront() trước khi CSS kịp vẽ lại nội dung thật (chớp
-        // trắng). Nền trong suốt cố định + html,body{background:...} đục
-        // trong CSS (bình thường) đảm bảo không còn khung hình trắng "cũ"
-        // nào có thể lộ ra. z-order vẫn do bringChildToFront() quyết định.
+        // Viá»‡c 3 (v0.23.4): Ä‘áº·t ná»n trong suá»‘t NGAY tá»« Ä‘áº§u, giá»¯ nguyÃªn mÃ£i â€”
+        // khÃ´ng toggle WHITE/TRANSPARENT lÃºc má»Ÿ/Ä‘Ã³ng menu ná»¯a. LÃ½ do: náº¿u
+        // WebView tá»«ng váº½ 1 khung hÃ¬nh vá»›i ná»n tráº¯ng Ä‘á»¥c (ngay cáº£ trong quÃ¡
+        // khá»©), khung hÃ¬nh Ä‘Ã³ cÃ³ thá»ƒ bá»‹ hiá»ƒn thá»‹ láº¡i y há»‡t trong khoáº£nh kháº¯c
+        // bringChildToFront() trÆ°á»›c khi CSS ká»‹p váº½ láº¡i ná»™i dung tháº­t (chá»›p
+        // tráº¯ng). Ná»n trong suá»‘t cá»‘ Ä‘á»‹nh + html,body{background:...} Ä‘á»¥c
+        // trong CSS (bÃ¬nh thÆ°á»ng) Ä‘áº£m báº£o khÃ´ng cÃ²n khung hÃ¬nh tráº¯ng "cÅ©"
+        // nÃ o cÃ³ thá»ƒ lá»™ ra. z-order váº«n do bringChildToFront() quyáº¿t Ä‘á»‹nh.
         shellWebView.setBackgroundColor(Color.TRANSPARENT)
         applyBackgroundRendererPriority(shellWebView)
 
         ttsBridge = TtsBridge(applicationContext)
         shellBridge = ShellBridge(this)
-        automationBridge = AutomationBridge((application as LqlqApp).automationFacade)
+        automationBridge = AutomationBridge(
+            context = applicationContext,
+            facade = (application as LqlqApp).automationFacade,
+            onSharePublish = { request ->
+                shareAutomationPublish(request)
+            },
+            onImportImages = onImportImages@{ jobId ->
+                pendingAutomationImageImportJobId = jobId
+                return@onImportImages try {
+                    automationImageImportLauncher.launch(arrayOf("image/*"))
+                    true
+                } catch (_: Exception) {
+                    pendingAutomationImageImportJobId = null
+                    false
+                }
+            }
+        )
         adventureProfileBridge = AdventureProfileBridge(this, adventureProfileStore, dynamicLootStore, characterPortraitStore)
         pageBridge = PageBridge { currentPageWebView() }
         shellWebView.addJavascriptInterface(shellBridge, "LqlqAndroid")
@@ -1587,7 +1665,7 @@ class MainActivity : AppCompatActivity() {
                 request: WebResourceRequest
             ): Boolean {
                 val url = request.url.toString()
-                // Giữ shell trong asset; link http bấm trong shell mở như một trang.
+                // Giá»¯ shell trong asset; link http báº¥m trong shell má»Ÿ nhÆ° má»™t trang.
                 if (request.url.host == SHELL_HOST) return false
                 if (url.startsWith("http://") || url.startsWith("https://")) {
                     val tabId = activeTabId ?: tabStore.activeTabId()
@@ -1613,7 +1691,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ------------------------------------------------------------------
-    // Media native: file MP3/MP4 + URL media trực tiếp, chạy ngoài nền
+    // Media native: file MP3/MP4 + URL media trá»±c tiáº¿p, cháº¡y ngoÃ i ná»n
     // ------------------------------------------------------------------
 
     private fun connectNativeMediaController() {
@@ -1640,7 +1718,7 @@ class MainActivity : AppCompatActivity() {
                         pendingNativeMediaActions.clear()
                         nativeMediaControllerFuture = null
                         lastNativeMediaError = error.localizedMessage
-                            ?: "Không kết nối được trình phát Android."
+                            ?: "KhÃ´ng káº¿t ná»‘i Ä‘Æ°á»£c trÃ¬nh phÃ¡t Android."
                         publishNativeMediaState(null)
                     }
                 }
@@ -1677,7 +1755,7 @@ class MainActivity : AppCompatActivity() {
         try {
             nativeMediaFileLauncher.launch(intent)
         } catch (_: Exception) {
-            Toast.makeText(this, "Không mở được trình chọn tệp.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "KhÃ´ng má»Ÿ Ä‘Æ°á»£c trÃ¬nh chá»n tá»‡p.", Toast.LENGTH_SHORT).show()
             publishNativeMediaState(nativeMediaController)
         }
     }
@@ -1691,7 +1769,7 @@ class MainActivity : AppCompatActivity() {
         try {
             nativeMediaFolderLauncher.launch(intent)
         } catch (_: Exception) {
-            Toast.makeText(this, "Không mở được trình chọn thư mục.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "KhÃ´ng má»Ÿ Ä‘Æ°á»£c trÃ¬nh chá»n thÆ° má»¥c.", Toast.LENGTH_SHORT).show()
             publishNativeMediaState(nativeMediaController)
         }
     }
@@ -1737,9 +1815,9 @@ class MainActivity : AppCompatActivity() {
         }.coerceAtLeast(0)
 
         val subtitle = if (playlist.size > 1) {
-            "Thư mục hiện tại • ${playlist.size} tệp • tự chuyển bài"
+            "ThÆ° má»¥c hiá»‡n táº¡i â€¢ ${playlist.size} tá»‡p â€¢ tá»± chuyá»ƒn bÃ i"
         } else {
-            "Tệp trong máy • phát nền Android"
+            "Tá»‡p trong mÃ¡y â€¢ phÃ¡t ná»n Android"
         }
         playNativePlaylist(playlist, selectedIndex, subtitle)
     }
@@ -1749,7 +1827,7 @@ class MainActivity : AppCompatActivity() {
         if (playlist.isEmpty()) {
             Toast.makeText(
                 this,
-                "Thư mục này không có tệp nhạc hoặc video được hỗ trợ.",
+                "ThÆ° má»¥c nÃ y khÃ´ng cÃ³ tá»‡p nháº¡c hoáº·c video Ä‘Æ°á»£c há»— trá»£.",
                 Toast.LENGTH_SHORT
             ).show()
             publishNativeMediaState(nativeMediaController)
@@ -1758,7 +1836,7 @@ class MainActivity : AppCompatActivity() {
         playNativePlaylist(
             playlist,
             0,
-            "Thư mục đã chọn • ${playlist.size} tệp • tự chuyển bài"
+            "ThÆ° má»¥c Ä‘Ã£ chá»n â€¢ ${playlist.size} tá»‡p â€¢ tá»± chuyá»ƒn bÃ i"
         )
     }
 
@@ -1803,9 +1881,9 @@ class MainActivity : AppCompatActivity() {
             queryLegacyContainingFolderPlaylist(selected)
         }.toMutableList()
 
-        // Một số document provider trả URI khác với URI MediaStore của cùng tệp.
-        // Bảo đảm bài người dùng vừa chọn luôn nằm trong hàng đợi, kể cả khi truy
-        // vấn thư mục chỉ trả về các tệp còn lại hoặc provider không ánh xạ URI.
+        // Má»™t sá»‘ document provider tráº£ URI khÃ¡c vá»›i URI MediaStore cá»§a cÃ¹ng tá»‡p.
+        // Báº£o Ä‘áº£m bÃ i ngÆ°á»i dÃ¹ng vá»«a chá»n luÃ´n náº±m trong hÃ ng Ä‘á»£i, ká»ƒ cáº£ khi truy
+        // váº¥n thÆ° má»¥c chá»‰ tráº£ vá» cÃ¡c tá»‡p cÃ²n láº¡i hoáº·c provider khÃ´ng Ã¡nh xáº¡ URI.
         if (entries.none {
                 it.uri == selected.uri ||
                     it.title.equals(selected.title, ignoreCase = true)
@@ -2015,9 +2093,9 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // ACTION_OPEN_DOCUMENT đôi khi trả URI của DownloadsProvider thay vì
-        // URI MediaStore. Khi đó đối chiếu tên + kích thước để tìm lại bản ghi
-        // MediaStore và lấy RELATIVE_PATH, tránh bắt người dùng chọn lại thư mục.
+        // ACTION_OPEN_DOCUMENT Ä‘Ã´i khi tráº£ URI cá»§a DownloadsProvider thay vÃ¬
+        // URI MediaStore. Khi Ä‘Ã³ Ä‘á»‘i chiáº¿u tÃªn + kÃ­ch thÆ°á»›c Ä‘á»ƒ tÃ¬m láº¡i báº£n ghi
+        // MediaStore vÃ  láº¥y RELATIVE_PATH, trÃ¡nh báº¯t ngÆ°á»i dÃ¹ng chá»n láº¡i thÆ° má»¥c.
         val collection = if (selected.mimeType.startsWith("video/")) {
             MediaStore.Video.Media.EXTERNAL_CONTENT_URI
         } else {
@@ -2084,12 +2162,12 @@ class MainActivity : AppCompatActivity() {
     fun playNativeMediaUrl(url: String, title: String, mimeType: String) {
         val uri = try { Uri.parse(url.trim()) } catch (_: Exception) { null }
         if (uri == null || (uri.scheme != "http" && uri.scheme != "https")) {
-            Toast.makeText(this, "Liên kết media không hợp lệ.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "LiÃªn káº¿t media khÃ´ng há»£p lá»‡.", Toast.LENGTH_SHORT).show()
             return
         }
         val safeTitle = title.ifBlank {
             uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
-                ?: "Media trực tiếp"
+                ?: "Media trá»±c tiáº¿p"
         }
         playNativeMedia(
             uri,
@@ -2106,9 +2184,9 @@ class MainActivity : AppCompatActivity() {
         sourceKind: String
     ) {
         val subtitle = if (sourceKind == "file") {
-            "Tệp trong máy • phát nền Android"
+            "Tá»‡p trong mÃ¡y â€¢ phÃ¡t ná»n Android"
         } else {
-            "Liên kết media trực tiếp • phát nền Android"
+            "LiÃªn káº¿t media trá»±c tiáº¿p â€¢ phÃ¡t ná»n Android"
         }
         playNativePlaylist(
             listOf(LocalMediaEntry(uri, title, mimeType)),
@@ -2127,7 +2205,7 @@ class MainActivity : AppCompatActivity() {
         withNativeMediaController { controller ->
             val items = entries.map { entry ->
                 val metadata = MediaMetadata.Builder()
-                    .setTitle(entry.title.ifBlank { "Nội dung đang phát" })
+                    .setTitle(entry.title.ifBlank { "Ná»™i dung Ä‘ang phÃ¡t" })
                     .setArtist("lqlq Browser")
                     .setAlbumTitle(subtitle)
                     .build()
@@ -2246,7 +2324,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ------------------------------------------------------------------
-    // YouTube Picture-in-Picture: giữ nguyên iframe chính thức trong Activity
+    // YouTube Picture-in-Picture: giá»¯ nguyÃªn iframe chÃ­nh thá»©c trong Activity
     // ------------------------------------------------------------------
 
     fun setYoutubePlaybackState(active: Boolean, playing: Boolean, url: String) {
@@ -2258,11 +2336,11 @@ class MainActivity : AppCompatActivity() {
 
     fun enterYoutubePictureInPicture() {
         if (!youtubePipActive) {
-            Toast.makeText(this, "Chưa có video YouTube đang mở.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "ChÆ°a cÃ³ video YouTube Ä‘ang má»Ÿ.", Toast.LENGTH_SHORT).show()
             return
         }
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-            Toast.makeText(this, "Thiết bị cần Android 8.0 trở lên để dùng PiP.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Thiáº¿t bá»‹ cáº§n Android 8.0 trá»Ÿ lÃªn Ä‘á»ƒ dÃ¹ng PiP.", Toast.LENGTH_SHORT).show()
             return
         }
         prepareYoutubePipSurface(enterAfterPrepare = true)
@@ -2272,15 +2350,15 @@ class MainActivity : AppCompatActivity() {
         val target = url.ifBlank { youtubePipUrl }
         val uri = try { Uri.parse(target) } catch (_: Exception) { null }
         if (uri == null || (uri.scheme != "http" && uri.scheme != "https")) {
-            Toast.makeText(this, "Liên kết YouTube không hợp lệ.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "LiÃªn káº¿t YouTube khÃ´ng há»£p lá»‡.", Toast.LENGTH_SHORT).show()
             return
         }
         val youtubeIntent = Intent(Intent.ACTION_VIEW, uri).apply {
             setPackage("com.google.android.youtube")
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        // Mở app YouTube là một thao tác điều hướng có chủ ý, không phải bấm Home.
-        // Chặn đúng lần onUserLeaveHint kế tiếp để không tạo thêm cửa sổ PiP trùng.
+        // Má»Ÿ app YouTube lÃ  má»™t thao tÃ¡c Ä‘iá»u hÆ°á»›ng cÃ³ chá»§ Ã½, khÃ´ng pháº£i báº¥m Home.
+        // Cháº·n Ä‘Ãºng láº§n onUserLeaveHint káº¿ tiáº¿p Ä‘á»ƒ khÃ´ng táº¡o thÃªm cá»­a sá»• PiP trÃ¹ng.
         suppressNextYoutubePip = true
         if (::shellWebView.isInitialized) {
             shellWebView.postDelayed({ suppressNextYoutubePip = false }, 2_000L)
@@ -2295,7 +2373,7 @@ class MainActivity : AppCompatActivity() {
                 )
             } catch (_: Exception) {
                 suppressNextYoutubePip = false
-                Toast.makeText(this, "Không mở được YouTube.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "KhÃ´ng má»Ÿ Ä‘Æ°á»£c YouTube.", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -2342,7 +2420,7 @@ class MainActivity : AppCompatActivity() {
         try {
             enterPictureInPictureMode(buildYoutubePictureInPictureParams())
         } catch (_: Exception) {
-            Toast.makeText(this, "Không thể mở Picture-in-Picture.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "KhÃ´ng thá»ƒ má»Ÿ Picture-in-Picture.", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -2418,7 +2496,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ------------------------------------------------------------------
-    // Page WebViews (website thật)
+    // Page WebViews (website tháº­t)
     // ------------------------------------------------------------------
 
     private fun applyCommonSettings(settings: WebSettings) {
@@ -2439,28 +2517,28 @@ class MainActivity : AppCompatActivity() {
         settings.blockNetworkImage = false
         settings.allowContentAccess = true
 
-        // Không cấp quyền file:// cho mọi website. Chỉ WebView đang mở MHT cục
-        // bộ mới bật tạm allowFileAccess trong openOfflineMhtFile().
+        // KhÃ´ng cáº¥p quyá»n file:// cho má»i website. Chá»‰ WebView Ä‘ang má»Ÿ MHT cá»¥c
+        // bá»™ má»›i báº­t táº¡m allowFileAccess trong openOfflineMhtFile().
         settings.allowFileAccess = false
 
         settings.mediaPlaybackRequiresUserGesture = true
     }
 
     /**
-     * Việc "nhạc/video tắt khi rời app" (v0.23.15): khi Activity không còn
-     * hiển thị (ra nền), tiến trình renderer của WebView (Chromium, tách
-     * riêng khỏi tiến trình app) mặc định bị hệ điều hành hạ mức ưu tiên,
-     * khiến JS/âm thanh HTML5 bên trong dễ bị hệ thống tạm dừng dù tiến
-     * trình app chính vẫn sống (nhờ PlaybackService foreground). Giữ mức ưu
-     * tiên renderer ở "IMPORTANT" (như thể đang hiển thị) ngay cả khi ở nền,
-     * để nhạc/video có cơ hội tiếp tục chạy giống hành vi TTS (vốn là service
-     * native, không phụ thuộc renderer của WebView).
+     * Viá»‡c "nháº¡c/video táº¯t khi rá»i app" (v0.23.15): khi Activity khÃ´ng cÃ²n
+     * hiá»ƒn thá»‹ (ra ná»n), tiáº¿n trÃ¬nh renderer cá»§a WebView (Chromium, tÃ¡ch
+     * riÃªng khá»i tiáº¿n trÃ¬nh app) máº·c Ä‘á»‹nh bá»‹ há»‡ Ä‘iá»u hÃ nh háº¡ má»©c Æ°u tiÃªn,
+     * khiáº¿n JS/Ã¢m thanh HTML5 bÃªn trong dá»… bá»‹ há»‡ thá»‘ng táº¡m dá»«ng dÃ¹ tiáº¿n
+     * trÃ¬nh app chÃ­nh váº«n sá»‘ng (nhá» PlaybackService foreground). Giá»¯ má»©c Æ°u
+     * tiÃªn renderer á»Ÿ "IMPORTANT" (nhÆ° thá»ƒ Ä‘ang hiá»ƒn thá»‹) ngay cáº£ khi á»Ÿ ná»n,
+     * Ä‘á»ƒ nháº¡c/video cÃ³ cÆ¡ há»™i tiáº¿p tá»¥c cháº¡y giá»‘ng hÃ nh vi TTS (vá»‘n lÃ  service
+     * native, khÃ´ng phá»¥ thuá»™c renderer cá»§a WebView).
      *
-     * Lưu ý: đây là API tốt nhất WebView cung cấp cho mục đích này — không
-     * đảm bảo tuyệt đối 100% như TTS (TTS dùng engine hệ thống, hoàn toàn
-     * tách khỏi WebView), và không giữ được nếu hệ điều hành/ người dùng
-     * đóng hẳn ứng dụng (vuốt khỏi Recents) vì khi đó Activity/WebView bị
-     * huỷ thật sự, không còn gì để giữ ưu tiên nữa.
+     * LÆ°u Ã½: Ä‘Ã¢y lÃ  API tá»‘t nháº¥t WebView cung cáº¥p cho má»¥c Ä‘Ã­ch nÃ y â€” khÃ´ng
+     * Ä‘áº£m báº£o tuyá»‡t Ä‘á»‘i 100% nhÆ° TTS (TTS dÃ¹ng engine há»‡ thá»‘ng, hoÃ n toÃ n
+     * tÃ¡ch khá»i WebView), vÃ  khÃ´ng giá»¯ Ä‘Æ°á»£c náº¿u há»‡ Ä‘iá»u hÃ nh/ ngÆ°á»i dÃ¹ng
+     * Ä‘Ã³ng háº³n á»©ng dá»¥ng (vuá»‘t khá»i Recents) vÃ¬ khi Ä‘Ã³ Activity/WebView bá»‹
+     * huá»· tháº­t sá»±, khÃ´ng cÃ²n gÃ¬ Ä‘á»ƒ giá»¯ Æ°u tiÃªn ná»¯a.
      */
     private fun applyBackgroundRendererPriority(webView: WebView) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -2475,7 +2553,7 @@ class MainActivity : AppCompatActivity() {
         activeTabId?.let { pageWebViews[it] }
 
     // ------------------------------------------------------------------
-    // Hệ thống thẻ native — nguồn dữ liệu duy nhất + WebView cache giới hạn
+    // Há»‡ thá»‘ng tháº» native â€” nguá»“n dá»¯ liá»‡u duy nháº¥t + WebView cache giá»›i háº¡n
     // ------------------------------------------------------------------
 
     private fun setupNativeTabSwitcher() {
@@ -2526,9 +2604,9 @@ class MainActivity : AppCompatActivity() {
     fun getTabStateJson(): String = tabStore.stateJson()
 
     /**
-     * Snapshot đồng bộ dùng bởi nút "Lưu trang hiện tại". Nguồn dữ liệu là
-     * TabStore native nên không phụ thuộc callback JavaScript có đến kịp hay
-     * không. Favicon chỉ lấy từ cache cục bộ do WebChromeClient thu được.
+     * Snapshot Ä‘á»“ng bá»™ dÃ¹ng bá»Ÿi nÃºt "LÆ°u trang hiá»‡n táº¡i". Nguá»“n dá»¯ liá»‡u lÃ 
+     * TabStore native nÃªn khÃ´ng phá»¥ thuá»™c callback JavaScript cÃ³ Ä‘áº¿n ká»‹p hay
+     * khÃ´ng. Favicon chá»‰ láº¥y tá»« cache cá»¥c bá»™ do WebChromeClient thu Ä‘Æ°á»£c.
      */
     fun getActivePageSnapshotJson(): String {
         val tab = tabStore.currentTab()
@@ -2543,7 +2621,7 @@ class MainActivity : AppCompatActivity() {
         }.toString()
     }
 
-    /** Favicon cache cục bộ cho trang thẻ mới; tuyệt đối không phát request mạng. */
+    /** Favicon cache cá»¥c bá»™ cho trang tháº» má»›i; tuyá»‡t Ä‘á»‘i khÃ´ng phÃ¡t request máº¡ng. */
     fun getCachedFaviconData(url: String): String = faviconStore.getDataUrl(url)
 
     fun showNativeTabSwitcher() {
@@ -2624,8 +2702,8 @@ class MainActivity : AppCompatActivity() {
         tabStore.updateTab(tab.id, url = url, loading = true)
         activeTabId = tab.id
 
-        // openPage() là điều hướng chủ động, vì vậy domain đích trở thành
-        // domain hợp lệ mới của thẻ trước khi WebView bắt đầu tải.
+        // openPage() lÃ  Ä‘iá»u hÆ°á»›ng chá»§ Ä‘á»™ng, vÃ¬ váº­y domain Ä‘Ã­ch trá»Ÿ thÃ nh
+        // domain há»£p lá»‡ má»›i cá»§a tháº» trÆ°á»›c khi WebView báº¯t Ä‘áº§u táº£i.
         Uri.parse(url).host?.let { tabRootDomain[tab.id] = it }
 
         val webView = pageWebViews.getOrPut(tab.id) { createPageWebView(tab.id) }
@@ -2657,7 +2735,7 @@ class MainActivity : AppCompatActivity() {
     fun printActivePage() {
         val page = currentPageWebView()
         if (page == null || !pageVisible) {
-            Toast.makeText(this, "Hãy mở một trang web trước khi in.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "HÃ£y má»Ÿ má»™t trang web trÆ°á»›c khi in.", Toast.LENGTH_SHORT).show()
             return
         }
         try {
@@ -2670,7 +2748,7 @@ class MainActivity : AppCompatActivity() {
                 PrintAttributes.Builder().build()
             )
         } catch (_: Exception) {
-            Toast.makeText(this, "Không mở được trình in Android.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "KhÃ´ng má»Ÿ Ä‘Æ°á»£c trÃ¬nh in Android.", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -2717,9 +2795,9 @@ class MainActivity : AppCompatActivity() {
         try {
             pageContainer.removeView(webView)
             webView.stopLoading()
-            // Không load about:blank trước khi destroy: callback của trang trắng
-            // có thể chạy sau đó và ghi đè URL đã lưu của thẻ vừa bị đẩy khỏi
-            // cache, khiến lần chọn lại chỉ mở một trang trắng.
+            // KhÃ´ng load about:blank trÆ°á»›c khi destroy: callback cá»§a trang tráº¯ng
+            // cÃ³ thá»ƒ cháº¡y sau Ä‘Ã³ vÃ  ghi Ä‘Ã¨ URL Ä‘Ã£ lÆ°u cá»§a tháº» vá»«a bá»‹ Ä‘áº©y khá»i
+            // cache, khiáº¿n láº§n chá»n láº¡i chá»‰ má»Ÿ má»™t trang tráº¯ng.
             webView.removeJavascriptInterface("LqlqAndroid")
             webView.webChromeClient = null
             webView.webViewClient = WebViewClient()
@@ -2762,10 +2840,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Việc "Lấy chương đang mở" (v0.23.28): gọi từ ShellBridge khi người
-     * dùng bấm nút trong Đọc TXT — chạy bất đồng bộ (không CountDownLatch
-     * chặn luồng), tránh treo/timeout âm thầm của bản @JavascriptInterface
-     * đồng bộ cũ. Kết quả trả về reader.js qua LqlqGlue.onChapterExtracted().
+     * Viá»‡c "Láº¥y chÆ°Æ¡ng Ä‘ang má»Ÿ" (v0.23.28): gá»i tá»« ShellBridge khi ngÆ°á»i
+     * dÃ¹ng báº¥m nÃºt trong Äá»c TXT â€” cháº¡y báº¥t Ä‘á»“ng bá»™ (khÃ´ng CountDownLatch
+     * cháº·n luá»“ng), trÃ¡nh treo/timeout Ã¢m tháº§m cá»§a báº£n @JavascriptInterface
+     * Ä‘á»“ng bá»™ cÅ©. Káº¿t quáº£ tráº£ vá» reader.js qua LqlqGlue.onChapterExtracted().
      */
     fun extractChapterForReader() {
         pageBridge.extractCurrentChapterAsync { json ->
@@ -2778,18 +2856,18 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ------------------------------------------------------------------
-    // Việc 4 (v0.23.4): Chapter Clipper — content-script thật, tiêm trực
-    // tiếp vào WebView của trang web đang mở (không round-trip qua
-    // PageBridge/menu như kiến trúc cũ, tránh đơ/lag).
+    // Viá»‡c 4 (v0.23.4): Chapter Clipper â€” content-script tháº­t, tiÃªm trá»±c
+    // tiáº¿p vÃ o WebView cá»§a trang web Ä‘ang má»Ÿ (khÃ´ng round-trip qua
+    // PageBridge/menu nhÆ° kiáº¿n trÃºc cÅ©, trÃ¡nh Ä‘Æ¡/lag).
     // ------------------------------------------------------------------
 
     private fun readAssetText(path: String): String =
         assets.open(path).bufferedReader(Charsets.UTF_8).use { it.readText() }
 
     /**
-     * Nút bấm trong menu: bật/tắt Chapter Clipper CHO CẢ TAB hiện tại (không
-     * chỉ tiêm 1 lần). Khi bật, tab được ghi nhớ trong chapterClipperEnabledTabs
-     * để onPageFinished() của WebView tự tiêm lại ở mọi trang kế tiếp.
+     * NÃºt báº¥m trong menu: báº­t/táº¯t Chapter Clipper CHO Cáº¢ TAB hiá»‡n táº¡i (khÃ´ng
+     * chá»‰ tiÃªm 1 láº§n). Khi báº­t, tab Ä‘Æ°á»£c ghi nhá»› trong chapterClipperEnabledTabs
+     * Ä‘á»ƒ onPageFinished() cá»§a WebView tá»± tiÃªm láº¡i á»Ÿ má»i trang káº¿ tiáº¿p.
      */
     fun injectChapterClipper() {
         val tabId = activeTabId
@@ -2797,7 +2875,7 @@ class MainActivity : AppCompatActivity() {
         if (tabId == null || webView == null || !pageVisible) {
             Toast.makeText(
                 this,
-                "Hãy mở một trang web thật rồi bật Chapter Clipper.",
+                "HÃ£y má»Ÿ má»™t trang web tháº­t rá»“i báº­t Chapter Clipper.",
                 Toast.LENGTH_SHORT
             ).show()
             return
@@ -2805,9 +2883,9 @@ class MainActivity : AppCompatActivity() {
 
         if (chapterClipperEnabledTabs.contains(tabId)) {
             chapterClipperEnabledTabs.remove(tabId)
-            // Ẩn panel/nút nổi trên trang hiện tại ngay lập tức — không cần gỡ
-            // hẳn script khỏi DOM, chỉ cần nó không hiện ra nữa và không tự
-            // tiêm lại ở trang kế tiếp (đã xử lý ở createPageWebView()).
+            // áº¨n panel/nÃºt ná»•i trÃªn trang hiá»‡n táº¡i ngay láº­p tá»©c â€” khÃ´ng cáº§n gá»¡
+            // háº³n script khá»i DOM, chá»‰ cáº§n nÃ³ khÃ´ng hiá»‡n ra ná»¯a vÃ  khÃ´ng tá»±
+            // tiÃªm láº¡i á»Ÿ trang káº¿ tiáº¿p (Ä‘Ã£ xá»­ lÃ½ á»Ÿ createPageWebView()).
             webView.evaluateJavascript(
                 """
                 (function () {
@@ -2819,11 +2897,11 @@ class MainActivity : AppCompatActivity() {
                 """.trimIndent(),
                 null
             )
-            Toast.makeText(this, "Đã tắt Chapter Clipper trên trang này.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "ÄÃ£ táº¯t Chapter Clipper trÃªn trang nÃ y.", Toast.LENGTH_SHORT).show()
         } else {
             chapterClipperEnabledTabs.add(tabId)
             injectChapterClipperInto(webView)
-            Toast.makeText(this, "Đã bật Chapter Clipper trên trang này.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "ÄÃ£ báº­t Chapter Clipper trÃªn trang nÃ y.", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -2832,7 +2910,7 @@ class MainActivity : AppCompatActivity() {
         return chapterClipperEnabledTabs.contains(tabId)
     }
 
-    /** Tiêm content-script + CSS của Chapter Clipper vào 1 WebView cụ thể. */
+    /** TiÃªm content-script + CSS cá»§a Chapter Clipper vÃ o 1 WebView cá»¥ thá»ƒ. */
     private fun injectChapterClipperInto(webView: WebView) {
         try {
             val css = readAssetText("www/tools/chapter-clipper-styles.css")
@@ -2852,25 +2930,25 @@ $js
 """
             webView.evaluateJavascript(injected, null)
         } catch (error: Exception) {
-            Toast.makeText(this, "Không nạp được Chapter Clipper.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "KhÃ´ng náº¡p Ä‘Æ°á»£c Chapter Clipper.", Toast.LENGTH_SHORT).show()
         }
     }
 
     /**
-     * Việc C (v0.23.6): tiêm script ẩn quảng cáo DOM riêng biệt, LUÔN chạy
-     * cho MỌI trang web thật (gọi từ onPageFinished của createPageWebView()),
-     * không phụ thuộc Chapter Clipper bật/tắt theo tab.
+     * Viá»‡c C (v0.23.6): tiÃªm script áº©n quáº£ng cÃ¡o DOM riÃªng biá»‡t, LUÃ”N cháº¡y
+     * cho Má»ŒI trang web tháº­t (gá»i tá»« onPageFinished cá»§a createPageWebView()),
+     * khÃ´ng phá»¥ thuá»™c Chapter Clipper báº­t/táº¯t theo tab.
      *
-     * Việc (v0.23.20): người dùng yêu cầu MỌI hình thức chặn quảng cáo phải
-     * KHÔNG có tác dụng gì trên trang tìm kiếm/AI (Google, ChatGPT, Claude...)
-     * — không tiêm script này vào các trang đó, thay vì chỉ tắt 1 phần bên
-     * trong JS như trước.
+     * Viá»‡c (v0.23.20): ngÆ°á»i dÃ¹ng yÃªu cáº§u Má»ŒI hÃ¬nh thá»©c cháº·n quáº£ng cÃ¡o pháº£i
+     * KHÃ”NG cÃ³ tÃ¡c dá»¥ng gÃ¬ trÃªn trang tÃ¬m kiáº¿m/AI (Google, ChatGPT, Claude...)
+     * â€” khÃ´ng tiÃªm script nÃ y vÃ o cÃ¡c trang Ä‘Ã³, thay vÃ¬ chá»‰ táº¯t 1 pháº§n bÃªn
+     * trong JS nhÆ° trÆ°á»›c.
      */
     /**
-     * Việc (v0.23.28): lớp ẩn quảng cáo DOM (MutationObserver, tốn CPU trên
-     * trang nhiều quảng cáo động) giờ có thể tắt riêng, MẶC ĐỊNH TẮT — khác
-     * với lớp chặn domain/redirect ở shouldOverrideUrlLoading/shouldInterceptRequest
-     * (luôn bật, không đổi). Đặt bởi ShellBridge.setAdblockDomEnabled().
+     * Viá»‡c (v0.23.28): lá»›p áº©n quáº£ng cÃ¡o DOM (MutationObserver, tá»‘n CPU trÃªn
+     * trang nhiá»u quáº£ng cÃ¡o Ä‘á»™ng) giá» cÃ³ thá»ƒ táº¯t riÃªng, Máº¶C Äá»ŠNH Táº®T â€” khÃ¡c
+     * vá»›i lá»›p cháº·n domain/redirect á»Ÿ shouldOverrideUrlLoading/shouldInterceptRequest
+     * (luÃ´n báº­t, khÃ´ng Ä‘á»•i). Äáº·t bá»Ÿi ShellBridge.setAdblockDomEnabled().
      */
     @Volatile
     var adblockDomEnabled: Boolean = false
@@ -2882,16 +2960,16 @@ $js
             val js = readAssetText("www/tools/adblock-content.js")
             webView.evaluateJavascript(js, null)
         } catch (_: Exception) {
-            // Im lặng bỏ qua — đây là tính năng nền, không cần báo lỗi cho người dùng.
+            // Im láº·ng bá» qua â€” Ä‘Ã¢y lÃ  tÃ­nh nÄƒng ná»n, khÃ´ng cáº§n bÃ¡o lá»—i cho ngÆ°á»i dÃ¹ng.
         }
     }
 
     /**
-     * So sánh 2 host có cùng "domain gốc" hay không, bỏ qua tiền tố phổ biến
-     * www./m. để không chặn nhầm site tự chuẩn hoá domain của chính nó
-     * (vd example.com -> www.example.com). Đơn giản hoá bằng cách so sánh
-     * 2 nhãn cuối cùng của host (registrable domain gần đúng) thay vì phụ
-     * thuộc thư viện Public Suffix List đầy đủ.
+     * So sÃ¡nh 2 host cÃ³ cÃ¹ng "domain gá»‘c" hay khÃ´ng, bá» qua tiá»n tá»‘ phá»• biáº¿n
+     * www./m. Ä‘á»ƒ khÃ´ng cháº·n nháº§m site tá»± chuáº©n hoÃ¡ domain cá»§a chÃ­nh nÃ³
+     * (vd example.com -> www.example.com). ÄÆ¡n giáº£n hoÃ¡ báº±ng cÃ¡ch so sÃ¡nh
+     * 2 nhÃ£n cuá»‘i cÃ¹ng cá»§a host (registrable domain gáº§n Ä‘Ãºng) thay vÃ¬ phá»¥
+     * thuá»™c thÆ° viá»‡n Public Suffix List Ä‘áº§y Ä‘á»§.
      */
     private fun isSameRootDomain(hostA: String, hostB: String): Boolean {
         fun rootOf(host: String): String {
@@ -2899,8 +2977,8 @@ $js
             val parts = stripped.split(".")
             if (parts.size < 2) return stripped
             val lastTwo = parts.takeLast(2).joinToString(".")
-            // "co.uk"/"com.vn"/"github.io"... không phải domain đăng ký thật
-            // — phải lấy thêm 1 nhãn nữa (vd "example.co.uk") mới đúng.
+            // "co.uk"/"com.vn"/"github.io"... khÃ´ng pháº£i domain Ä‘Äƒng kÃ½ tháº­t
+            // â€” pháº£i láº¥y thÃªm 1 nhÃ£n ná»¯a (vd "example.co.uk") má»›i Ä‘Ãºng.
             if (MULTI_LABEL_SUFFIXES.contains(lastTwo) && parts.size >= 3) {
                 return parts.takeLast(3).joinToString(".")
             }
@@ -2960,14 +3038,14 @@ $js
             "violet" -> Color.rgb(0x7a, 0x5a, 0xc8)
             "rose" -> Color.rgb(0xc4, 0x54, 0x76)
             "graphite" -> Color.rgb(0x56, 0x63, 0x6b)
-            else -> Color.rgb(0x18, 0xa6, 0x4a) // emerald (mặc định)
+            else -> Color.rgb(0x18, 0xa6, 0x4a) // emerald (máº·c Ä‘á»‹nh)
         }
         if (::nativeTabSwitcher.isInitialized) {
             nativeTabSwitcher.applyTheme(dark, accentColor)
         }
 
-        // Đồng bộ các vùng hệ thống Android với giao diện đang chọn, tránh
-        // thanh trạng thái/điều hướng sáng chói khi app ở chế độ tối.
+        // Äá»“ng bá»™ cÃ¡c vÃ¹ng há»‡ thá»‘ng Android vá»›i giao diá»‡n Ä‘ang chá»n, trÃ¡nh
+        // thanh tráº¡ng thÃ¡i/Ä‘iá»u hÆ°á»›ng sÃ¡ng chÃ³i khi app á»Ÿ cháº¿ Ä‘á»™ tá»‘i.
         val systemBarColor = if (dark) Color.rgb(0x0d, 0x15, 0x10) else Color.rgb(0xf8, 0xfb, 0xff)
         window.statusBarColor = systemBarColor
         window.navigationBarColor = systemBarColor
@@ -2988,19 +3066,19 @@ $js
             root.bringChildToFront(shellWebView)
         }
 
-        // Linh Thạch/Linh Thú/Kỳ Vật (adventureLootLayer) chỉ được thêm vào
-        // root MỘT LẦN lúc khởi động — mỗi lần trang web thật được đưa lên
-        // trên (bringChildToFront(pageContainer) ở trên) sẽ đè luôn lớp này
-        // xuống dưới, nên icon/thẻ dù có hiện (visibility = VISIBLE) vẫn bị
-        // trang web che kín, không bao giờ thấy được. Phải tự đưa lên lại
-        // mỗi lần, giống cách mediaBubble đã làm đúng bên dưới.
+        // Linh Tháº¡ch/Linh ThÃº/Ká»³ Váº­t (adventureLootLayer) chá»‰ Ä‘Æ°á»£c thÃªm vÃ o
+        // root Má»˜T Láº¦N lÃºc khá»Ÿi Ä‘á»™ng â€” má»—i láº§n trang web tháº­t Ä‘Æ°á»£c Ä‘Æ°a lÃªn
+        // trÃªn (bringChildToFront(pageContainer) á»Ÿ trÃªn) sáº½ Ä‘Ã¨ luÃ´n lá»›p nÃ y
+        // xuá»‘ng dÆ°á»›i, nÃªn icon/tháº» dÃ¹ cÃ³ hiá»‡n (visibility = VISIBLE) váº«n bá»‹
+        // trang web che kÃ­n, khÃ´ng bao giá» tháº¥y Ä‘Æ°á»£c. Pháº£i tá»± Ä‘Æ°a lÃªn láº¡i
+        // má»—i láº§n, giá»‘ng cÃ¡ch mediaBubble Ä‘Ã£ lÃ m Ä‘Ãºng bÃªn dÆ°á»›i.
         if (::adventureLootLayer.isInitialized) {
             root.bringChildToFront(adventureLootLayer)
         }
 
         if (::nativeTabSwitcher.isInitialized && nativeTabSwitcher.isOpen) {
-            // Bộ chuyển thẻ là View native toàn màn hình, luôn đứng trên WebView
-            // và cả bọt media để không xảy ra lỗi chạm xuyên/z-index như bản cũ.
+            // Bá»™ chuyá»ƒn tháº» lÃ  View native toÃ n mÃ n hÃ¬nh, luÃ´n Ä‘á»©ng trÃªn WebView
+            // vÃ  cáº£ bá»t media Ä‘á»ƒ khÃ´ng xáº£y ra lá»—i cháº¡m xuyÃªn/z-index nhÆ° báº£n cÅ©.
             root.bringChildToFront(nativeTabSwitcher)
         } else if (::mediaBubble.isInitialized) {
             root.bringChildToFront(mediaBubble)
@@ -3009,11 +3087,11 @@ $js
     }
 
     /**
-     * Nút bọt nhạc nổi native (v0.23.17) — khác với menu/panel (chiếm toàn
-     * màn hình bằng z-order shellWebView), đây là 1 View nhỏ độc lập chỉ
-     * chiếm đúng góc màn hình, để KHÔNG chặn bấm/cuộn phần còn lại của trang
-     * web thật đang mở. Nhờ vậy nhạc/video nền vẫn "nổi" được trên MỌI trang,
-     * không cần mở menu ☰, mà trang web vẫn tương tác bình thường xung quanh.
+     * NÃºt bá»t nháº¡c ná»•i native (v0.23.17) â€” khÃ¡c vá»›i menu/panel (chiáº¿m toÃ n
+     * mÃ n hÃ¬nh báº±ng z-order shellWebView), Ä‘Ã¢y lÃ  1 View nhá» Ä‘á»™c láº­p chá»‰
+     * chiáº¿m Ä‘Ãºng gÃ³c mÃ n hÃ¬nh, Ä‘á»ƒ KHÃ”NG cháº·n báº¥m/cuá»™n pháº§n cÃ²n láº¡i cá»§a trang
+     * web tháº­t Ä‘ang má»Ÿ. Nhá» váº­y nháº¡c/video ná»n váº«n "ná»•i" Ä‘Æ°á»£c trÃªn Má»ŒI trang,
+     * khÃ´ng cáº§n má»Ÿ menu â˜°, mÃ  trang web váº«n tÆ°Æ¡ng tÃ¡c bÃ¬nh thÆ°á»ng xung quanh.
      */
     private lateinit var mediaBubble: android.widget.TextView
 
@@ -3021,7 +3099,7 @@ $js
         val density = resources.displayMetrics.density
         val sizePx = (52 * density).toInt()
         mediaBubble = android.widget.TextView(this).apply {
-            text = "♫"
+            text = "â™«"
             textSize = 22f
             gravity = android.view.Gravity.CENTER
             setTextColor(Color.WHITE)
@@ -3046,7 +3124,7 @@ $js
         root.addView(mediaBubble, params)
     }
 
-    /** Gọi từ ShellBridge.onMediaState() — cùng tín hiệu đang dùng cho thông báo. */
+    /** Gá»i tá»« ShellBridge.onMediaState() â€” cÃ¹ng tÃ­n hiá»‡u Ä‘ang dÃ¹ng cho thÃ´ng bÃ¡o. */
     fun setMediaBubbleVisible(visible: Boolean) {
         if (!::mediaBubble.isInitialized) return
         mediaBubble.visibility = if (visible) View.VISIBLE else View.GONE
@@ -3069,20 +3147,20 @@ $js
         val webView = WebView(this)
         applyCommonSettings(webView.settings)
 
-        // Việc A (v0.23.6): chặn quảng cáo tự mở cửa sổ/tab mới ở tầng
-        // WebView (mạnh hơn nhiều so với chỉ override window.open bằng JS,
-        // JS override có thể bị bypass). App hiện KHÔNG có onCreateWindow()
-        // xử lý target=_blank nên tắt hẳn 2 cờ này không phá tính năng nào
-        // đang hoạt động (setSupportMultipleWindows mặc định đã là false).
+        // Viá»‡c A (v0.23.6): cháº·n quáº£ng cÃ¡o tá»± má»Ÿ cá»­a sá»•/tab má»›i á»Ÿ táº§ng
+        // WebView (máº¡nh hÆ¡n nhiá»u so vá»›i chá»‰ override window.open báº±ng JS,
+        // JS override cÃ³ thá»ƒ bá»‹ bypass). App hiá»‡n KHÃ”NG cÃ³ onCreateWindow()
+        // xá»­ lÃ½ target=_blank nÃªn táº¯t háº³n 2 cá» nÃ y khÃ´ng phÃ¡ tÃ­nh nÄƒng nÃ o
+        // Ä‘ang hoáº¡t Ä‘á»™ng (setSupportMultipleWindows máº·c Ä‘á»‹nh Ä‘Ã£ lÃ  false).
         webView.settings.setSupportMultipleWindows(false)
         webView.settings.javaScriptCanOpenWindowsAutomatically = false
 
-        // Chapter Clipper cần duy nhất API saveTextFile(). Website bên ngoài
-        // chỉ nhận PageToolsBridge tối thiểu, không được thấy API quản lý thẻ
-        // và các quyền đặc biệt khác của ShellBridge. Mỗi tab có 1 instance
-        // riêng, chỉ cho lưu khi CHÍNH tab đó đã được người dùng bật Chapter
-        // Clipper — trước đây gắn chung 1 instance không kiểm tra gì, nên
-        // MỌI website đều gọi được saveTextFile() dù chưa bật công cụ.
+        // Chapter Clipper cáº§n duy nháº¥t API saveTextFile(). Website bÃªn ngoÃ i
+        // chá»‰ nháº­n PageToolsBridge tá»‘i thiá»ƒu, khÃ´ng Ä‘Æ°á»£c tháº¥y API quáº£n lÃ½ tháº»
+        // vÃ  cÃ¡c quyá»n Ä‘áº·c biá»‡t khÃ¡c cá»§a ShellBridge. Má»—i tab cÃ³ 1 instance
+        // riÃªng, chá»‰ cho lÆ°u khi CHÃNH tab Ä‘Ã³ Ä‘Ã£ Ä‘Æ°á»£c ngÆ°á»i dÃ¹ng báº­t Chapter
+        // Clipper â€” trÆ°á»›c Ä‘Ã¢y gáº¯n chung 1 instance khÃ´ng kiá»ƒm tra gÃ¬, nÃªn
+        // Má»ŒI website Ä‘á»u gá»i Ä‘Æ°á»£c saveTextFile() dÃ¹ chÆ°a báº­t cÃ´ng cá»¥.
         webView.addJavascriptInterface(
             PageToolsBridge(shellBridge) { chapterClipperEnabledTabs.contains(tabId) },
             "LqlqAndroid"
@@ -3102,13 +3180,13 @@ $js
                     return true
                 }
 
-                // Việc (v0.23.11 + v0.23.20): chặn TUYỆT ĐỐI domain quảng
-                // cáo/redirect đã biết, không xét gesture — một cú chạm thật
-                // có thể bị lớp phủ quảng cáo vô hình "đánh cắp", nên gesture
-                // không phải căn cứ đáng tin để cho qua (xem domainGuardEnabled
-                // ở trên). TRỪ KHI đang ở trang tìm kiếm/AI (Google có thể tự
-                // dùng doubleclick.net cho quảng cáo tìm kiếm CHÍNH THỐNG của
-                // nó — không nên chặn, tránh phá chức năng thật).
+                // Viá»‡c (v0.23.11 + v0.23.20): cháº·n TUYá»†T Äá»I domain quáº£ng
+                // cÃ¡o/redirect Ä‘Ã£ biáº¿t, khÃ´ng xÃ©t gesture â€” má»™t cÃº cháº¡m tháº­t
+                // cÃ³ thá»ƒ bá»‹ lá»›p phá»§ quáº£ng cÃ¡o vÃ´ hÃ¬nh "Ä‘Ã¡nh cáº¯p", nÃªn gesture
+                // khÃ´ng pháº£i cÄƒn cá»© Ä‘Ã¡ng tin Ä‘á»ƒ cho qua (xem domainGuardEnabled
+                // á»Ÿ trÃªn). TRá»ª KHI Ä‘ang á»Ÿ trang tÃ¬m kiáº¿m/AI (Google cÃ³ thá»ƒ tá»±
+                // dÃ¹ng doubleclick.net cho quáº£ng cÃ¡o tÃ¬m kiáº¿m CHÃNH THá»NG cá»§a
+                // nÃ³ â€” khÃ´ng nÃªn cháº·n, trÃ¡nh phÃ¡ chá»©c nÄƒng tháº­t).
                 if (domainGuardEnabled &&
                     !isSearchOrAiToolHost(tabRootDomain[tabId]) &&
                     isBlockedAdHost(request.url.host)
@@ -3117,33 +3195,33 @@ $js
                         recordAdventureShieldProtection(tabId, request.url.host, "ad-host")
                     } else null
                     showBlockNoticeToast(
-                        withAdventureReward("Đã chặn quảng cáo: ${request.url.host}", reward)
+                        withAdventureReward("ÄÃ£ cháº·n quáº£ng cÃ¡o: ${request.url.host}", reward)
                     )
                     return true
                 }
 
-                // Cú chạm thật của người dùng (không phải quảng cáo, đã qua
-                // được lớp chặn ad-host ở trên) được ghi lại thời điểm, để
-                // cho phép các bước redirect KHÔNG mang gesture (OAuth,
-                // link rút gọn, cổng thanh toán...) bắt nguồn từ đúng cú
-                // chạm đó vẫn đi qua trong 1 cửa sổ ngắn — không đánh đồng
-                // với điều hướng tự phát của trang.
+                // CÃº cháº¡m tháº­t cá»§a ngÆ°á»i dÃ¹ng (khÃ´ng pháº£i quáº£ng cÃ¡o, Ä‘Ã£ qua
+                // Ä‘Æ°á»£c lá»›p cháº·n ad-host á»Ÿ trÃªn) Ä‘Æ°á»£c ghi láº¡i thá»i Ä‘iá»ƒm, Ä‘á»ƒ
+                // cho phÃ©p cÃ¡c bÆ°á»›c redirect KHÃ”NG mang gesture (OAuth,
+                // link rÃºt gá»n, cá»•ng thanh toÃ¡n...) báº¯t nguá»“n tá»« Ä‘Ãºng cÃº
+                // cháº¡m Ä‘Ã³ váº«n Ä‘i qua trong 1 cá»­a sá»• ngáº¯n â€” khÃ´ng Ä‘Ã¡nh Ä‘á»“ng
+                // vá»›i Ä‘iá»u hÆ°á»›ng tá»± phÃ¡t cá»§a trang.
                 if (request.hasGesture()) {
                     lastUserGestureNavAt[tabId] = System.currentTimeMillis()
                 }
 
-                // Chặn điều hướng main-frame tự phát sang domain khác domain
-                // gốc hiện tại của tab — TRỪ KHI đây là cú chạm thật của
-                // người dùng, hoặc nằm trong cửa sổ 20 giây ngay sau 1 cú
-                // chạm thật (redirect chuỗi OAuth/link rút gọn/www). Trước
-                // đây chặn tuyệt đối không xét gesture, khiến cả link người
-                // dùng bấm thật ra site khác cũng bị chặn nhầm (đăng nhập
-                // Google/Facebook, cổng thanh toán, link ngoài Wikipedia...).
-                // Chỉ áp dụng cho khung chính; iframe/tài nguyên con không bị
-                // lớp này can thiệp. Công cụ tìm kiếm/AI được miễn trừ để kết
-                // quả tìm kiếm hoạt động bình thường. Điều hướng chủ động từ
-                // thanh địa chỉ/trang chủ đi qua openPage() và cập nhật
-                // domain trước.
+                // Cháº·n Ä‘iá»u hÆ°á»›ng main-frame tá»± phÃ¡t sang domain khÃ¡c domain
+                // gá»‘c hiá»‡n táº¡i cá»§a tab â€” TRá»ª KHI Ä‘Ã¢y lÃ  cÃº cháº¡m tháº­t cá»§a
+                // ngÆ°á»i dÃ¹ng, hoáº·c náº±m trong cá»­a sá»• 20 giÃ¢y ngay sau 1 cÃº
+                // cháº¡m tháº­t (redirect chuá»—i OAuth/link rÃºt gá»n/www). TrÆ°á»›c
+                // Ä‘Ã¢y cháº·n tuyá»‡t Ä‘á»‘i khÃ´ng xÃ©t gesture, khiáº¿n cáº£ link ngÆ°á»i
+                // dÃ¹ng báº¥m tháº­t ra site khÃ¡c cÅ©ng bá»‹ cháº·n nháº§m (Ä‘Äƒng nháº­p
+                // Google/Facebook, cá»•ng thanh toÃ¡n, link ngoÃ i Wikipedia...).
+                // Chá»‰ Ã¡p dá»¥ng cho khung chÃ­nh; iframe/tÃ i nguyÃªn con khÃ´ng bá»‹
+                // lá»›p nÃ y can thiá»‡p. CÃ´ng cá»¥ tÃ¬m kiáº¿m/AI Ä‘Æ°á»£c miá»…n trá»« Ä‘á»ƒ káº¿t
+                // quáº£ tÃ¬m kiáº¿m hoáº¡t Ä‘á»™ng bÃ¬nh thÆ°á»ng. Äiá»u hÆ°á»›ng chá»§ Ä‘á»™ng tá»«
+                // thanh Ä‘á»‹a chá»‰/trang chá»§ Ä‘i qua openPage() vÃ  cáº­p nháº­t
+                // domain trÆ°á»›c.
                 val safeHost = tabRootDomain[tabId]
                 val targetHost = request.url.host
                 val recentGesture = request.hasGesture() ||
@@ -3155,26 +3233,26 @@ $js
                 ) {
                     val reward = recordAdventureShieldProtection(tabId, targetHost, "cross-domain")
                     showBlockNoticeToast(
-                        withAdventureReward("Đã chặn chuyển hướng lạ: $targetHost", reward)
+                        withAdventureReward("ÄÃ£ cháº·n chuyá»ƒn hÆ°á»›ng láº¡: $targetHost", reward)
                     )
                     return true
                 }
                 return false
             }
 
-            // shouldInterceptRequest() còn kiểm tra từng bước redirect phía
-            // server. Cả 2 lớp chặn (danh sách host quảng cáo + root-domain
-            // guard) đều tắt hoàn toàn khi domainGuardEnabled = false.
+            // shouldInterceptRequest() cÃ²n kiá»ƒm tra tá»«ng bÆ°á»›c redirect phÃ­a
+            // server. Cáº£ 2 lá»›p cháº·n (danh sÃ¡ch host quáº£ng cÃ¡o + root-domain
+            // guard) Ä‘á»u táº¯t hoÃ n toÃ n khi domainGuardEnabled = false.
             override fun shouldInterceptRequest(
                 view: WebView,
                 request: WebResourceRequest
             ): WebResourceResponse? {
                 val targetHost = request.url.host
 
-                // v0.23.20: không chặn gì cả (kể cả danh sách domain quảng
-                // cáo đã biết) khi đang ở trang tìm kiếm/AI — trang đó có
-                // thể tự dùng hạ tầng quảng cáo của chính nó cho chức năng
-                // thật (vd kết quả quảng cáo tìm kiếm của Google).
+                // v0.23.20: khÃ´ng cháº·n gÃ¬ cáº£ (ká»ƒ cáº£ danh sÃ¡ch domain quáº£ng
+                // cÃ¡o Ä‘Ã£ biáº¿t) khi Ä‘ang á»Ÿ trang tÃ¬m kiáº¿m/AI â€” trang Ä‘Ã³ cÃ³
+                // thá»ƒ tá»± dÃ¹ng háº¡ táº§ng quáº£ng cÃ¡o cá»§a chÃ­nh nÃ³ cho chá»©c nÄƒng
+                // tháº­t (vd káº¿t quáº£ quáº£ng cÃ¡o tÃ¬m kiáº¿m cá»§a Google).
                 if (!domainGuardEnabled) return null
                 if (isSearchOrAiToolHost(tabRootDomain[tabId])) return null
 
@@ -3199,7 +3277,7 @@ $js
                             try { view.stopLoading() } catch (_: Exception) {}
                             showBlockNoticeToast(
                                 withAdventureReward(
-                                    "Đã chặn quảng cáo/chuyển hướng lạ: $targetHost",
+                                    "ÄÃ£ cháº·n quáº£ng cÃ¡o/chuyá»ƒn hÆ°á»›ng láº¡: $targetHost",
                                     reward
                                 )
                             )
@@ -3231,18 +3309,18 @@ $js
             override fun onPageFinished(view: WebView, url: String) {
                 notifyShellPage(tabId, url, view.title ?: "", loading = false)
 
-                // Việc (v0.23.12): ghi lại domain gốc "hợp lệ" của tab này —
-                // chỉ khi 1 trang THẬT SỰ tải xong (không phải bị chặn giữa
-                // chừng), làm cơ sở để chặn tuyệt đối điều hướng lạ sau này.
+                // Viá»‡c (v0.23.12): ghi láº¡i domain gá»‘c "há»£p lá»‡" cá»§a tab nÃ y â€”
+                // chá»‰ khi 1 trang THáº¬T Sá»° táº£i xong (khÃ´ng pháº£i bá»‹ cháº·n giá»¯a
+                // chá»«ng), lÃ m cÆ¡ sá»Ÿ Ä‘á»ƒ cháº·n tuyá»‡t Ä‘á»‘i Ä‘iá»u hÆ°á»›ng láº¡ sau nÃ y.
                 Uri.parse(url).host?.let { tabRootDomain[tabId] = it }
 
-                // Việc C (v0.23.6): ẩn quảng cáo DOM LUÔN BẬT cho MỌI trang,
-                // độc lập với Chapter Clipper (không đi qua chapterClipperEnabledTabs).
+                // Viá»‡c C (v0.23.6): áº©n quáº£ng cÃ¡o DOM LUÃ”N Báº¬T cho Má»ŒI trang,
+                // Ä‘á»™c láº­p vá»›i Chapter Clipper (khÃ´ng Ä‘i qua chapterClipperEnabledTabs).
                 injectAdblock(view)
 
-                // Việc 1 (v0.23.5): nếu người dùng đã bật Chapter Clipper cho
-                // tab này, tự tiêm lại ở MỌI trang mới (kể cả next-chapter tự
-                // động) — không bắt người dùng bấm lại nút mỗi lần chuyển trang.
+                // Viá»‡c 1 (v0.23.5): náº¿u ngÆ°á»i dÃ¹ng Ä‘Ã£ báº­t Chapter Clipper cho
+                // tab nÃ y, tá»± tiÃªm láº¡i á»Ÿ Má»ŒI trang má»›i (ká»ƒ cáº£ next-chapter tá»±
+                // Ä‘á»™ng) â€” khÃ´ng báº¯t ngÆ°á»i dÃ¹ng báº¥m láº¡i nÃºt má»—i láº§n chuyá»ƒn trang.
                 if (chapterClipperEnabledTabs.contains(tabId)) {
                     injectChapterClipperInto(view)
                 }
@@ -3261,31 +3339,31 @@ $js
                 url: String,
                 isReload: Boolean
             ) {
-                // QUAN TRỌNG: doUpdateVisitedHistory() có thể được gọi nhiều lần
-                // trong một chuỗi chuyển hướng (redirect), TRƯỚC KHI trang đích
-                // cuối cùng thực sự tải xong (ví dụ gõ từ khóa → tạm qua
-                // www.google.com/search?q=... rồi mới điều hướng tiếp).
-                // Nếu báo loading=false ở đây, Nhật ký sẽ ghi nhầm URL trung
-                // gian thay vì trang đích thật. Chỉ cập nhật thanh địa chỉ/tiêu
-                // đề tạm thời (loading=true) — mục Nhật ký chỉ được ghi thật sự
-                // tại onPageFinished(), khi URL cuối cùng đã tải xong.
+                // QUAN TRá»ŒNG: doUpdateVisitedHistory() cÃ³ thá»ƒ Ä‘Æ°á»£c gá»i nhiá»u láº§n
+                // trong má»™t chuá»—i chuyá»ƒn hÆ°á»›ng (redirect), TRÆ¯á»šC KHI trang Ä‘Ã­ch
+                // cuá»‘i cÃ¹ng thá»±c sá»± táº£i xong (vÃ­ dá»¥ gÃµ tá»« khÃ³a â†’ táº¡m qua
+                // www.google.com/search?q=... rá»“i má»›i Ä‘iá»u hÆ°á»›ng tiáº¿p).
+                // Náº¿u bÃ¡o loading=false á»Ÿ Ä‘Ã¢y, Nháº­t kÃ½ sáº½ ghi nháº§m URL trung
+                // gian thay vÃ¬ trang Ä‘Ã­ch tháº­t. Chá»‰ cáº­p nháº­t thanh Ä‘á»‹a chá»‰/tiÃªu
+                // Ä‘á» táº¡m thá»i (loading=true) â€” má»¥c Nháº­t kÃ½ chá»‰ Ä‘Æ°á»£c ghi tháº­t sá»±
+                // táº¡i onPageFinished(), khi URL cuá»‘i cÃ¹ng Ä‘Ã£ táº£i xong.
                 notifyShellPage(tabId, url, view.title ?: "", loading = true)
             }
 
-            // Việc D (v0.23.7): nhiều quảng cáo dùng redirect HTTP phía server
-            // (Location header) thay vì JS location.href — kiểu này KHÔNG đi
-            // qua shouldOverrideUrlLoading() ở trên (WebView tự âm thầm theo
-            // chuỗi redirect của 1 request đã được cho phép), nên lọt qua
-            // "Việc B" và trang đích cuối cùng (thường hỏng/trắng) vẫn hiện
-            // ra. Bắt mã lỗi HTTP của trang CHÍNH ở đây và tự quay lại trang
-            // trước đó thay vì để màn hình trắng.
+            // Viá»‡c D (v0.23.7): nhiá»u quáº£ng cÃ¡o dÃ¹ng redirect HTTP phÃ­a server
+            // (Location header) thay vÃ¬ JS location.href â€” kiá»ƒu nÃ y KHÃ”NG Ä‘i
+            // qua shouldOverrideUrlLoading() á»Ÿ trÃªn (WebView tá»± Ã¢m tháº§m theo
+            // chuá»—i redirect cá»§a 1 request Ä‘Ã£ Ä‘Æ°á»£c cho phÃ©p), nÃªn lá»t qua
+            // "Viá»‡c B" vÃ  trang Ä‘Ã­ch cuá»‘i cÃ¹ng (thÆ°á»ng há»ng/tráº¯ng) váº«n hiá»‡n
+            // ra. Báº¯t mÃ£ lá»—i HTTP cá»§a trang CHÃNH á»Ÿ Ä‘Ã¢y vÃ  tá»± quay láº¡i trang
+            // trÆ°á»›c Ä‘Ã³ thay vÃ¬ Ä‘á»ƒ mÃ n hÃ¬nh tráº¯ng.
             //
-            // TẮT MẶC ĐỊNH (badLoadRecoveryEnabled): mã lỗi HTTP như 503/502
-            // thường chỉ là server đích đang quá tải/bảo trì tạm thời, không
-            // liên quan gì tới quảng cáo — tự bấm Back trong trường hợp đó
-            // gây khó chịu hơn là hữu ích. Không còn bắt lỗi kết nối
-            // (onReceivedError) nữa vì lỗi mạng tạm thời (mất sóng, DNS chậm)
-            // cũng bị coi nhầm là "trang hỏng do quảng cáo".
+            // Táº®T Máº¶C Äá»ŠNH (badLoadRecoveryEnabled): mÃ£ lá»—i HTTP nhÆ° 503/502
+            // thÆ°á»ng chá»‰ lÃ  server Ä‘Ã­ch Ä‘ang quÃ¡ táº£i/báº£o trÃ¬ táº¡m thá»i, khÃ´ng
+            // liÃªn quan gÃ¬ tá»›i quáº£ng cÃ¡o â€” tá»± báº¥m Back trong trÆ°á»ng há»£p Ä‘Ã³
+            // gÃ¢y khÃ³ chá»‹u hÆ¡n lÃ  há»¯u Ã­ch. KhÃ´ng cÃ²n báº¯t lá»—i káº¿t ná»‘i
+            // (onReceivedError) ná»¯a vÃ¬ lá»—i máº¡ng táº¡m thá»i (máº¥t sÃ³ng, DNS cháº­m)
+            // cÅ©ng bá»‹ coi nháº§m lÃ  "trang há»ng do quáº£ng cÃ¡o".
             override fun onReceivedHttpError(
                 view: WebView,
                 request: WebResourceRequest,
@@ -3298,7 +3376,7 @@ $js
                     runOnUiThread {
                         if (view.canGoBack()) {
                             showBlockNoticeToast(
-                                "Trang đích không tải được (HTTP ${errorResponse.statusCode}) — đã quay lại trang trước."
+                                "Trang Ä‘Ã­ch khÃ´ng táº£i Ä‘Æ°á»£c (HTTP ${errorResponse.statusCode}) â€” Ä‘Ã£ quay láº¡i trang trÆ°á»›c."
                             )
                             view.stopLoading()
                             view.goBack()
@@ -3311,8 +3389,8 @@ $js
                 view: WebView,
                 detail: android.webkit.RenderProcessGoneDetail
             ): Boolean {
-                // Renderer chết không được xóa thẻ. Chỉ hủy WebView lỗi; URL và
-                // tiêu đề vẫn nằm trong TabStore để thẻ có thể tải lại an toàn.
+                // Renderer cháº¿t khÃ´ng Ä‘Æ°á»£c xÃ³a tháº». Chá»‰ há»§y WebView lá»—i; URL vÃ 
+                // tiÃªu Ä‘á» váº«n náº±m trong TabStore Ä‘á»ƒ tháº» cÃ³ thá»ƒ táº£i láº¡i an toÃ n.
                 val tab = tabStore.findTab(tabId)
                 pageWebViews.remove(tabId)
                 pageLastUsedAt.remove(tabId)
@@ -3323,7 +3401,7 @@ $js
                 }
                 Toast.makeText(
                     this@MainActivity,
-                    "Trang web gặp sự cố. Đang tải lại thẻ…",
+                    "Trang web gáº·p sá»± cá»‘. Äang táº£i láº¡i tháº»â€¦",
                     Toast.LENGTH_SHORT
                 ).show()
                 if (tabId == activeTabId && tab != null) {
@@ -3341,15 +3419,15 @@ $js
             startDownload(url, userAgent, contentDisposition, mimeType)
         }
 
-        // Trước đây không xử lý gì cả khi giữ (long-press) lên ảnh — WebView
-        // vẫn tự rung phản hồi mặc định rồi cố mở context menu hệ thống,
-        // nhưng vì app chưa bao giờ registerForContextMenu()/onCreateContextMenu()
-        // nên không có gì hiện ra, và trạng thái gesture bên trong WebView bị
-        // kẹt lại, khiến MỌI cú chạm sau đó trên tab đó không còn nhận được
-        // nữa (không phải treo tab, chỉ là không nhận thao tác). Tự bắt sự
-        // kiện long-press trên ảnh và luôn return true để tiêu thụ sự kiện,
-        // đồng thời hiện menu "Tải ảnh / Mở tab mới / Sao chép liên kết"
-        // giống Chrome.
+        // TrÆ°á»›c Ä‘Ã¢y khÃ´ng xá»­ lÃ½ gÃ¬ cáº£ khi giá»¯ (long-press) lÃªn áº£nh â€” WebView
+        // váº«n tá»± rung pháº£n há»“i máº·c Ä‘á»‹nh rá»“i cá»‘ má»Ÿ context menu há»‡ thá»‘ng,
+        // nhÆ°ng vÃ¬ app chÆ°a bao giá» registerForContextMenu()/onCreateContextMenu()
+        // nÃªn khÃ´ng cÃ³ gÃ¬ hiá»‡n ra, vÃ  tráº¡ng thÃ¡i gesture bÃªn trong WebView bá»‹
+        // káº¹t láº¡i, khiáº¿n Má»ŒI cÃº cháº¡m sau Ä‘Ã³ trÃªn tab Ä‘Ã³ khÃ´ng cÃ²n nháº­n Ä‘Æ°á»£c
+        // ná»¯a (khÃ´ng pháº£i treo tab, chá»‰ lÃ  khÃ´ng nháº­n thao tÃ¡c). Tá»± báº¯t sá»±
+        // kiá»‡n long-press trÃªn áº£nh vÃ  luÃ´n return true Ä‘á»ƒ tiÃªu thá»¥ sá»± kiá»‡n,
+        // Ä‘á»“ng thá»i hiá»‡n menu "Táº£i áº£nh / Má»Ÿ tab má»›i / Sao chÃ©p liÃªn káº¿t"
+        // giá»‘ng Chrome.
         webView.setOnLongClickListener { view ->
             val hitTestResult = (view as WebView).hitTestResult
             val type = hitTestResult.type
@@ -3373,12 +3451,12 @@ $js
 
     private fun showImageLongPressMenu(imageUrl: String) {
         val options = arrayOf(
-            "Mở ảnh trong thẻ mới",
-            "Xem trước hình ảnh",
-            "Sao chép ảnh",
-            "Tải hình ảnh xuống",
-            "Tìm hình ảnh bằng Google Ống Kính",
-            "Chia sẻ hình ảnh"
+            "Má»Ÿ áº£nh trong tháº» má»›i",
+            "Xem trÆ°á»›c hÃ¬nh áº£nh",
+            "Sao chÃ©p áº£nh",
+            "Táº£i hÃ¬nh áº£nh xuá»‘ng",
+            "TÃ¬m hÃ¬nh áº£nh báº±ng Google á»ng KÃ­nh",
+            "Chia sáº» hÃ¬nh áº£nh"
         )
         AlertDialog.Builder(this)
             .setTitle(imageUrl.take(80))
@@ -3398,7 +3476,7 @@ $js
             .show()
     }
 
-    /** Tải ảnh về 1 File tạm trong cache (dùng chung cho xem trước/sao chép/chia sẻ ảnh). */
+    /** Táº£i áº£nh vá» 1 File táº¡m trong cache (dÃ¹ng chung cho xem trÆ°á»›c/sao chÃ©p/chia sáº» áº£nh). */
     private fun fetchImageToCacheFile(imageUrl: String, onReady: (File?) -> Unit) {
         dynamicLootExecutor.execute {
             val file = try {
@@ -3456,7 +3534,7 @@ $js
         fetchImageToCacheFile(imageUrl) { file ->
             dialog.dismiss()
             if (file == null) {
-                Toast.makeText(this, "Không tải được ảnh để xem trước.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "KhÃ´ng táº£i Ä‘Æ°á»£c áº£nh Ä‘á»ƒ xem trÆ°á»›c.", Toast.LENGTH_SHORT).show()
                 return@fetchImageToCacheFile
             }
             val bitmap = try {
@@ -3465,7 +3543,7 @@ $js
                 null
             }
             if (bitmap == null) {
-                Toast.makeText(this, "Không xem trước được ảnh này.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "KhÃ´ng xem trÆ°á»›c Ä‘Æ°á»£c áº£nh nÃ y.", Toast.LENGTH_SHORT).show()
                 return@fetchImageToCacheFile
             }
             val imageView = ImageView(this).apply {
@@ -3475,7 +3553,7 @@ $js
             }
             AlertDialog.Builder(this)
                 .setView(imageView)
-                .setPositiveButton("Đóng", null)
+                .setPositiveButton("ÄÃ³ng", null)
                 .show()
         }
     }
@@ -3558,24 +3636,24 @@ $js
         FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
 
     private fun copyImageToClipboard(imageUrl: String) {
-        Toast.makeText(this, "Đang sao chép ảnh…", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Äang sao chÃ©p áº£nhâ€¦", Toast.LENGTH_SHORT).show()
         fetchImageToCacheFile(imageUrl) { file ->
             if (file == null) {
-                Toast.makeText(this, "Không sao chép được ảnh này.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "KhÃ´ng sao chÃ©p Ä‘Æ°á»£c áº£nh nÃ y.", Toast.LENGTH_SHORT).show()
                 return@fetchImageToCacheFile
             }
             val uri = imageContentUri(file)
             val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
             clipboard.setPrimaryClip(ClipData.newUri(contentResolver, "image", uri))
-            Toast.makeText(this, "Đã sao chép ảnh.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "ÄÃ£ sao chÃ©p áº£nh.", Toast.LENGTH_SHORT).show()
         }
     }
 
     private fun shareImage(imageUrl: String) {
-        Toast.makeText(this, "Đang chuẩn bị chia sẻ…", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Äang chuáº©n bá»‹ chia sáº»â€¦", Toast.LENGTH_SHORT).show()
         fetchImageToCacheFile(imageUrl) { file ->
             if (file == null) {
-                Toast.makeText(this, "Không chia sẻ được ảnh này.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "KhÃ´ng chia sáº» Ä‘Æ°á»£c áº£nh nÃ y.", Toast.LENGTH_SHORT).show()
                 return@fetchImageToCacheFile
             }
             val uri = imageContentUri(file)
@@ -3585,7 +3663,24 @@ $js
                 putExtra(Intent.EXTRA_STREAM, uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            startActivity(Intent.createChooser(intent, "Chia sẻ hình ảnh"))
+            startActivity(Intent.createChooser(intent, "Chia sáº» hÃ¬nh áº£nh"))
+        }
+    }
+
+    private fun shareAutomationPublish(request: AutomationShareSheetRequest) {
+        runOnUiThread {
+            runCatching {
+                val uri = Uri.parse(request.contentUri)
+                val intent = Intent(Intent.ACTION_SEND).apply {
+                    type = request.mimeType.ifBlank { "video/mp4" }
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    putExtra(Intent.EXTRA_TEXT, request.text)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                startActivity(Intent.createChooser(intent, request.chooserTitle))
+            }.onFailure {
+                Toast.makeText(this, "KhÃ´ng má»Ÿ Ä‘Æ°á»£c share sheet cho video automation.", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -3622,15 +3717,15 @@ $js
         mimeType: String
     ) {
         if (url.startsWith("blob:") || url.startsWith("data:")) {
-            Toast.makeText(this, "Tệp này cần lưu bằng nút lưu trong ứng dụng.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Tá»‡p nÃ y cáº§n lÆ°u báº±ng nÃºt lÆ°u trong á»©ng dá»¥ng.", Toast.LENGTH_SHORT).show()
             return
         }
         if (isCleartextHttpUrl(url)) {
             AlertDialog.Builder(this)
-                .setTitle("Tải xuống qua HTTP?")
-                .setMessage("Liên kết này không được mã hóa. Nội dung tải xuống có thể bị đọc hoặc sửa trên đường truyền.")
-                .setNegativeButton("Hủy", null)
-                .setPositiveButton("Vẫn tải") { _, _ ->
+                .setTitle("Táº£i xuá»‘ng qua HTTP?")
+                .setMessage("LiÃªn káº¿t nÃ y khÃ´ng Ä‘Æ°á»£c mÃ£ hÃ³a. Ná»™i dung táº£i xuá»‘ng cÃ³ thá»ƒ bá»‹ Ä‘á»c hoáº·c sá»­a trÃªn Ä‘Æ°á»ng truyá»n.")
+                .setNegativeButton("Há»§y", null)
+                .setPositiveButton("Váº«n táº£i") { _, _ ->
                     enqueueDownload(url, userAgent, contentDisposition, mimeType)
                 }
                 .show()
@@ -3659,24 +3754,24 @@ $js
             }
             val manager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
             manager.enqueue(request)
-            Toast.makeText(this, "Đang tải xuống: $fileName", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Äang táº£i xuá»‘ng: $fileName", Toast.LENGTH_SHORT).show()
         } catch (_: Exception) {
-            Toast.makeText(this, "Không tải xuống được tệp này.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "KhÃ´ng táº£i xuá»‘ng Ä‘Æ°á»£c tá»‡p nÃ y.", Toast.LENGTH_SHORT).show()
         }
     }
 
     /**
-     * Website có thể tự điều hướng sang scheme khác http(s) (vd fb://,
-     * intent://...) để "nhảy" thẳng sang app ngoài mà người dùng KHÔNG hề
-     * bấm vào link đó — trước đây hàm này mở app ngay lập tức, không hỏi,
-     * khiến trình duyệt tự động bật Facebook/app khác. Giờ luôn hỏi xác
-     * nhận trước, không bao giờ tự ý chuyển app.
+     * Website cÃ³ thá»ƒ tá»± Ä‘iá»u hÆ°á»›ng sang scheme khÃ¡c http(s) (vd fb://,
+     * intent://...) Ä‘á»ƒ "nháº£y" tháº³ng sang app ngoÃ i mÃ  ngÆ°á»i dÃ¹ng KHÃ”NG há»
+     * báº¥m vÃ o link Ä‘Ã³ â€” trÆ°á»›c Ä‘Ã¢y hÃ m nÃ y má»Ÿ app ngay láº­p tá»©c, khÃ´ng há»i,
+     * khiáº¿n trÃ¬nh duyá»‡t tá»± Ä‘á»™ng báº­t Facebook/app khÃ¡c. Giá» luÃ´n há»i xÃ¡c
+     * nháº­n trÆ°á»›c, khÃ´ng bao giá» tá»± Ã½ chuyá»ƒn app.
      */
     private fun openExternalUri(uri: Uri) {
         val intent = try {
             Intent(Intent.ACTION_VIEW, uri)
         } catch (_: Exception) {
-            Toast.makeText(this, "Không có ứng dụng nào mở được liên kết này.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "KhÃ´ng cÃ³ á»©ng dá»¥ng nÃ o má»Ÿ Ä‘Æ°á»£c liÃªn káº¿t nÃ y.", Toast.LENGTH_SHORT).show()
             return
         }
         val appLabel = try {
@@ -3686,26 +3781,26 @@ $js
             null
         }
         val message = if (appLabel.isNullOrBlank()) {
-            "Trang web muốn mở một ứng dụng khác. Bạn có muốn chuyển qua không?"
+            "Trang web muá»‘n má»Ÿ má»™t á»©ng dá»¥ng khÃ¡c. Báº¡n cÃ³ muá»‘n chuyá»ƒn qua khÃ´ng?"
         } else {
-            "Trang web muốn mở ứng dụng \"$appLabel\". Bạn có muốn chuyển qua không?"
+            "Trang web muá»‘n má»Ÿ á»©ng dá»¥ng \"$appLabel\". Báº¡n cÃ³ muá»‘n chuyá»ƒn qua khÃ´ng?"
         }
         AlertDialog.Builder(this)
-            .setTitle("Chuyển sang ứng dụng khác?")
+            .setTitle("Chuyá»ƒn sang á»©ng dá»¥ng khÃ¡c?")
             .setMessage(message)
-            .setNegativeButton("Ở lại trang web", null)
-            .setPositiveButton("Mở ứng dụng") { _, _ ->
+            .setNegativeButton("á»ž láº¡i trang web", null)
+            .setPositiveButton("Má»Ÿ á»©ng dá»¥ng") { _, _ ->
                 try {
                     startActivity(intent)
                 } catch (_: Exception) {
-                    Toast.makeText(this, "Không có ứng dụng nào mở được liên kết này.", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "KhÃ´ng cÃ³ á»©ng dá»¥ng nÃ o má»Ÿ Ä‘Æ°á»£c liÃªn káº¿t nÃ y.", Toast.LENGTH_SHORT).show()
                 }
             }
             .show()
     }
 
     // ------------------------------------------------------------------
-    // Trang ngoại tuyến: mở tệp HTML đã lưu + lưu trang web thật
+    // Trang ngoáº¡i tuyáº¿n: má»Ÿ tá»‡p HTML Ä‘Ã£ lÆ°u + lÆ°u trang web tháº­t
     // ------------------------------------------------------------------
 
     fun launchOpenHtmlFile() {
@@ -3719,7 +3814,7 @@ $js
                     "application/xhtml+xml",
                     "text/plain",
                     "application/octet-stream",
-                    // Tệp .mht/.mhtml lưu bằng saveWebArchive() (giữ ảnh/CSS).
+                    // Tá»‡p .mht/.mhtml lÆ°u báº±ng saveWebArchive() (giá»¯ áº£nh/CSS).
                     "application/x-mimearchive",
                     "message/rfc822",
                     "multipart/related"
@@ -3727,9 +3822,9 @@ $js
             )
         }
         try {
-            htmlFileLauncher.launch(Intent.createChooser(intent, "Chọn tệp HTML/MHT đã lưu"))
+            htmlFileLauncher.launch(Intent.createChooser(intent, "Chá»n tá»‡p HTML/MHT Ä‘Ã£ lÆ°u"))
         } catch (_: Exception) {
-            Toast.makeText(this, "Không mở được hộp chọn tệp.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "KhÃ´ng má»Ÿ Ä‘Æ°á»£c há»™p chá»n tá»‡p.", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -3747,7 +3842,7 @@ $js
         }
     }
 
-    /** Mở bản lưu ngoại tuyến; nếu tệp đã bị xóa thì quay lại URL online. */
+    /** Má»Ÿ báº£n lÆ°u ngoáº¡i tuyáº¿n; náº¿u tá»‡p Ä‘Ã£ bá»‹ xÃ³a thÃ¬ quay láº¡i URL online. */
     fun openOfflineUriFromShell(uriString: String, fallbackUrl: String) {
         try {
             loadOfflineHtml(Uri.parse(uriString), fallbackUrl)
@@ -3760,15 +3855,15 @@ $js
         if (fallbackUrl.startsWith("http://", true) || fallbackUrl.startsWith("https://", true)) {
             val tabId = activeTabId ?: tabStore.activeTabId()
             openPage(tabId, fallbackUrl)
-            Toast.makeText(this, "Bản ngoại tuyến không còn. Đã mở trang online.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Báº£n ngoáº¡i tuyáº¿n khÃ´ng cÃ²n. ÄÃ£ má»Ÿ trang online.", Toast.LENGTH_SHORT).show()
         } else {
-            Toast.makeText(this, "Không mở được tệp đã lưu.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "KhÃ´ng má»Ÿ Ä‘Æ°á»£c tá»‡p Ä‘Ã£ lÆ°u.", Toast.LENGTH_SHORT).show()
         }
     }
 
     /**
-     * Đọc/copy MHT ở luồng nền. Bản MHT đã mở được cache theo Uri để lần mở
-     * sau gần như tức thì; cache cũ được dọn theo tuổi và giới hạn số lượng.
+     * Äá»c/copy MHT á»Ÿ luá»“ng ná»n. Báº£n MHT Ä‘Ã£ má»Ÿ Ä‘Æ°á»£c cache theo Uri Ä‘á»ƒ láº§n má»Ÿ
+     * sau gáº§n nhÆ° tá»©c thÃ¬; cache cÅ© Ä‘Æ°á»£c dá»n theo tuá»•i vÃ  giá»›i háº¡n sá»‘ lÆ°á»£ng.
      */
     private fun loadOfflineHtml(uri: Uri, fallbackUrl: String = "") {
         Thread {
@@ -3828,7 +3923,7 @@ $js
 
     private fun openOfflineMhtFile(tempFile: File) {
         val offlineUrl = "file://${tempFile.absolutePath}"
-        val tab = tabStore.createTab(url = offlineUrl, title = "Trang ngoại tuyến")
+        val tab = tabStore.createTab(url = offlineUrl, title = "Trang ngoáº¡i tuyáº¿n")
         activeTabId = tab.id
         val webView = pageWebViews.getOrPut(tab.id) { createPageWebView(tab.id) }
         bringPageToFront(webView)
@@ -3837,12 +3932,12 @@ $js
         setPageVisible(true)
         trimPageWebViewCache()
         notifyShellTabsChanged()
-        Toast.makeText(this, "Đã mở trang ngoại tuyến.", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "ÄÃ£ má»Ÿ trang ngoáº¡i tuyáº¿n.", Toast.LENGTH_SHORT).show()
     }
 
     private fun openOfflineHtmlString(html: String) {
         val baseUrl = "https://offline.lqlq.local/"
-        val tab = tabStore.createTab(url = baseUrl, title = "Trang ngoại tuyến")
+        val tab = tabStore.createTab(url = baseUrl, title = "Trang ngoáº¡i tuyáº¿n")
         activeTabId = tab.id
         val webView = pageWebViews.getOrPut(tab.id) { createPageWebView(tab.id) }
         bringPageToFront(webView)
@@ -3856,23 +3951,23 @@ $js
         setPageVisible(true)
         trimPageWebViewCache()
         notifyShellTabsChanged()
-        Toast.makeText(this, "Đã mở trang ngoại tuyến.", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "ÄÃ£ má»Ÿ trang ngoáº¡i tuyáº¿n.", Toast.LENGTH_SHORT).show()
     }
 
     fun saveActivePageOffline() {
         if (offlineSaveInProgress) {
-            Toast.makeText(this, "Đang lưu trang trước đó…", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Äang lÆ°u trang trÆ°á»›c Ä‘Ã³â€¦", Toast.LENGTH_SHORT).show()
             return
         }
 
         val page = currentPageWebView()
         if (page == null || !pageVisible) {
-            Toast.makeText(this, "Chưa có trang web nào đang mở.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "ChÆ°a cÃ³ trang web nÃ o Ä‘ang má»Ÿ.", Toast.LENGTH_SHORT).show()
             return
         }
 
-        // Chụp metadata trước khi saveWebArchive chạy bất đồng bộ; người dùng có
-        // thể chuyển trang/tab trong lúc file đang được tạo.
+        // Chá»¥p metadata trÆ°á»›c khi saveWebArchive cháº¡y báº¥t Ä‘á»“ng bá»™; ngÆ°á»i dÃ¹ng cÃ³
+        // thá»ƒ chuyá»ƒn trang/tab trong lÃºc file Ä‘ang Ä‘Æ°á»£c táº¡o.
         val sourceUrl = page.url.orEmpty()
         val sourceTitle = (page.title ?: tabStore.currentTab().title)
             .take(80)
@@ -3881,7 +3976,7 @@ $js
             .trim().ifBlank { "trang-web" }
 
         offlineSaveInProgress = true
-        Toast.makeText(this, "Đang lưu trang ngoại tuyến…", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Äang lÆ°u trang ngoáº¡i tuyáº¿nâ€¦", Toast.LENGTH_SHORT).show()
 
         val cacheMhtDir = File(cacheDir, "offline_mht").apply { mkdirs() }
         cleanupOfflineTempFiles(cacheMhtDir)
@@ -3890,7 +3985,7 @@ $js
         page.saveWebArchive(tempPath, false) { savedPath ->
             if (savedPath.isNullOrBlank()) {
                 offlineSaveInProgress = false
-                Toast.makeText(this, "Không lưu được nội dung trang.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "KhÃ´ng lÆ°u Ä‘Æ°á»£c ná»™i dung trang.", Toast.LENGTH_SHORT).show()
                 return@saveWebArchive
             }
 
@@ -3917,11 +4012,11 @@ $js
                 runOnUiThread {
                     offlineSaveInProgress = false
                     if (savedUri == null) {
-                        Toast.makeText(this, "Không ghi được tệp trang ngoại tuyến.", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, "KhÃ´ng ghi Ä‘Æ°á»£c tá»‡p trang ngoáº¡i tuyáº¿n.", Toast.LENGTH_SHORT).show()
                         return@runOnUiThread
                     }
 
-                    Toast.makeText(this, "Đã lưu trang vào Download.", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "ÄÃ£ lÆ°u trang vÃ o Download.", Toast.LENGTH_SHORT).show()
                     val payload = JSONObject().apply {
                         put("url", sourceUrl)
                         put("title", sourceTitle)
@@ -3937,7 +4032,7 @@ $js
         }
     }
 
-    /** Ghi stream trực tiếp ra Download, không đọc toàn bộ MHT vào RAM. */
+    /** Ghi stream trá»±c tiáº¿p ra Download, khÃ´ng Ä‘á»c toÃ n bá»™ MHT vÃ o RAM. */
     private fun saveStreamToDownloads(fileName: String, mimeType: String, input: InputStream): String? {
         val safeName = fileName.replace(Regex("[\\/:*?\"<>|]"), "_")
             .ifBlank { "lqlq-page.mht" }
@@ -3984,7 +4079,7 @@ $js
     }
 
     // ------------------------------------------------------------------
-    // WebChromeClient chung: chọn tệp + video toàn màn hình
+    // WebChromeClient chung: chá»n tá»‡p + video toÃ n mÃ n hÃ¬nh
     // ------------------------------------------------------------------
 
     private fun createChromeClient(pageTabId: String? = null) = object : WebChromeClient() {
@@ -3992,7 +4087,7 @@ $js
             val tabId = pageTabId ?: return
             val url = view.url.orEmpty()
             if (url.isNotBlank()) {
-                // Chỉ cập nhật metadata; lịch sử vẫn chỉ ghi ở onPageFinished.
+                // Chá»‰ cáº­p nháº­t metadata; lá»‹ch sá»­ váº«n chá»‰ ghi á»Ÿ onPageFinished.
                 notifyShellPage(tabId, url, title, loading = true)
             }
         }
@@ -4009,9 +4104,9 @@ $js
             filePathCallback?.onReceiveValue(null)
             filePathCallback = callback
 
-            // Tự dựng intent thay vì fileChooserParams.createIntent() vì hàm đó
-            // xử lý sai accept dạng ".txt" hoặc "audio/*,video/*" trên nhiều máy
-            // → hộp chọn tệp không mở hoặc không chọn được gì.
+            // Tá»± dá»±ng intent thay vÃ¬ fileChooserParams.createIntent() vÃ¬ hÃ m Ä‘Ã³
+            // xá»­ lÃ½ sai accept dáº¡ng ".txt" hoáº·c "audio/*,video/*" trÃªn nhiá»u mÃ¡y
+            // â†’ há»™p chá»n tá»‡p khÃ´ng má»Ÿ hoáº·c khÃ´ng chá»n Ä‘Æ°á»£c gÃ¬.
             val accepts = (fileChooserParams.acceptTypes ?: emptyArray())
                 .flatMap { it.split(",") }
                 .map { it.trim() }
@@ -4039,7 +4134,7 @@ $js
             }
 
             return try {
-                fileChooserLauncher.launch(Intent.createChooser(intent, "Chọn tệp"))
+                fileChooserLauncher.launch(Intent.createChooser(intent, "Chá»n tá»‡p"))
                 true
             } catch (_: Exception) {
                 filePathCallback = null
@@ -4070,10 +4165,10 @@ $js
             exitCustomView()
         }
 
-        // Việc 4 (v0.23.4): Chapter Clipper (content-script tiêm vào trang
-        // thật) dùng alert()/confirm() thường — WebView mặc định không hiện
-        // hộp thoại nếu không override 2 hàm này (onJsConfirm mặc định trả
-        // false ngay), nên phải tự vẽ AlertDialog native ở đây.
+        // Viá»‡c 4 (v0.23.4): Chapter Clipper (content-script tiÃªm vÃ o trang
+        // tháº­t) dÃ¹ng alert()/confirm() thÆ°á»ng â€” WebView máº·c Ä‘á»‹nh khÃ´ng hiá»‡n
+        // há»™p thoáº¡i náº¿u khÃ´ng override 2 hÃ m nÃ y (onJsConfirm máº·c Ä‘á»‹nh tráº£
+        // false ngay), nÃªn pháº£i tá»± váº½ AlertDialog native á»Ÿ Ä‘Ã¢y.
         override fun onJsAlert(
             view: WebView,
             url: String,
@@ -4103,7 +4198,7 @@ $js
                 AlertDialog.Builder(this@MainActivity)
                     .setMessage(message)
                     .setPositiveButton("OK") { _, _ -> result.confirm() }
-                    .setNegativeButton("Hủy") { _, _ -> result.cancel() }
+                    .setNegativeButton("Há»§y") { _, _ -> result.cancel() }
                     .setOnCancelListener { result.cancel() }
                     .setCancelable(true)
                     .show()
@@ -4125,9 +4220,9 @@ $js
     }
 
     // ------------------------------------------------------------------
-    // Video toàn màn hình (bất kỳ website nào): ẩn thật sự thanh trạng
-    // thái/điều hướng Android, không chỉ lấp đầy layout — trước đây video
-    // "toàn màn hình" vẫn bị 2 thanh hệ thống che vì không có phần này.
+    // Video toÃ n mÃ n hÃ¬nh (báº¥t ká»³ website nÃ o): áº©n tháº­t sá»± thanh tráº¡ng
+    // thÃ¡i/Ä‘iá»u hÆ°á»›ng Android, khÃ´ng chá»‰ láº¥p Ä‘áº§y layout â€” trÆ°á»›c Ä‘Ã¢y video
+    // "toÃ n mÃ n hÃ¬nh" váº«n bá»‹ 2 thanh há»‡ thá»‘ng che vÃ¬ khÃ´ng cÃ³ pháº§n nÃ y.
     // ------------------------------------------------------------------
 
     private fun enterImmersiveFullscreen() {
@@ -4145,17 +4240,17 @@ $js
     private fun fullscreenDp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     /**
-     * Vùng góc trên-phải: luôn tồn tại suốt phiên fullscreen (không gỡ ra),
-     * chỉ ẩn/hiện 2 nút xoay + khoá bên trong. Nhờ vậy chạm vào đúng vùng
-     * này khi nút đang ẩn sẽ tự hiện lại — không cần một lớp phủ toàn màn
-     * hình nào khác, nên không đụng tới thao tác chạm/tua của video bên
-     * dưới (chỉ đúng góc nhỏ 130x70dp mới bắt chạm).
+     * VÃ¹ng gÃ³c trÃªn-pháº£i: luÃ´n tá»“n táº¡i suá»‘t phiÃªn fullscreen (khÃ´ng gá»¡ ra),
+     * chá»‰ áº©n/hiá»‡n 2 nÃºt xoay + khoÃ¡ bÃªn trong. Nhá» váº­y cháº¡m vÃ o Ä‘Ãºng vÃ¹ng
+     * nÃ y khi nÃºt Ä‘ang áº©n sáº½ tá»± hiá»‡n láº¡i â€” khÃ´ng cáº§n má»™t lá»›p phá»§ toÃ n mÃ n
+     * hÃ¬nh nÃ o khÃ¡c, nÃªn khÃ´ng Ä‘á»¥ng tá»›i thao tÃ¡c cháº¡m/tua cá»§a video bÃªn
+     * dÆ°á»›i (chá»‰ Ä‘Ãºng gÃ³c nhá» 130x70dp má»›i báº¯t cháº¡m).
      */
     private fun addFullscreenControls() {
         fullscreenLocked = false
 
         val rotateBtn = TextView(this).apply {
-            text = "⟳"
+            text = "âŸ³"
             textSize = 22f
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
@@ -4173,7 +4268,7 @@ $js
         }
 
         val lockBtn = TextView(this).apply {
-            text = "🔒"
+            text = "ðŸ”’"
             textSize = 22f
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
@@ -4226,7 +4321,7 @@ $js
         fullscreenLockBtn = null
     }
 
-    /** Hiện nút xoay/khoá rồi tự ẩn sau vài giây, giống mọi trình phát video. */
+    /** Hiá»‡n nÃºt xoay/khoÃ¡ rá»“i tá»± áº©n sau vÃ i giÃ¢y, giá»‘ng má»i trÃ¬nh phÃ¡t video. */
     private fun showFullscreenControls() {
         fullscreenLockBtn?.visibility = View.VISIBLE
         fullscreenRotateBtn?.visibility = if (fullscreenLocked) View.GONE else View.VISIBLE
@@ -4235,7 +4330,7 @@ $js
 
     private fun scheduleFullscreenControlsAutoHide() {
         fullscreenHideRunnable?.let { fullscreenHandler.removeCallbacks(it) }
-        // Khi đã khoá màn hình, giữ nút khoá hiện luôn để còn chỗ bấm mở lại.
+        // Khi Ä‘Ã£ khoÃ¡ mÃ n hÃ¬nh, giá»¯ nÃºt khoÃ¡ hiá»‡n luÃ´n Ä‘á»ƒ cÃ²n chá»— báº¥m má»Ÿ láº¡i.
         if (fullscreenLocked) return
         val runnable = Runnable {
             fullscreenRotateBtn?.visibility = View.GONE
@@ -4246,10 +4341,10 @@ $js
     }
 
     /**
-     * Khoá màn hình (v0.28.1): chỉ 1 chạm để khoá, chạm lại đúng nút đó để
-     * mở — bỏ hẳn kiểu "giữ để mở khoá" rườm rà trước đây. Khi khoá, một lớp
-     * phủ trong suốt chặn toàn bộ thao tác lên video; nút khoá vẫn nổi trên
-     * lớp đó nên luôn bấm mở lại được.
+     * KhoÃ¡ mÃ n hÃ¬nh (v0.28.1): chá»‰ 1 cháº¡m Ä‘á»ƒ khoÃ¡, cháº¡m láº¡i Ä‘Ãºng nÃºt Ä‘Ã³ Ä‘á»ƒ
+     * má»Ÿ â€” bá» háº³n kiá»ƒu "giá»¯ Ä‘á»ƒ má»Ÿ khoÃ¡" rÆ°á»m rÃ  trÆ°á»›c Ä‘Ã¢y. Khi khoÃ¡, má»™t lá»›p
+     * phá»§ trong suá»‘t cháº·n toÃ n bá»™ thao tÃ¡c lÃªn video; nÃºt khoÃ¡ váº«n ná»•i trÃªn
+     * lá»›p Ä‘Ã³ nÃªn luÃ´n báº¥m má»Ÿ láº¡i Ä‘Æ°á»£c.
      */
     private fun setFullscreenLocked(locked: Boolean) {
         fullscreenLocked = locked
@@ -4268,8 +4363,8 @@ $js
             isClickable = true
         }
         fullscreenLockOverlay = blocker
-        // Thêm NGAY SAU customView nhưng TRƯỚC vùng nút góc — vùng nút vẫn ở
-        // trên cùng nên nút khoá luôn bấm được để mở lại.
+        // ThÃªm NGAY SAU customView nhÆ°ng TRÆ¯á»šC vÃ¹ng nÃºt gÃ³c â€” vÃ¹ng nÃºt váº«n á»Ÿ
+        // trÃªn cÃ¹ng nÃªn nÃºt khoÃ¡ luÃ´n báº¥m Ä‘Æ°á»£c Ä‘á»ƒ má»Ÿ láº¡i.
         val index = fullscreenControlsOverlay?.let { root.indexOfChild(it) } ?: -1
         if (index >= 0) {
             root.addView(
@@ -4284,7 +4379,7 @@ $js
     }
 
     // ------------------------------------------------------------------
-    // Nút back: thoát video → lùi trang → về trang chủ → nền
+    // NÃºt back: thoÃ¡t video â†’ lÃ¹i trang â†’ vá» trang chá»§ â†’ ná»n
     // ------------------------------------------------------------------
 
     private fun setupBackHandling() {
@@ -4295,7 +4390,7 @@ $js
                     customView != null -> exitCustomView()
                     ::nativeTabSwitcher.isInitialized && nativeTabSwitcher.isOpen ->
                         nativeTabSwitcher.hide()
-                    // Menu / panel của giao diện đang mở → đóng nó trước
+                    // Menu / panel cá»§a giao diá»‡n Ä‘ang má»Ÿ â†’ Ä‘Ã³ng nÃ³ trÆ°á»›c
                     overlayOpen -> shellWebView.evaluateJavascript(
                         "window.LqlqGlue && LqlqGlue.closeTopOverlay();",
                         null
@@ -4309,7 +4404,7 @@ $js
     }
 
     // ------------------------------------------------------------------
-    // Vòng đời: KHÔNG tạm dừng WebView khi ra nền để nhạc/TTS tiếp tục
+    // VÃ²ng Ä‘á»i: KHÃ”NG táº¡m dá»«ng WebView khi ra ná»n Ä‘á»ƒ nháº¡c/TTS tiáº¿p tá»¥c
     // ------------------------------------------------------------------
 
     override fun onStart() {
@@ -4326,8 +4421,8 @@ $js
         if (!youtubePipActive || !youtubePipPlaying) return
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
 
-        // Chuẩn bị bề mặt video trước rồi chủ động vào PiP. autoEnterEnabled
-        // trên Android 12+ vẫn được giữ làm lưới an toàn cho thao tác vuốt Home.
+        // Chuáº©n bá»‹ bá» máº·t video trÆ°á»›c rá»“i chá»§ Ä‘á»™ng vÃ o PiP. autoEnterEnabled
+        // trÃªn Android 12+ váº«n Ä‘Æ°á»£c giá»¯ lÃ m lÆ°á»›i an toÃ n cho thao tÃ¡c vuá»‘t Home.
         prepareYoutubePipSurface(enterAfterPrepare = true)
     }
 
@@ -4352,7 +4447,7 @@ $js
 
     override fun onPause() {
         super.onPause()
-        // Cố ý không gọi webView.onPause()/pauseTimers() để media chạy nền.
+        // Cá»‘ Ã½ khÃ´ng gá»i webView.onPause()/pauseTimers() Ä‘á»ƒ media cháº¡y ná»n.
         shellWebView.resumeTimers()
     }
 
@@ -4390,7 +4485,7 @@ $js
         BridgeHub.jsRunner = null
         ttsBridge?.shutdown()
         if (::faviconStore.isInitialized) faviconStore.shutdown()
-        // Ứng dụng bị đóng hẳn → WebView không còn, dừng service và gỡ thông báo
+        // á»¨ng dá»¥ng bá»‹ Ä‘Ã³ng háº³n â†’ WebView khÃ´ng cÃ²n, dá»«ng service vÃ  gá»¡ thÃ´ng bÃ¡o
         try {
             stopService(Intent(this, PlaybackService::class.java))
         } catch (_: Exception) {
@@ -4403,3 +4498,4 @@ $js
         super.onDestroy()
     }
 }
+

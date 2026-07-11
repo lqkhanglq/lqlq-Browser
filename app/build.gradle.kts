@@ -10,6 +10,8 @@ val dynamicLootEndpoint = providers.gradleProperty("LQLQ_DYNAMIC_LOOT_ENDPOINT")
     .replace("\\", "\\\\")
     .replace("\"", "\\\"")
 
+val bundledLqlqKeystore = rootProject.file("keystore/lqlq-release.keystore")
+
 android {
     namespace = "com.lqlq.browser"
     compileSdk = 35
@@ -29,10 +31,14 @@ android {
 
     signingConfigs {
         create("lqlq") {
-            storeFile = rootProject.file("keystore/lqlq-release.keystore")
-            storePassword = "lqlq123456"
-            keyAlias = "lqlq"
-            keyPassword = "lqlq123456"
+            if (bundledLqlqKeystore.exists()) {
+                storeFile = bundledLqlqKeystore
+                storePassword = "lqlq123456"
+                keyAlias = "lqlq"
+                keyPassword = "lqlq123456"
+            } else {
+                initWith(getByName("debug"))
+            }
         }
     }
 
@@ -77,6 +83,7 @@ dependencies {
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
     ksp("androidx.room:room-compiler:2.6.1")
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("androidx.test:core:1.6.1")

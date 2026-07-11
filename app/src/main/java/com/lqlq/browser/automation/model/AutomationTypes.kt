@@ -19,6 +19,7 @@ enum class AutomationStepStatus {
     RUNNING,
     WAITING_REMOTE,
     WAITING_USER,
+    NOT_CONFIGURED,
     DOWNLOADING,
     UPLOADING,
     RETRYING,

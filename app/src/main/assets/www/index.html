@@ -480,7 +480,7 @@
           <div class="automation-center-title">
             <span class="automation-kicker">LQLQ AUTOMATION</span>
             <h2 id="automationCenterTitle">Automation Center</h2>
-            <p>MVP mô phỏng pipeline tạo video ngắn ngay trong shell của trình duyệt.</p>
+            <p>Điều phối cục bộ trong APK. Pass này nối thật bước tạo nội dung với Gemini, còn voice, video và publish vẫn giữ trạng thái chưa cấu hình.</p>
           </div>
           <button type="button" class="automation-icon-button" id="automationCenterClose" aria-label="Đóng">×</button>
         </header>
@@ -488,9 +488,9 @@
         <div class="automation-center-body">
           <section class="automation-hero-card">
             <div>
-              <span class="automation-pill">Mock only</span>
+              <span class="automation-pill">Real content only</span>
               <b>Tự động hóa video</b>
-              <small>Tác vụ này chỉ tạo job mock, lưu pipeline và mô phỏng tiến trình. Chưa có AI thật, chưa render video thật và chưa tải lên nền tảng nào.</small>
+              <small>Chủ đề sẽ được gửi tới Gemini từ native bridge. Kết quả trả về là nội dung thật, còn các bước tiếp theo chưa bật fake fallback và cũng chưa bị báo completed.</small>
             </div>
             <div class="automation-hero-badges">
               <span>Content</span>
@@ -500,87 +500,321 @@
             </div>
           </section>
 
+          <section class="automation-runtime-card">
+            <div class="automation-section-head">
+              <span class="automation-kicker muted">CONTENT PROVIDER</span>
+              <b>Dịch vụ tạo nội dung</b>
+            </div>
+
+            <label class="automation-field" for="automationGeminiApiKey">
+              <span>Gemini API key</span>
+              <input
+                id="automationGeminiApiKey"
+                type="password"
+                inputmode="text"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="Nhập API key Gemini của bạn"
+              />
+              <small>API key chỉ đi qua native bridge và được lưu native. JavaScript sẽ không đọc lại giá trị này sau khi lưu.</small>
+            </label>
+
+            <div class="automation-service-grid">
+              <label class="automation-service-card" for="automationGeminiModel">
+                <span>Model</span>
+                <input
+                  id="automationGeminiModel"
+                  type="text"
+                  inputmode="text"
+                  autocomplete="off"
+                  spellcheck="false"
+                  placeholder="gemini-2.5-flash"
+                />
+                <small>Dùng model donor đang bám hiện tại hoặc model bạn tự cấu hình.</small>
+              </label>
+
+              <label class="automation-service-card" for="automationConnectionStatus">
+                <span>Trạng thái kết nối</span>
+                <div class="automation-status-box" id="automationConnectionStatus">Chưa cấu hình Gemini.</div>
+                <small id="automationConfigurationStatus">Cần cấu hình Gemini trước khi chạy.</small>
+              </label>
+          </div>
+
+          <div class="automation-actions automation-actions-inline">
+            <button type="button" class="automation-secondary-button" id="automationSaveGeminiBtn">Lưu cấu hình Gemini</button>
+            <button type="button" class="automation-secondary-button" id="automationTestGeminiBtn">Kiểm tra kết nối</button>
+          </div>
+
+          <section class="automation-runtime-card">
+            <div class="automation-section-head">
+              <span class="automation-kicker muted">IMAGE PROVIDER</span>
+              <b>Dich vu tao anh</b>
+            </div>
+
+            <div class="automation-service-grid">
+              <label class="automation-service-card" for="automationImageProvider">
+                <span>Loai nguon hinh anh</span>
+                <select id="automationImageProvider"></select>
+                <small id="automationImageProviderMeta">Chon provider tao anh that. OpenAI chi la mot tuy chon, khong phai provider bat buoc.</small>
+              </label>
+
+              <label class="automation-service-card" for="automationImageModelPreset">
+                <span>Model</span>
+                <select id="automationImageModelPreset"></select>
+                <input
+                  id="automationImageModelCustom"
+                  class="hidden"
+                  type="text"
+                  inputmode="text"
+                  autocomplete="off"
+                  spellcheck="false"
+                  placeholder="Nhap model tuy chinh"
+                />
+                <small id="automationImageProviderCost">Thong tin chi phi, han muc va output format se hien theo provider da chon.</small>
+              </label>
+            </div>
+
+            <label class="automation-field hidden" for="automationImageAccountId" id="automationImageAccountIdField">
+              <span>Cloudflare Account ID</span>
+              <input
+                id="automationImageAccountId"
+                type="text"
+                inputmode="text"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="Nhap Cloudflare Account ID"
+              />
+              <small>Chi hien khi provider yeu cau Account ID + API token.</small>
+            </label>
+
+            <label class="automation-field" for="automationImageApiKey">
+              <span>Credential</span>
+              <input
+                id="automationImageApiKey"
+                type="password"
+                inputmode="text"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="Nhap API key hoac token cho image provider"
+              />
+              <small id="automationImageCredentialHint">Credential chi di qua native bridge va duoc luu native theo tung provider rieng. JavaScript khong doc lai duoc khoa nay.</small>
+            </label>
+
+            <div class="automation-service-grid">
+              <label class="automation-service-card" for="automationImageConnectionStatus">
+                <span>Trang thai image provider</span>
+                <div class="automation-status-box" id="automationImageConnectionStatus">Chua cau hinh image provider.</div>
+                <small id="automationImageConfigurationStatus">Can cau hinh image provider de buoc IMAGE co the chay that.</small>
+              </label>
+
+              <label class="automation-service-card" for="automationImageCapabilityBox">
+                <span>Kha nang provider</span>
+                <div class="automation-status-box" id="automationImageCapabilityBox">Dang cho du lieu registry image provider...</div>
+                <small id="automationImageCapabilityMeta">Trang thai ket noi phai tach rieng voi kha nang tao anh that.</small>
+              </label>
+            </div>
+
+            <div class="automation-actions automation-actions-inline">
+              <button type="button" class="automation-secondary-button" id="automationSaveImageBtn">Luu cau hinh image</button>
+              <button type="button" class="automation-secondary-button" id="automationTestImageBtn">Kiem tra image provider</button>
+            </div>
+          </section>
+
+          <section class="automation-runtime-card">
+            <div class="automation-section-head">
+              <span class="automation-kicker muted">VOICE PROVIDER</span>
+              <b>Giong doc tieng Viet</b>
+            </div>
+
+            <div class="automation-service-grid">
+              <label class="automation-service-card" for="automationVoiceProvider">
+                <span>Voice provider</span>
+                <select id="automationVoiceProvider"></select>
+                <small id="automationVoiceProviderMeta">Registry voice uu tien provider that cho tieng Viet. Google TTS tren may se dong bo tu cai dat Reader/TXT.</small>
+              </label>
+
+              <label class="automation-service-card" for="automationVoiceSelect">
+                <span>Giong doc</span>
+                <select id="automationVoiceSelect"></select>
+                <small id="automationVoiceVoiceMeta">Khi connector da san sang, danh sach giong se duoc nap theo provider dang chon.</small>
+              </label>
+            </div>
+
+            <div class="automation-service-grid">
+              <label class="automation-service-card" for="automationVoiceApiKey">
+                <span id="automationVoiceCredentialLabel">Credential</span>
+                <input id="automationVoiceApiKey" type="password" inputmode="text" autocomplete="off" spellcheck="false" placeholder="Nhap credential voice provider" />
+                <small id="automationVoiceCredentialHint">Credential voice duoc tach theo provider. UI chi chon provider va config, engine native se chon connector tuong ung.</small>
+              </label>
+
+              <label class="automation-service-card" for="automationVoiceModel">
+                <span>Model / profile</span>
+                <input id="automationVoiceModel" type="text" inputmode="text" autocomplete="off" spellcheck="false" placeholder="De trong neu provider khong can model" />
+                <small id="automationVoiceModelHint">Dung cho provider co model/profile rieng nhu Vbee, ElevenLabs hoac cloud voice.</small>
+              </label>
+            </div>
+
+            <div class="automation-service-grid">
+              <label class="automation-service-card hidden" for="automationVoiceRegion" id="automationVoiceRegionField">
+                <span>Region</span>
+                <input id="automationVoiceRegion" type="text" inputmode="text" autocomplete="off" spellcheck="false" placeholder="vd: southeastasia" />
+                <small>Chi hien voi provider can region rieng.</small>
+              </label>
+
+              <label class="automation-service-card" for="automationVoiceLocale">
+                <span>Locale</span>
+                <input id="automationVoiceLocale" type="text" inputmode="text" autocomplete="off" spellcheck="false" value="vi-VN" placeholder="vi-VN" />
+                <small>Mac dinh uu tien vi-VN cho voice provider tieng Viet.</small>
+              </label>
+
+              <label class="automation-service-card" for="automationVoiceOutputFormat">
+                <span>Output</span>
+                <select id="automationVoiceOutputFormat">
+                  <option value="wav" selected>WAV</option>
+                </select>
+                <small>Output se doi theo kha nang thuc te cua provider dang chon.</small>
+              </label>
+            </div>
+
+            <div class="automation-service-grid">
+              <label class="automation-service-card" for="automationVoiceRate">
+                <div class="reader-field-head">
+                  <span>Tốc độ đọc</span>
+                  <span class="reader-field-value" id="automationVoiceRateValue">100</span>
+                </div>
+                <input id="automationVoiceRate" type="range" min="50" max="200" step="1" value="100" />
+                <small>Giống cách chỉnh ở Reader/TXT. 100 là tốc độ mặc định.</small>
+              </label>
+
+              <label class="automation-service-card" for="automationVoicePitch">
+                <div class="reader-field-head">
+                  <span>Tông đọc</span>
+                  <span class="reader-field-value" id="automationVoicePitchValue">100</span>
+                </div>
+                <input id="automationVoicePitch" type="range" min="50" max="200" step="1" value="100" />
+                <small>Giống cách chỉnh ở Reader/TXT. 100 là tông mặc định.</small>
+              </label>
+            </div>
+
+            <div class="automation-service-grid">
+              <label class="automation-service-card" for="automationVoiceConnectionStatus">
+                <span>Trang thai voice provider</span>
+                <div class="automation-status-box" id="automationVoiceConnectionStatus">Chua cau hinh voice provider.</div>
+                <small id="automationVoiceConfigurationStatus">Can cau hinh va nap giong tieng Viet truoc khi tao voice artifact that.</small>
+              </label>
+
+              <label class="automation-service-card" for="automationVoiceCapabilityBox">
+                <span>Kha nang voice</span>
+                <div class="automation-status-box" id="automationVoiceCapabilityBox">Dang cho du lieu registry voice provider...</div>
+                <small id="automationVoiceCapabilityMeta">Retry VOICE se giu nguyen CONTENT, scene prompts va IMAGE.</small>
+              </label>
+            </div>
+
+            <div class="automation-actions automation-actions-inline">
+              <button type="button" class="automation-secondary-button" id="automationSaveVoiceBtn">Luu cau hinh voice</button>
+              <button type="button" class="automation-secondary-button" id="automationTestVoiceBtn">Nap va kiem tra giong</button>
+            </div>
+
+            <div class="automation-actions automation-actions-inline">
+              <button type="button" class="automation-secondary-button" id="automationSampleVoiceBtn">Nghe thu giong doc</button>
+              <button type="button" class="automation-secondary-button" id="automationOpenVoiceSettingsBtn">Mo cai dat Google TTS</button>
+            </div>
+          </section>
+
           <label class="automation-field" for="automationTopicInput">
             <span>Chủ đề nội dung</span>
             <textarea
               id="automationTopicInput"
               rows="4"
               maxlength="50000"
-              placeholder="Ví dụ: 3 mẹo nhỏ giúp quay video review sản phẩm bằng điện thoại"
+              placeholder="Ví dụ: Viết một kịch bản video ngắn về 3 cách quay review sản phẩm bằng điện thoại, văn phong gần gũi, có mở đầu cuốn hút và chốt lời kêu gọi hành động."
             ></textarea>
             <small id="automationTopicMeta">0/50000 ký tự. Mô tả càng chi tiết càng tốt. Nội dung sẽ được xem là text thuần.</small>
           </label>
 
-          <div class="automation-service-grid">
-            <label class="automation-service-card" for="automationContentService">
-              <span>Nội dung</span>
-              <select id="automationContentService">
-                <option value="mock-content">Mock Content</option>
-                <option disabled>OpenAI Content • Sắp hỗ trợ</option>
-                <option disabled>Claude Content • Sắp hỗ trợ</option>
-              </select>
-            </label>
-
-            <label class="automation-service-card" for="automationVoiceService">
-              <span>Giọng đọc</span>
-              <select id="automationVoiceService">
-                <option value="mock-voice">Mock Voice</option>
-                <option disabled>ElevenLabs • Sắp hỗ trợ</option>
-                <option disabled>Native TTS • Sắp hỗ trợ</option>
-              </select>
-            </label>
-
-            <label class="automation-service-card" for="automationVideoService">
-              <span>Video</span>
-              <select id="automationVideoService">
-                <option value="mock-video">Mock Video</option>
-                <option disabled>CapCut Pipeline • Sắp hỗ trợ</option>
-                <option disabled>FFmpeg Template • Sắp hỗ trợ</option>
-              </select>
-            </label>
-
-            <label class="automation-service-card" for="automationPublishService">
-              <span>Đăng bài</span>
-              <select id="automationPublishService">
-                <option value="mock-publish-draft">Mock Publish Draft</option>
-                <option disabled>YouTube • Sắp hỗ trợ</option>
-                <option disabled>TikTok • Sắp hỗ trợ</option>
-              </select>
-            </label>
+          <div class="automation-notice" id="automationNotice">
+            Cần cấu hình Gemini trước khi chạy. Pass này chỉ port donor thật cho bước tạo nội dung, nên Voice, Video và Publish sẽ hiện là NOT_CONFIGURED.
           </div>
 
-          <section class="automation-publish-card" aria-labelledby="automationPublishModeTitle">
+          <section class="automation-service-section">
             <div class="automation-section-head">
-              <span class="automation-kicker muted">PUBLISH MODE</span>
-              <b id="automationPublishModeTitle">Chế độ duyệt</b>
+              <span class="automation-kicker">VIDEO</span>
+              <b>Renderer MP4 trên Android</b>
             </div>
 
-            <div class="automation-choice-row">
-              <label class="automation-choice active">
-                <input type="radio" name="automationPublishMode" value="review-before-post" checked />
-                <span>
-                  <b>Duyệt trước khi đăng</b>
-                  <small>Bản nháp được chuẩn bị để bạn kiểm tra lại.</small>
-                </span>
+            <div class="automation-grid automation-grid-two">
+              <label class="automation-field" for="automationVideoRendererMode">
+                <span>Renderer mode</span>
+                <select id="automationVideoRendererMode">
+                  <option value="android_native_render">Android Native Render</option>
+                  <option value="local_plan_only">Local Plan Only</option>
+                  <option value="external_moviepy_worker">MoviePy Worker ngoài app</option>
+                </select>
+                <small>Android Native Render la huong chinh: app tu ghep IMAGE + VOICE thanh MP4 ngay tren thiet bi. Local Plan Only chi tao render plan JSON. Worker cu duoc giu lai o muc deprecated/advanced.</small>
               </label>
 
-              <label class="automation-choice disabled">
-                <input type="radio" name="automationPublishMode" value="post-immediately" disabled />
-                <span>
-                  <b>Đăng ngay</b>
-                  <small>Sắp hỗ trợ</small>
-                </span>
+              <label class="automation-field" for="automationVideoWorkerUrl">
+                <span>Worker URL (deprecated)</span>
+                <input
+                  id="automationVideoWorkerUrl"
+                  type="url"
+                  inputmode="url"
+                  placeholder="http://192.168.1.10:8787"
+                />
+                <small>Chi dung neu ban muon thu lai nhanh worker cu. Huong mac dinh hien nay khong can server/IP LAN.</small>
               </label>
             </div>
+
+            <div class="automation-actions automation-actions-inline">
+              <button type="button" class="automation-secondary-button" id="automationTestVideoWorkerBtn">Test Worker</button>
+            </div>
+
+            <label class="automation-service-card" for="automationVideoWorkerStatus">
+              <span>Trạng thái worker</span>
+              <div class="automation-status-box" id="automationVideoWorkerStatus">Chưa kiểm tra worker video.</div>
+              <small id="automationVideoWorkerHint">Worker sẽ nhận render plan JSON, voice và image artifacts để xuất MP4 thật.</small>
+            </label>
           </section>
 
-          <div class="automation-notice" id="automationNotice">
-            MVP này chỉ mô phỏng trình tự 4 bước và lưu job vào database cục bộ. Không có AI thật, không tạo file video thật, không upload thật.
+          <div class="automation-actions">
+            <button type="button" class="automation-primary-button" id="automationStartBtn">Tạo thử nội dung</button>
+            <button type="button" class="automation-secondary-button" id="automationResetBtn">Làm mới trạng thái</button>
           </div>
 
-          <div class="automation-actions">
-            <button type="button" class="automation-primary-button" id="automationStartBtn">Bắt đầu tự động</button>
-            <button type="button" class="automation-secondary-button" id="automationResetBtn">Tạo quy trình mới</button>
+          <div class="automation-actions hidden" id="automationRetryImageAction">
+            <button type="button" class="automation-secondary-button" id="automationRetryImageBtn">Thử lại bước tạo ảnh</button>
+          </div>
+
+          <div class="automation-actions hidden" id="automationRetryVoiceAction">
+            <button type="button" class="automation-secondary-button" id="automationRetryVoiceBtn">Thử lại bước tạo giọng đọc</button>
+          </div>
+
+          <div class="automation-actions hidden" id="automationRetryVideoAction">
+            <button type="button" class="automation-secondary-button" id="automationRetryVideoBtn">Thử lại bước render video</button>
+          </div>
+
+          <div class="automation-actions hidden" id="automationExportVideoAction">
+            <button type="button" class="automation-secondary-button" id="automationExportVideoBtn">Export MP4</button>
+          </div>
+
+          <div class="automation-actions hidden" id="automationRetryMetadataAction">
+            <button type="button" class="automation-secondary-button" id="automationRetryMetadataBtn">Tạo lại metadata</button>
+          </div>
+
+          <div class="automation-actions hidden" id="automationApproveReviewAction">
+            <button type="button" class="automation-primary-button" id="automationApproveReviewBtn">Phê duyệt</button>
+          </div>
+
+          <div class="automation-actions hidden" id="automationRejectReviewAction">
+            <button type="button" class="automation-secondary-button" id="automationRejectReviewBtn">Từ chối</button>
+          </div>
+
+          <div class="automation-actions hidden" id="automationSharePublishAction">
+            <button type="button" class="automation-primary-button" id="automationSharePublishBtn">Chia sẻ / Đăng</button>
+          </div>
+
+          <div class="automation-actions hidden" id="automationMarkPublishedAction">
+            <button type="button" class="automation-secondary-button" id="automationMarkPublishedBtn">Đánh dấu đã đăng</button>
           </div>
 
           <div class="automation-error hidden" id="automationErrorBox"></div>
@@ -588,26 +822,18 @@
           <section class="automation-runtime-card">
             <div class="automation-section-head">
               <span class="automation-kicker muted">PIPELINE</span>
-              <b>Tiến trình mô phỏng</b>
+              <b>Tiến trình local-native</b>
             </div>
-            <p class="automation-runtime-copy" id="automationRuntimeCopy">Sẵn sàng tạo job mock mới. Mỗi bước sẽ mô phỏng khoảng 1 giây.</p>
+            <p class="automation-runtime-copy" id="automationRuntimeCopy">Pipeline local-native sẽ đi tiếp đến VIDEO_RENDER_PLAN khi đã đủ IMAGE và VOICE. Nếu bật MoviePy Worker ngoài app, app có thể gửi render plan + artifacts sang worker để xuất MP4 thật.</p>
             <div class="automation-step-list" id="automationStepList"></div>
           </section>
 
           <section class="automation-result-card hidden" id="automationResultCard">
             <div class="automation-section-head">
               <span class="automation-kicker muted">RESULT</span>
-              <b>Kết quả job</b>
+              <b>Nội dung đã tạo</b>
             </div>
             <div class="automation-result-summary" id="automationResultSummary"></div>
-          </section>
-
-          <section class="automation-runtime-card">
-            <div class="automation-section-head">
-              <span class="automation-kicker muted">RECENT JOBS</span>
-              <b>Job gần đây</b>
-            </div>
-            <div class="automation-recent-list" id="automationRecentJobs"></div>
           </section>
         </div>
       </section>
@@ -2132,7 +2358,7 @@
   <script src="v21-mobile-batch-tools.js"></script>
   <script src="v22-mobile-toolbar.js"></script>
   <script src="v32-adventure-profile.js"></script>
-  <script src="v33-automation-center.js"></script>
+  <script src="v35-video-automation-workspace.js"></script>
   <script src="android-glue.js"></script>
 </body>
 </html>
