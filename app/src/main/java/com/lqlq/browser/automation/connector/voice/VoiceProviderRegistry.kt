@@ -59,6 +59,7 @@ interface VoiceProviderRegistry {
 
 object AutomationVoiceProviders {
     const val ANDROID_SYSTEM_TTS: String = "android-system-tts"
+    const val EDGE_NEURAL_TTS: String = "edge-neural-tts"
     const val AZURE_SPEECH: String = "azure-speech"
     const val GOOGLE_CLOUD_TTS: String = "google-cloud-tts"
     const val ELEVENLABS: String = "elevenlabs"
@@ -93,6 +94,11 @@ class DefaultVoiceProviderRegistry(
             supportsChunking = true,
             requiresCredentials = false
         ),
+        // Edge Neural TTS: da GO khoi danh sach vi endpoint mien phi cua Microsoft
+        // chan client khong phai trinh duyet (HTTP 403 co dinh, kha nang vlong van
+        // tay TLS/anti-bot). Connector (EdgeNeuralTtsConnector) + OkHttp van con
+        // trong code o dang "ngu" - muon bat lai chi can them lai definition nay +
+        // dang ky trong LqlqApp.
         definition(
             AutomationVoiceProviders.FPT_AI_TTS,
             "FPT.AI Text to Speech",
@@ -123,7 +129,7 @@ class DefaultVoiceProviderRegistry(
             supportsChunking = true,
             requiresCredentials = true
         ),
-        definition(AutomationVoiceProviders.VIETTEL_AI_TTS, "Viettel AI", VoiceProviderAuthType.API_KEY, VoiceProviderCostType.PAID_PER_REQUEST, listOf("vi-VN"), listOf(), "vi-VN", listOf("mp3", "wav"), false, true, true, true, true, VoiceProviderHealth.NOT_IMPLEMENTED),
+        definition(AutomationVoiceProviders.VIETTEL_AI_TTS, "Viettel AI Text to Speech", VoiceProviderAuthType.API_KEY, VoiceProviderCostType.FREE_LIMITED, listOf("vi-VN"), listOf(), "vi-VN", listOf("wav", "mp3"), false, true, true, true, true),
         definition(AutomationVoiceProviders.ZALO_AI_TTS, "Zalo AI", VoiceProviderAuthType.API_KEY, VoiceProviderCostType.PAID_PER_REQUEST, listOf("vi-VN"), listOf(), "vi-VN", listOf("mp3", "wav"), false, true, true, true, true, VoiceProviderHealth.NOT_IMPLEMENTED),
         definition(
             providerId = AutomationVoiceProviders.ELEVENLABS,

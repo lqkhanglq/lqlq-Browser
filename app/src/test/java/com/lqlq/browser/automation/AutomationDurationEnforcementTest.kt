@@ -95,37 +95,39 @@ class AutomationDurationEnforcementTest {
         database.close()
     }
 
+    /**
+     * Gemini (khong phai lqlq) tu quyet dinh so canh - lqlq khong con doan/ep buoc
+     * so muc theo tu khoa chu de nua (vd "top 10"/"10 cau noi" KHONG con ep phai
+     * dung 10 canh). Dieu duy nhat lqlq con kiem tra la TONG THOI LUONG loi doc co
+     * dat toi thieu theo giay nguoi dung yeu cau hay khong (khong phu thuoc vao
+     * doan chu de la loai gi) - test nay xac nhan retry van hoat dong dung khi
+     * Gemini tra ve qua ngan so voi thoi luong dich, bat ke so canh la bao nhieu.
+     */
     @Test
-    fun listicleTopicForcesEnoughScenesVoiceInputAndVideoPlanDuration() = runBlocking {
+    fun insufficientDurationTriggersRepairRegardlessOfSceneCount() = runBlocking {
         val snapshot = facade.generateAutomationContent(
             AutomationContentRunRequest(
                 topic = "10 cau noi giup ban giao tiep tot hon",
                 language = "vi",
                 contentType = "video_script",
                 promptTemplate = "",
-                maximumOutputLength = 4000
+                maximumOutputLength = 4000,
+                desiredDurationSeconds = 60
             )
         )
 
         assertTrue(contentConnector.callCount >= 2)
         assertTrue(snapshot.generatedText.orEmpty().length > 200)
-        assertTrue(snapshot.scenePrompts.size >= 10)
-        assertTrue(snapshot.videoRenderPlan?.sceneCount ?: 0 >= 10)
         assertEquals(12_000L, snapshot.usageMetadata["maximumOutputLength"])
-        assertTrue((snapshot.usageMetadata["expectedSceneCount"] ?: 0L) >= 10L)
-        assertTrue((snapshot.usageMetadata["parsedSceneCount"] ?: 0L) >= 10L)
 
         val voiceArtifact = snapshot.artifacts.first { it.artifactType == "VOICE" }
-        val inputSceneCount = extractDebugLong(voiceArtifact.sourceUrl, "inputSceneCount")
         val inputCharCount = extractDebugLong(voiceArtifact.sourceUrl, "inputCharCount")
         val voiceDurationMs = extractDebugLong(voiceArtifact.sourceUrl, "durationMs")
-        assertTrue((inputSceneCount ?: 0) >= 10)
         assertTrue((inputCharCount ?: 0) > 200)
-        assertTrue((voiceDurationMs ?: 0) >= 30_000L)
+        assertTrue((voiceDurationMs ?: 0) >= 60_000L)
 
         val plannedDurationMs = snapshot.videoRenderPlan?.totalDurationMs ?: 0L
         assertTrue(kotlin.math.abs(plannedDurationMs - (voiceDurationMs ?: 0L)) <= ((voiceDurationMs ?: 0L) * 0.15).toLong())
-        assertTrue(voiceConnector.lastInputText.contains("Cau noi so 10"))
     }
 
     private fun extractDebugLong(source: String?, key: String): Long? {
@@ -197,6 +199,8 @@ class AutomationDurationEnforcementTest {
             artifact: AutomationSavedArtifact,
             jobId: String
         ): AutomationExportedArtifact? = null
+
+        override suspend fun deleteArtifactByUri(uri: String): Boolean = true
     }
 
     private class RepairAwareContentConnector : ContentGenerationConnector {

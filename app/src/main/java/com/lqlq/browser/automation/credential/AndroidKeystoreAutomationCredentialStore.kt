@@ -112,7 +112,10 @@ class AndroidKeystoreAutomationCredentialStore(
         val normalizedModel = model.trim()
         val normalizedAccountId = accountId?.trim().orEmpty().ifBlank { null }
 
-        require(normalizedApiKey.isNotEmpty()) { "Image provider API key is required." }
+        // API key co the rong voi provider khong can credential (vd Openverse/
+        // Wikimedia/Auto-nhieu-nguon) - viec bat buoc phai co key da duoc kiem tra
+        // rieng cho tung loai authType o tang facade (AutomationFacade), store nay
+        // chi can dam bao co model.
         require(normalizedModel.isNotEmpty()) { "Image provider model is required." }
 
         val payload = JSONObject()
@@ -147,7 +150,10 @@ class AndroidKeystoreAutomationCredentialStore(
             val apiKey = payload.optString("apiKey").trim()
             val model = payload.optString("model").trim()
             val accountId = payload.optString("accountId").trim().ifBlank { null }
-            if (apiKey.isEmpty() || model.isEmpty()) {
+            // apiKey rong la HOP LE cho provider khong can credential (Openverse/
+            // Wikimedia/Auto-nhieu-nguon...) - viec bat buoc co key da chuyen ve
+            // tang facade theo authType, o day chi con model la bat buoc.
+            if (model.isEmpty()) {
                 markImageProviderState(
                     normalizedProviderId,
                     AutomationCredentialStore.STATE_INVALID,

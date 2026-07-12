@@ -34,7 +34,8 @@ object StructuredScriptParser {
             StructuredScript(
                 policy = policy,
                 segments = segments,
-                rawResponse = rawText
+                rawResponse = rawText,
+                mainSubject = root.optString("mainSubject").trim()
             )
         }.getOrNull()
     }
@@ -75,7 +76,11 @@ object StructuredScriptParser {
             index to match.groupValues[2].trim()
         }
 
-        if (policy.isListicle && itemLines.isNotEmpty()) {
+        // Nhan dien danh sach danh so BAT KE co phai listicle hay khong - Gemini co
+        // the tra ve dang "1. ... 2. ..." cho bat ky loai noi dung nao, khong chi
+        // "top N"/"N cau noi" (truoc day chi bat khi policy.isListicle, bo sot cac
+        // truong hop khac).
+        if (itemLines.size >= 2) {
             val segments = mutableListOf<StructuredScriptSegment>()
             if (policy.includeIntro) {
                 segments += StructuredScriptSegment(

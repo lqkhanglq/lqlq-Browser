@@ -1,19 +1,18 @@
 package com.lqlq.browser.automation.video
 
-import com.lqlq.browser.automation.image.ScenePrompt
-import com.lqlq.browser.automation.visual.VisualAssetPlan
+import kotlin.math.roundToInt
 
 class LocalPlanVideoRenderer : VideoRenderer {
 
     override suspend fun createRenderPlan(request: VideoRenderRequest): VideoRenderResult {
         val imageByScene = request.imageArtifacts.associateBy { it.sceneId }
         val assetPlanByScene = request.assetPlans.associateBy { it.sceneId }
-        val scriptSentences = splitSentences(request.generatedText)
         val voiceDurationMs = extractDebugLong(request.voiceArtifact.sourceUrl, "durationMs")
 
-        val rawScenes = request.scenePrompts
-            .sortedBy { it.ordinal }
-            .mapIndexed { index, scenePrompt ->
+        val orderedScenes = request.scenePrompts.sortedBy { it.ordinal }
+        val firstSceneId = orderedScenes.firstOrNull()?.sceneId
+        val rawScenes = orderedScenes
+            .map { scenePrompt ->
                 val imageArtifact = requireNotNull(imageByScene[scenePrompt.sceneId]) {
                     "Missing image artifact for ${scenePrompt.sceneId}."
                 }
@@ -31,23 +30,34 @@ class LocalPlanVideoRenderer : VideoRenderer {
                     templateId = assetPlan.templateId,
                     strategy = assetPlan.strategy,
                     durationMs = scenePrompt.plannedDurationMs.takeIf { it > 0L } ?: assetPlan.durationMs,
-                    subtitleText = resolveSubtitleText(
-                        index = index,
-                        scenePrompt = scenePrompt,
-                        assetPlan = assetPlan,
-                        scriptSentences = scriptSentences
-                    )
+                    // Dung DUNG voiceText that cua chinh canh nay (Gemini da tach san
+                    // theo tung canh) lam nguon phu de - truoc day doan bang cach tach
+                    // cau tu TOAN BO script roi lay theo vi tri index, hay bi lech vi
+                    // so cau khong khop so canh.
+                    subtitleText = scenePrompt.voiceText.trim().ifBlank { scenePrompt.summary.ifBlank { assetPlan.rationale } },
+                    // Canh DAU: hien TIEU DE CHU DE video (vd "Top 10 nhan vat anime").
+                    // Cac canh sau: dung onScreenText (nhan Gemini, vd "Goku") neu la
+                    // nhan ngan (<= 42 ky tu), dai qua thi de trong.
+                    titleText = if (scenePrompt.sceneId == firstSceneId && request.videoTitle.isNotBlank()) {
+                        request.videoTitle.trim()
+                    } else {
+                        scenePrompt.onScreenText.trim().takeIf { it.isNotEmpty() && it.length <= 42 }.orEmpty()
+                    }
                 )
             }
         val scenes = rebalanceDurations(rawScenes, voiceDurationMs)
         val plannedDurationMs = scenes.sumOf { it.durationMs }
+        val (renderWidth, renderHeight) = resolveDimensions(
+            request.scenePrompts.firstOrNull()?.aspectRatio,
+            request.videoQualityTier
+        )
 
         val plan = VideoRenderPlan(
             rendererId = RENDERER_ID,
             planVersion = 1,
             renderTarget = "REMOTE_FFMPEG_OR_PC_RENDERER",
-            width = 1080,
-            height = 1920,
+            width = renderWidth,
+            height = renderHeight,
             fps = 30,
             voiceArtifactUri = request.voiceArtifact.uri,
             voiceMimeType = request.voiceArtifact.mimeType,
@@ -68,22 +78,33 @@ class LocalPlanVideoRenderer : VideoRenderer {
         )
     }
 
-    private fun resolveSubtitleText(
-        index: Int,
-        scenePrompt: ScenePrompt,
-        assetPlan: VisualAssetPlan,
-        scriptSentences: List<String>
-    ): String {
-        return scriptSentences.getOrNull(index)
-            ?.takeIf { it.isNotBlank() }
-            ?: scenePrompt.summary.ifBlank { assetPlan.rationale }
+    /**
+     * Quy đổi tỉ lệ khung hình ("9:16", "16:9", "1:1", "3:4", "4:3", "21:9") do người
+     * dùng chọn ở bước tạo nội dung thành kích thước pixel thật cho video xuất ra —
+     * trước đây bị hardcode cứng 1080x1920 (luôn 9:16) bất kể lựa chọn nào.
+     * Cạnh ngắn cố định theo qualityTier (720/1080px), cạnh dài tính theo tỉ lệ và
+     * làm tròn số chẵn (bắt buộc với encoder H.264/MediaCodec).
+     */
+    private fun resolveDimensions(aspectRatio: String?, qualityTier: String): Pair<Int, Int> {
+        val shortSide = if (qualityTier.trim().equals("720p", ignoreCase = true)) 720 else 1080
+        val parts = aspectRatio.orEmpty().trim().split(":")
+        val ratioW = parts.getOrNull(0)?.toDoubleOrNull()
+        val ratioH = parts.getOrNull(1)?.toDoubleOrNull()
+        if (ratioW == null || ratioH == null || ratioW <= 0.0 || ratioH <= 0.0) {
+            return shortSide to (shortSide * 16 / 9).let { if (it % 2 == 0) it else it + 1 }
+        }
+        return if (ratioW <= ratioH) {
+            val longSide = (shortSide * (ratioH / ratioW)).roundToEven()
+            shortSide to longSide
+        } else {
+            val longSide = (shortSide * (ratioW / ratioH)).roundToEven()
+            longSide to shortSide
+        }
     }
 
-    private fun splitSentences(text: String): List<String> {
-        return text
-            .split(Regex("(?<=[.!?…])\\s+|\\n+"))
-            .map { it.trim() }
-            .filter { it.isNotBlank() }
+    private fun Double.roundToEven(): Int {
+        val rounded = this.roundToInt()
+        return if (rounded % 2 == 0) rounded else rounded + 1
     }
 
     private fun rebalanceDurations(

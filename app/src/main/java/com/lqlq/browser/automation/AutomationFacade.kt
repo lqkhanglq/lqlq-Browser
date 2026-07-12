@@ -1,5 +1,6 @@
 package com.lqlq.browser.automation
 
+import kotlinx.coroutines.delay
 import com.lqlq.browser.BuildConfig
 import com.lqlq.browser.automation.artifact.AutomationArtifactStore
 import com.lqlq.browser.automation.artifact.AutomationExportedArtifact
@@ -14,9 +15,11 @@ import com.lqlq.browser.automation.connector.content.ContentProviderException
 import com.lqlq.browser.automation.connector.content.GeminiContentConnector
 import com.lqlq.browser.automation.connector.image.AutomationImageProviders
 import com.lqlq.browser.automation.connector.image.CloudflareWorkersAiImageConnector
+import com.lqlq.browser.automation.connector.image.ImageProviderAuthType
 import com.lqlq.browser.automation.connector.image.DefaultImageProviderRegistry
 import com.lqlq.browser.automation.connector.image.ImageGenerationConnector
 import com.lqlq.browser.automation.connector.image.ImageGenerationRequest
+import com.lqlq.browser.automation.connector.image.ImageGenerationResult
 import com.lqlq.browser.automation.connector.image.ImageProviderConfig
 import com.lqlq.browser.automation.connector.image.ImageProviderDefinition
 import com.lqlq.browser.automation.connector.image.ImageProviderErrorCode
@@ -73,6 +76,7 @@ import com.lqlq.browser.automation.review.ReviewState
 import com.lqlq.browser.automation.script.ContentDurationPolicy
 import com.lqlq.browser.automation.script.ScriptSegmentKind
 import com.lqlq.browser.automation.script.StructuredScript
+import com.lqlq.browser.automation.script.StructuredScriptParser
 import com.lqlq.browser.automation.visual.HeuristicVisualAssetPlanner
 import com.lqlq.browser.automation.visual.VisualAssetPlan
 import com.lqlq.browser.automation.visual.VisualAssetPlanJson
@@ -89,6 +93,7 @@ import com.lqlq.browser.automation.video.VideoRenderPlanJson
 import com.lqlq.browser.automation.video.VideoRenderRequest
 import com.lqlq.browser.automation.video.VideoRenderer
 import com.lqlq.browser.automation.video.VideoRenderWorkerClient
+import com.lqlq.browser.automation.voice.WavAudioAssembler
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
@@ -110,11 +115,187 @@ class AutomationFacade private constructor(
     private val nativeVideoRenderer: NativeVideoRenderer,
     private val videoRenderWorkerClient: VideoRenderWorkerClient,
     private val metadataGenerator: MetadataGenerator,
-    private val progressListener: AutomationPipelineProgressListener
+    private val progressListener: AutomationPipelineProgressListener,
+    private val runtimeJobStore: RuntimeJobStore? = null
 ) {
 
     private val runtimeJobs = ConcurrentHashMap<String, RuntimeAutomationJob>()
     private val runtimeProgressClientIds = ConcurrentHashMap<String, String>()
+    @Volatile private var restoredFromDisk = false
+
+    /**
+     * Ghi runtimeJob vao RAM + LUU xuong dia (JSON) de app kill/mo lai khong mat.
+     * Moi cho truoc day lam `runtimeJobs[jobId] = x` deu chuyen sang goi ham nay.
+     */
+    private fun putRuntimeJob(jobId: String, job: RuntimeAutomationJob) {
+        runtimeJobs[jobId] = job
+        runCatching { runtimeJobStore?.save(jobId, serializeRuntimeJob(job).toString()) }
+    }
+
+    private fun persistRuntimeJob(jobId: String) {
+        val job = runtimeJobs[jobId] ?: return
+        runCatching { runtimeJobStore?.save(jobId, serializeRuntimeJob(job).toString()) }
+    }
+
+    /** Nap lai tat ca runtimeJob da luu (goi 1 lan khi khoi tao app). */
+    fun restorePersistedRuntimeJobs() {
+        if (restoredFromDisk) return
+        restoredFromDisk = true
+        val store = runtimeJobStore ?: return
+        runCatching {
+            store.loadAll().forEach { (jobId, json) ->
+                runCatching {
+                    deserializeRuntimeJob(JSONObject(json))?.let { runtimeJobs.putIfAbsent(jobId, it) }
+                }
+            }
+        }
+    }
+
+    // --- Serialize/deserialize RuntimeAutomationJob (bo qua metadataPlan/reviewState/
+    //     publishPlan/videoRenderPlan - se tu sinh lai khi retry; bo previewDataUrl de
+    //     file nho, anh van doc tu file that de render). ---
+
+    private fun serializeRuntimeJob(job: RuntimeAutomationJob): JSONObject {
+        return JSONObject().apply {
+            put("status", job.status)
+            put("generatedText", job.generatedText)
+            put("contentProviderId", job.contentProviderId)
+            put("contentModel", job.contentModel)
+            put("requestId", job.requestId)
+            put("usageMetadata", JSONObject().apply { job.usageMetadata.forEach { (k, v) -> put(k, v) } })
+            put("scenePrompts", JSONArray().apply { job.scenePrompts.forEach { put(scenePromptToJson(it)) } })
+            put("assetPlans", JSONArray().apply { job.assetPlans.forEach { put(assetPlanToJson(it)) } })
+            put("artifacts", JSONArray().apply { job.artifacts.forEach { put(artifactToJson(it)) } })
+            put("runtimeMessage", job.runtimeMessage)
+            put("stepOverrides", JSONObject().apply {
+                job.stepOverrides.forEach { (k, v) -> put(k, JSONObject().put("status", v.status).put("waitingReason", v.waitingReason)) }
+            })
+            put("imageProviderId", job.imageProviderId)
+            put("imageModel", job.imageModel)
+            put("imageAttemptHistory", JSONArray(job.imageAttemptHistory))
+            put("voiceProviderId", job.voiceProviderId)
+            put("voiceId", job.voiceId)
+            put("voiceLocale", job.voiceLocale)
+            put("voiceAttemptHistory", JSONArray(job.voiceAttemptHistory))
+            put("videoRendererId", job.videoRendererId)
+            put("videoAttemptHistory", JSONArray(job.videoAttemptHistory))
+            put("videoRendererMode", job.videoRendererMode)
+            put("videoWorkerUrl", job.videoWorkerUrl)
+            put("videoQualityTier", job.videoQualityTier)
+            put("videoBackgroundMode", job.videoBackgroundMode)
+            put("videoMotionMode", job.videoMotionMode)
+            put("backgroundMusicFilePath", job.backgroundMusicFilePath)
+            put("backgroundMusicLoop", job.backgroundMusicLoop)
+            put("backgroundMusicVolume", job.backgroundMusicVolume.toDouble())
+            put("videoSubtitleColor", job.videoSubtitleColor)
+            put("lastVoiceSignature", job.lastVoiceSignature)
+            put("lastVideoSignature", job.lastVideoSignature)
+        }
+    }
+
+    private fun deserializeRuntimeJob(o: JSONObject): RuntimeAutomationJob? {
+        return runCatching {
+            val usage = linkedMapOf<String, Long>()
+            o.optJSONObject("usageMetadata")?.let { u ->
+                u.keys().forEach { key -> usage[key] = u.optLong(key) }
+            }
+            val stepOverrides = linkedMapOf<String, StepOverride>()
+            o.optJSONObject("stepOverrides")?.let { s ->
+                s.keys().forEach { key ->
+                    val so = s.optJSONObject(key) ?: return@forEach
+                    stepOverrides[key] = StepOverride(so.optString("status"), so.optString("waitingReason"))
+                }
+            }
+            RuntimeAutomationJob(
+                status = o.optString("status"),
+                generatedText = o.optString("generatedText"),
+                contentProviderId = o.optString("contentProviderId"),
+                contentModel = o.optString("contentModel"),
+                requestId = o.optStringOrNull("requestId"),
+                usageMetadata = usage,
+                scenePrompts = o.optJSONArray("scenePrompts")?.let { arr -> (0 until arr.length()).mapNotNull { arr.optJSONObject(it)?.let(::scenePromptFromJson) } } ?: emptyList(),
+                assetPlans = o.optJSONArray("assetPlans")?.let { arr -> (0 until arr.length()).mapNotNull { arr.optJSONObject(it)?.let(::assetPlanFromJson) } } ?: emptyList(),
+                videoRenderPlan = null,
+                metadataPlan = null,
+                reviewState = null,
+                publishPlan = null,
+                artifacts = o.optJSONArray("artifacts")?.let { arr -> (0 until arr.length()).mapNotNull { arr.optJSONObject(it)?.let(::artifactFromJson) } } ?: emptyList(),
+                runtimeMessage = o.optString("runtimeMessage"),
+                stepOverrides = stepOverrides,
+                imageProviderId = o.optStringOrNull("imageProviderId"),
+                imageModel = o.optStringOrNull("imageModel"),
+                imageAttemptHistory = o.optJSONArray("imageAttemptHistory").toStringList(),
+                voiceProviderId = o.optStringOrNull("voiceProviderId"),
+                voiceId = o.optStringOrNull("voiceId"),
+                voiceLocale = o.optStringOrNull("voiceLocale"),
+                voiceAttemptHistory = o.optJSONArray("voiceAttemptHistory").toStringList(),
+                videoRendererId = o.optStringOrNull("videoRendererId"),
+                videoAttemptHistory = o.optJSONArray("videoAttemptHistory").toStringList(),
+                videoRendererMode = o.optString("videoRendererMode").ifBlank { "android_native_render" },
+                videoWorkerUrl = o.optStringOrNull("videoWorkerUrl"),
+                videoQualityTier = o.optString("videoQualityTier").ifBlank { "1080p" },
+                videoBackgroundMode = o.optString("videoBackgroundMode").ifBlank { "blurred_fill" },
+                videoMotionMode = o.optString("videoMotionMode").ifBlank { "auto_mix" },
+                backgroundMusicFilePath = o.optStringOrNull("backgroundMusicFilePath"),
+                backgroundMusicLoop = o.optBoolean("backgroundMusicLoop", true),
+                backgroundMusicVolume = o.optDouble("backgroundMusicVolume", 0.35).toFloat(),
+                videoSubtitleColor = o.optString("videoSubtitleColor").ifBlank { "#FFFFFF" },
+                lastVoiceSignature = o.optString("lastVoiceSignature"),
+                lastVideoSignature = o.optString("lastVideoSignature")
+            )
+        }.getOrNull()
+    }
+
+    private fun scenePromptToJson(s: ScenePrompt): JSONObject = JSONObject()
+        .put("sceneId", s.sceneId).put("ordinal", s.ordinal).put("summary", s.summary)
+        .put("visualPrompt", s.visualPrompt).put("negativePrompt", s.negativePrompt)
+        .put("aspectRatio", s.aspectRatio).put("voiceText", s.voiceText).put("onScreenText", s.onScreenText)
+        .put("plannedDurationMs", s.plannedDurationMs).put("stockSearchQuery", s.stockSearchQuery)
+        .put("visualDirection", s.visualDirection).put("imageSignature", s.imageSignature)
+
+    private fun scenePromptFromJson(o: JSONObject): ScenePrompt = ScenePrompt(
+        sceneId = o.optString("sceneId"), ordinal = o.optInt("ordinal"), summary = o.optString("summary"),
+        visualPrompt = o.optString("visualPrompt"), negativePrompt = o.optStringOrNull("negativePrompt"),
+        aspectRatio = o.optString("aspectRatio").ifBlank { "9:16" }, voiceText = o.optString("voiceText"),
+        onScreenText = o.optString("onScreenText"), plannedDurationMs = o.optLong("plannedDurationMs"),
+        stockSearchQuery = o.optString("stockSearchQuery"), visualDirection = o.optString("visualDirection"),
+        imageSignature = o.optString("imageSignature")
+    )
+
+    private fun assetPlanToJson(a: VisualAssetPlan): JSONObject = JSONObject()
+        .put("sceneId", a.sceneId).put("ordinal", a.ordinal).put("strategy", a.strategy)
+        .put("preferredProviderId", a.preferredProviderId).put("assetQuery", a.assetQuery)
+        .put("templateId", a.templateId).put("renderMode", a.renderMode).put("durationMs", a.durationMs)
+        .put("rationale", a.rationale)
+
+    private fun assetPlanFromJson(o: JSONObject): VisualAssetPlan = VisualAssetPlan(
+        sceneId = o.optString("sceneId"), ordinal = o.optInt("ordinal"), strategy = o.optString("strategy"),
+        preferredProviderId = o.optStringOrNull("preferredProviderId"), assetQuery = o.optString("assetQuery"),
+        templateId = o.optString("templateId"), renderMode = o.optString("renderMode"),
+        durationMs = o.optLong("durationMs"), rationale = o.optString("rationale")
+    )
+
+    private fun artifactToJson(a: AutomationSavedArtifact): JSONObject = JSONObject()
+        .put("artifactId", a.artifactId).put("artifactType", a.artifactType).put("mimeType", a.mimeType)
+        .put("uri", a.uri).put("sizeBytes", a.sizeBytes).put("sourceUrl", a.sourceUrl)
+        .put("sceneId", a.sceneId).put("ordinal", a.ordinal ?: JSONObject.NULL)
+        .put("providerRequestId", a.providerRequestId)
+
+    private fun artifactFromJson(o: JSONObject): AutomationSavedArtifact = AutomationSavedArtifact(
+        artifactId = o.optString("artifactId"), artifactType = o.optString("artifactType"),
+        mimeType = o.optString("mimeType"), uri = o.optString("uri"), sizeBytes = o.optLong("sizeBytes"),
+        sourceUrl = o.optStringOrNull("sourceUrl"), sceneId = o.optStringOrNull("sceneId"),
+        ordinal = if (o.has("ordinal") && !o.isNull("ordinal")) o.optInt("ordinal") else null,
+        providerRequestId = o.optStringOrNull("providerRequestId"), previewDataUrl = null
+    )
+
+    private fun JSONObject.optStringOrNull(key: String): String? =
+        if (has(key) && !isNull(key)) optString(key).ifBlank { null } else null
+
+    private fun JSONArray?.toStringList(): List<String> {
+        if (this == null) return emptyList()
+        return (0 until length()).map { optString(it) }.filter { it.isNotBlank() }
+    }
 
     private fun reportProgress(
         jobId: String,
@@ -161,6 +342,11 @@ class AutomationFacade private constructor(
     }
 
     fun listImageProviders(): List<AutomationUiImageProviderSnapshot> {
+        // KHONG tu cau hinh/chon lai o day - ham nay liet ke TOAN BO provider de
+        // hien thi dropdown, tu dong luu+chon tung provider o day se lam "provider
+        // dang chon" nhay lung tung sang provider duyet cuoi cung trong danh sach
+        // moi lan mo lai man Cai dat. Tu phuc hoi chi nen ap dung cho DUNG provider
+        // dang duoc yeu cau/chon (xem getImageProviderConfigurationStatus).
         val selectedProviderId = resolveSelectedImageProviderId()
         return imageProviderRegistry.allDefinitions().map { definition ->
             AutomationUiImageProviderSnapshot(
@@ -188,10 +374,66 @@ class AutomationFacade private constructor(
         providerId: String? = null
     ): AutomationCredentialStatusSnapshot {
         val resolvedProviderId = resolveRequestedProviderId(providerId) ?: AutomationImageProviders.OPENAI_IMAGES
+        imageProviderRegistry.getDefinition(resolvedProviderId)?.let { definition ->
+            if (definition.authType == ImageProviderAuthType.NONE) {
+                ensureNoAuthImageProviderConfigured(definition)
+            } else if (credentialStore.getImageProviderConfiguration(definition.providerId) != null) {
+                // Khi nguoi dung doi qua lai giua cac provider da tung luu
+                // (vd Cloudflare/Pexels), chi viec mo dropdown chon provider moi
+                // cung phai du de native ghi nhan "dang chon provider nay", khong
+                // bat nguoi dung phai bam Luu lai moi lan. Neu khong, pipeline van
+                // chay bang provider cu va gay cam giac "doi provider khong an".
+                credentialStore.setSelectedImageProviderId(definition.providerId)
+            }
+        }
         return credentialStore.getImageProviderConfigurationStatus(resolvedProviderId)
     }
 
+    // Provider khong can credential (Tu dong/Openverse/Wikimedia...) khong nen bat
+    // nguoi dung vao Cai dat luu tay truoc khi dung duoc - tu luu 1 ban ghi cau
+    // hinh rong ngay khi duoc truy van trang thai/danh sach, thay vi phu thuoc vao
+    // dung thoi diem JS goi refresh/luu (de xay ra sai lech neu co gang luu that
+    // bai tam thoi truoc do).
+    private fun ensureNoAuthImageProviderConfigured(definition: ImageProviderDefinition) {
+        if (definition.authType != ImageProviderAuthType.NONE) return
+        // Ham nay CHI duoc goi khi providerId duoc yeu cau tuong minh (nguoi dung
+        // vua chon trong dropdown) - nen luon danh dau la "dang chon" o day, ke ca
+        // khi da tung cau hinh truoc do. Neu chi cap nhat "selected" luc LUU LAN
+        // DAU thi lan chon lai 1 provider da tung dung se khong bao gio duoc chon
+        // lai (day la ly do dropdown bi ket cung mot provider truoc do).
+        if (credentialStore.getImageProviderConfiguration(definition.providerId) != null) {
+            credentialStore.setSelectedImageProviderId(definition.providerId)
+            return
+        }
+        runCatching {
+            credentialStore.saveImageProviderConfiguration(
+                providerId = definition.providerId,
+                apiKey = "",
+                model = definition.capabilities.defaultModel.orEmpty(),
+                accountId = null
+            )
+        }
+    }
+
+    private fun ensureNoAuthVoiceProviderConfigured(definition: VoiceProviderDefinition) {
+        if (definition.authType != VoiceProviderAuthType.NONE) return
+        if (credentialStore.getVoiceProviderConfiguration(definition.providerId) != null) {
+            credentialStore.setSelectedVoiceProviderId(definition.providerId)
+            return
+        }
+        runCatching {
+            credentialStore.saveVoiceProviderConfiguration(
+                VoiceProviderCredentialConfiguration(
+                    providerId = definition.providerId,
+                    locale = definition.capabilities.defaultLocale,
+                    outputFormat = definition.capabilities.supportedOutputFormats.firstOrNull() ?: "wav"
+                )
+            )
+        }
+    }
+
     fun listVoiceProviders(): List<AutomationUiVoiceProviderSnapshot> {
+        // Tuong tu listImageProviders: khong tu chon lai o day, chi hien thi.
         val selectedProviderId = resolveUiVoiceProviderId()
         return voiceProviderRegistry.allDefinitions().map { definition ->
             AutomationUiVoiceProviderSnapshot(
@@ -242,6 +484,7 @@ class AutomationFacade private constructor(
         providerId: String? = null
     ): AutomationCredentialStatusSnapshot {
         val resolvedProviderId = resolveRequestedVoiceProviderId(providerId) ?: resolveUiVoiceProviderId().orEmpty()
+        voiceProviderRegistry.getDefinition(resolvedProviderId)?.let(::ensureNoAuthVoiceProviderConfigured)
         return credentialStore.getVoiceProviderConfigurationStatus(resolvedProviderId)
     }
 
@@ -256,7 +499,14 @@ class AutomationFacade private constructor(
         val normalizedModel = normalizeImageModel(definition, model)
         val normalizedAccountId = normalizeImageAccountId(definition, accountId)
 
-        require(normalizedApiKey.isNotEmpty()) { "Can nhap API key image provider." }
+        // Provider khong can credential (vd Openverse/Wikimedia tim anh mien phi,
+        // khong key) thi KHONG duoc nhan API key, nguoc lai cac provider con lai
+        // van bat buoc phai co — giong logic da ap dung cho voice provider.
+        if (definition.authType == ImageProviderAuthType.NONE) {
+            require(normalizedApiKey.isEmpty()) { "Provider local khong nhan API key." }
+        } else {
+            require(normalizedApiKey.isNotEmpty()) { "Can nhap API key image provider." }
+        }
         validateImageProviderConfigFields(definition, normalizedModel, normalizedAccountId)
 
         credentialStore.saveImageProviderConfiguration(
@@ -435,7 +685,12 @@ class AutomationFacade private constructor(
         request: AutomationContentRunRequest
     ): AutomationUiJobSnapshot {
         val normalizedRequest = request.normalized()
-        val contentConfig = requireGeminiConfiguration()
+        val usingWebContentSource = !normalizedRequest.preFetchedRawText.isNullOrBlank()
+        val contentConfig = if (usingWebContentSource) {
+            GeminiCredentialConfiguration(providerId = WEB_CONTENT_PROVIDER_ID, apiKey = "", model = "gemini-web")
+        } else {
+            requireGeminiConfiguration()
+        }
         val selectedImageProviderId = resolveSelectedImageProviderId()
         val selectedImageDefinition = selectedImageProviderId?.let(imageProviderRegistry::getDefinition)
 
@@ -570,8 +825,7 @@ class AutomationFacade private constructor(
         val assetPlans = mutableListOf<VisualAssetPlan>()
         val durationPolicy = ContentDurationPolicy.fromTopic(
             topic = normalizedRequest.topic,
-            desiredDurationSeconds = normalizedRequest.desiredDurationSeconds,
-            requestedSceneCount = normalizedRequest.requestedSceneCount
+            desiredDurationSeconds = normalizedRequest.desiredDurationSeconds
         )
 
         stepOverrides["TOPIC"] = StepOverride(
@@ -579,31 +833,40 @@ class AutomationFacade private constructor(
             waitingReason = "TOPIC_ACCEPTED"
         )
 
-        val contentResult = try {
-            generateCanonicalContent(
-                config = ContentProviderConfig(
-                    providerId = contentConfig.providerId,
-                    apiKey = contentConfig.apiKey,
-                    model = contentConfig.model,
-                    promptTemplate = normalizedRequest.promptTemplate,
-                    maximumOutputLength = normalizedRequest.maximumOutputLength
-                ),
-                request = ContentGenerationRequest(
-                    providerId = contentConfig.providerId,
-                    model = contentConfig.model,
-                    topic = normalizedRequest.topic,
-                    language = normalizedRequest.language,
-                    contentType = normalizedRequest.contentType,
-                    promptTemplate = normalizedRequest.promptTemplate,
-                    maximumOutputLength = normalizedRequest.maximumOutputLength,
-                    durationPolicy = durationPolicy
-                )
+        val contentResult = if (usingWebContentSource) {
+            buildContentResultFromRawText(
+                rawText = normalizedRequest.preFetchedRawText.orEmpty(),
+                durationPolicy = durationPolicy,
+                providerId = WEB_CONTENT_PROVIDER_ID,
+                model = "gemini-web"
             )
-        } catch (error: ContentProviderException) {
-            if (error.code == ContentProviderErrorCode.AUTHENTICATION) {
-                credentialStore.markGeminiInvalid(error.message)
+        } else {
+            try {
+                generateCanonicalContent(
+                    config = ContentProviderConfig(
+                        providerId = contentConfig.providerId,
+                        apiKey = contentConfig.apiKey,
+                        model = contentConfig.model,
+                        promptTemplate = normalizedRequest.promptTemplate,
+                        maximumOutputLength = normalizedRequest.maximumOutputLength
+                    ),
+                    request = ContentGenerationRequest(
+                        providerId = contentConfig.providerId,
+                        model = contentConfig.model,
+                        topic = normalizedRequest.topic,
+                        language = normalizedRequest.language,
+                        contentType = normalizedRequest.contentType,
+                        promptTemplate = normalizedRequest.promptTemplate,
+                        maximumOutputLength = normalizedRequest.maximumOutputLength,
+                        durationPolicy = durationPolicy
+                    )
+                )
+            } catch (error: ContentProviderException) {
+                if (error.code == ContentProviderErrorCode.AUTHENTICATION) {
+                    credentialStore.markGeminiInvalid(error.message)
+                }
+                throw error
             }
-            throw error
         }
 
         artifactStore.saveGeneratedTextArtifact(
@@ -632,7 +895,7 @@ class AutomationFacade private constructor(
                 generatedScript = contentResult.generatedText,
                 language = normalizedRequest.language,
                 visualStyle = DEFAULT_VISUAL_STYLE,
-                targetAspectRatio = DEFAULT_TARGET_ASPECT_RATIO,
+                targetAspectRatio = normalizedRequest.aspectRatio,
                 requestedSceneCount = expectedSceneCount,
                 structuredScript = contentResult.structuredScript
             )
@@ -651,7 +914,7 @@ class AutomationFacade private constructor(
                 scenePrompts = scenePrompts,
                 selectedProviderId = selectedImageDefinition?.providerId,
                 selectedProviderCostType = selectedImageDefinition?.costType?.name,
-                targetAspectRatio = DEFAULT_TARGET_ASPECT_RATIO
+                targetAspectRatio = normalizedRequest.aspectRatio
             )
         )
 
@@ -724,16 +987,29 @@ class AutomationFacade private constructor(
             voiceOutcome.runtimeMessage
         )
 
+        // Nhoi thoi luong THAT do duoc tu buoc voice (tung canh) vao scenePrompts
+        // de renderer dat anh dung theo loi doc. Neu buoc voice khong tra ve
+        // (fallback/khong tach canh) thi giu nguyen uoc luong cu.
+        val syncedScenePrompts = applyRealSceneDurations(scenePrompts, voiceOutcome.sceneDurationsMs)
+
         val videoOutcome = if (voiceOutcome.stepStatus == AutomationStepStatus.COMPLETED.name) {
             executeVideoStage(
                 jobId = jobId,
                 stepId = requireStepId(steps, "VIDEO"),
                 generatedText = contentResult.generatedText,
-                scenePrompts = scenePrompts,
+                scenePrompts = syncedScenePrompts,
                 assetPlans = assetPlans,
                 artifacts = artifacts,
                 videoRendererMode = normalizedRequest.videoRendererMode,
-                videoWorkerUrl = normalizedRequest.videoWorkerUrl
+                videoWorkerUrl = normalizedRequest.videoWorkerUrl,
+                videoQualityTier = normalizedRequest.videoQualityTier,
+                videoBackgroundMode = normalizedRequest.videoBackgroundMode,
+                videoMotionMode = normalizedRequest.videoMotionMode,
+                backgroundMusicFilePath = normalizedRequest.backgroundMusicFilePath,
+                backgroundMusicLoop = normalizedRequest.backgroundMusicLoop,
+                backgroundMusicVolume = normalizedRequest.backgroundMusicVolume,
+                videoSubtitleColor = normalizedRequest.videoSubtitleColor,
+                videoTitle = deriveVideoTitle(normalizedRequest.topic)
             )
         } else {
             VideoStageOutcome(
@@ -820,7 +1096,7 @@ class AutomationFacade private constructor(
             contentModel = contentResult.model,
             requestId = contentResult.requestId,
             usageMetadata = contentUsageMetadata,
-            scenePrompts = scenePrompts,
+            scenePrompts = syncedScenePrompts,
             assetPlans = assetPlans,
             videoRenderPlan = videoOutcome.plan,
             metadataPlan = metadataOutcome.plan,
@@ -839,8 +1115,18 @@ class AutomationFacade private constructor(
             videoRendererId = videoOutcome.rendererId,
             videoAttemptHistory = videoOutcome.rendererId?.let(::listOf).orEmpty(),
             videoRendererMode = normalizedRequest.videoRendererMode,
-            videoWorkerUrl = normalizedRequest.videoWorkerUrl
+            videoWorkerUrl = normalizedRequest.videoWorkerUrl,
+            videoQualityTier = normalizedRequest.videoQualityTier,
+            videoBackgroundMode = normalizedRequest.videoBackgroundMode,
+            videoMotionMode = normalizedRequest.videoMotionMode,
+            backgroundMusicFilePath = normalizedRequest.backgroundMusicFilePath,
+            backgroundMusicLoop = normalizedRequest.backgroundMusicLoop,
+            backgroundMusicVolume = normalizedRequest.backgroundMusicVolume,
+            videoSubtitleColor = normalizedRequest.videoSubtitleColor
         )
+        // Vua tao xong tu du lieu hien tai -> dong dau chu ky "moi" cho anh/giong/video.
+        runtimeJobs[jobId]?.let { runtimeJobs[jobId] = stampFreshSignatures(it) }
+        persistRuntimeJob(jobId)
 
         val finalRuntime = runtimeJobs[jobId]
         reportProgress(
@@ -873,17 +1159,34 @@ class AutomationFacade private constructor(
         val imageStepId = persisted.steps.firstOrNull { it.stepType == "IMAGES_VISUALS" }?.stepId
             ?: throw IllegalArgumentException("Khong tim thay buoc IMAGE trong job.")
 
+        // THU LAI = chi lay anh cho cac canh CON THIEU (chua co IMAGE artifact) -
+        // KHONG dung/xoa anh cua canh da co. Anh gan theo sceneId nen khong lech.
+        val existingImageSceneIds = runtimeJob.artifacts
+            .filter { it.artifactType == "IMAGE" && !it.sceneId.isNullOrBlank() }
+            .mapNotNull { it.sceneId }.toSet()
+        val missingScenes = runtimeJob.scenePrompts
+            .sortedBy { it.ordinal }
+            .filter { it.sceneId !in existingImageSceneIds }
+
         val resolvedProviderId = resolveRequestedProviderId(providerId)
         val imageOutcome = executeImageStage(
             jobId = jobId,
             stepId = imageStepId,
-            scenePrompts = runtimeJob.scenePrompts,
+            // Chi truyen canh con thieu -> provider API chi fetch nhung canh do; web-scrape
+            // van tra WAITING de JS cao tiep cac canh con thieu.
+            scenePrompts = missingScenes.ifEmpty { runtimeJob.scenePrompts },
             assetPlans = runtimeJob.assetPlans,
             providerId = resolvedProviderId
         )
 
+        // Giu nguyen anh cu (theo sceneId), chi bo VIDEO de render lai; them anh moi cua
+        // cac canh con thieu (khong trung vi chi fetch canh thieu).
+        val newImageSceneIds = imageOutcome.artifacts.mapNotNull { it.sceneId }.toSet()
         val updatedArtifacts = runtimeJob.artifacts
-            .filterNot { it.artifactType == "IMAGE" || it.artifactType == "VIDEO_RENDER_PLAN" || it.artifactType == "VIDEO_MP4" }
+            .filterNot {
+                it.artifactType == "VIDEO_RENDER_PLAN" || it.artifactType == "VIDEO_MP4" ||
+                    (it.artifactType == "IMAGE" && it.sceneId in newImageSceneIds)
+            }
             .toMutableList()
             .apply { addAll(imageOutcome.artifacts) }
 
@@ -935,9 +1238,68 @@ class AutomationFacade private constructor(
             imageModel = imageOutcome.model,
             imageAttemptHistory = runtimeJob.imageAttemptHistory + listOfNotNull(imageOutcome.providerId),
             videoRendererId = null
-        )
-        runtimeJobs[jobId] = updatedRuntime
+        ).let { stampImageSignatures(it, newImageSceneIds) }
+        putRuntimeJob(jobId, updatedRuntime)
         return persisted.toUiSnapshot(runtimeJob = updatedRuntime)
+    }
+
+    /**
+     * Danh sach cau tim kiem anh cho tung canh cua job (dung thu tu ordinal), dung
+     * cho luong cao anh tu web (Google Images/Pinterest) - JS goi bridge de lay
+     * danh sach nay, mo WebView cao tung cau, roi nhap anh lai qua importImageArtifacts().
+     */
+    fun getSceneImageSearchQueries(jobId: String): List<String> {
+        require(jobId.isNotBlank()) { "Job ID is required." }
+        val runtimeJob = runtimeJobs[jobId]
+            ?: throw IllegalArgumentException("Khong tim thay runtime job de lay cau tim anh.")
+        require(runtimeJob.scenePrompts.isNotEmpty()) {
+            "Job nay chua co scene prompts de tim anh."
+        }
+        val assetPlanBySceneId = runtimeJob.assetPlans.associateBy { it.sceneId }
+        return runtimeJob.scenePrompts
+            .sortedBy { it.ordinal }
+            .map { scene -> resolveImagePrompt(scene, assetPlanBySceneId[scene.sceneId]) }
+    }
+
+    /**
+     * Cac canh CHUA co anh (resume): tra ve (chiSoGoc, query) - chiSoGoc = vi tri canh
+     * trong danh sach da sap theo ordinal (khop importImageArtifactsByIndex). Dung de
+     * chi cao them anh cho canh con thieu khi app bi ngat giua chung.
+     */
+    fun getMissingSceneImageQueries(jobId: String): List<Pair<Int, String>> {
+        val runtimeJob = runtimeJobs[jobId] ?: return emptyList()
+        if (runtimeJob.scenePrompts.isEmpty()) return emptyList()
+        val scenes = runtimeJob.scenePrompts.sortedBy { it.ordinal }
+        val sceneIdsWithImage = runtimeJob.artifacts
+            .filter { it.artifactType == "IMAGE" && !it.sceneId.isNullOrBlank() }
+            .map { it.sceneId }
+            .toSet()
+        val assetPlanBySceneId = runtimeJob.assetPlans.associateBy { it.sceneId }
+        return scenes.mapIndexedNotNull { index, scene ->
+            if (scene.sceneId in sceneIdsWithImage) null
+            else index to resolveImagePrompt(scene, assetPlanBySceneId[scene.sceneId])
+        }
+    }
+
+    /**
+     * Ghi nhan buoc cao anh tu web that bai vao CHINH job (khong chi bao loi tam
+     * thoi qua AutomationAsyncTaskStore roi bien mat) - neu khong, lan sau doc lai
+     * job van thay IMAGES_VISUALS o trang thai WAITING_WEB_IMAGE_SCRAPE y het truoc
+     * do, tao cam giac "quay lai cho nguoi dung" du thuc ra vua that bai that.
+     */
+    fun markWebImageScrapeFailed(jobId: String, message: String) {
+        val runtimeJob = runtimeJobs[jobId] ?: return
+        val updatedSteps = runtimeJob.stepOverrides.toMutableMap().apply {
+            this["IMAGES_VISUALS"] = StepOverride(
+                status = AutomationStepStatus.FAILED.name,
+                waitingReason = "WEB_IMAGE_SCRAPE_FAILED"
+            )
+        }
+        putRuntimeJob(jobId, runtimeJob.copy(
+            status = AutomationJobStatus.FAILED.name,
+            runtimeMessage = message,
+            stepOverrides = updatedSteps
+        ))
     }
 
     suspend fun retryVoiceStep(
@@ -965,11 +1327,12 @@ class AutomationFacade private constructor(
             scenePrompts = runtimeJob.scenePrompts,
             durationPolicy = ContentDurationPolicy.fromTopic(
                 topic = persisted.resolveTopicFromOutbox().ifBlank { runtimeJob.generatedText },
-                desiredDurationSeconds = runtimeJob.usageMetadata["desiredDurationSeconds"]?.toInt(),
-                requestedSceneCount = runtimeJob.usageMetadata["requestedSceneCount"]?.toInt()
+                desiredDurationSeconds = runtimeJob.usageMetadata["desiredDurationSeconds"]?.toInt()
             ),
             providerId = providerId
         )
+
+        val syncedScenePrompts = applyRealSceneDurations(runtimeJob.scenePrompts, voiceOutcome.sceneDurationsMs)
 
         val updatedArtifacts = runtimeJob.artifacts
             .filterNot { it.artifactType == "VOICE" || it.artifactType == "VIDEO_RENDER_PLAN" || it.artifactType == "VIDEO_MP4" }
@@ -1028,20 +1391,28 @@ class AutomationFacade private constructor(
             artifacts = updatedArtifacts,
             runtimeMessage = voiceOutcome.runtimeMessage,
             stepOverrides = updatedStepOverrides,
+            scenePrompts = syncedScenePrompts,
             voiceProviderId = voiceOutcome.providerId,
             voiceId = voiceOutcome.voiceId,
             voiceLocale = voiceOutcome.locale,
             voiceAttemptHistory = runtimeJob.voiceAttemptHistory + listOfNotNull(voiceOutcome.providerId),
             videoRendererId = null
-        )
-        runtimeJobs[jobId] = updatedRuntime
+        ).let { if (voiceOutcome.stepStatus == AutomationStepStatus.COMPLETED.name) stampFreshSignatures(it) else it }
+        putRuntimeJob(jobId, updatedRuntime)
         return persisted.toUiSnapshot(runtimeJob = updatedRuntime)
     }
 
     suspend fun retryVideoStep(
         jobId: String,
         videoRendererMode: String? = null,
-        videoWorkerUrl: String? = null
+        videoWorkerUrl: String? = null,
+        videoQualityTier: String? = null,
+        videoBackgroundMode: String? = null,
+        videoMotionMode: String? = null,
+        backgroundMusicFilePath: String? = null,
+        backgroundMusicLoop: Boolean? = null,
+        backgroundMusicVolume: Float? = null,
+        videoSubtitleColor: String? = null
     ): AutomationUiJobSnapshot {
         require(jobId.isNotBlank()) { "Job ID is required." }
         val persisted = repository.getJobGraph(jobId)
@@ -1069,7 +1440,15 @@ class AutomationFacade private constructor(
             assetPlans = runtimeJob.assetPlans,
             artifacts = runtimeJob.artifacts,
             videoRendererMode = normalizeVideoRendererMode(videoRendererMode ?: runtimeJob.videoRendererMode),
-            videoWorkerUrl = videoWorkerUrl ?: runtimeJob.videoWorkerUrl
+            videoWorkerUrl = videoWorkerUrl ?: runtimeJob.videoWorkerUrl,
+            videoQualityTier = normalizeVideoQualityTier(videoQualityTier ?: runtimeJob.videoQualityTier),
+            videoBackgroundMode = normalizeVideoBackgroundMode(videoBackgroundMode ?: runtimeJob.videoBackgroundMode),
+            videoMotionMode = normalizeVideoMotionMode(videoMotionMode ?: runtimeJob.videoMotionMode),
+            backgroundMusicFilePath = backgroundMusicFilePath ?: runtimeJob.backgroundMusicFilePath,
+            backgroundMusicLoop = backgroundMusicLoop ?: runtimeJob.backgroundMusicLoop,
+            backgroundMusicVolume = (backgroundMusicVolume ?: runtimeJob.backgroundMusicVolume).coerceIn(0f, 1f),
+            videoSubtitleColor = normalizeVideoSubtitleColor(videoSubtitleColor ?: runtimeJob.videoSubtitleColor),
+            videoTitle = deriveVideoTitle(persisted.resolveTopicFromOutbox())
         )
 
         val updatedArtifacts = runtimeJob.artifacts
@@ -1147,9 +1526,16 @@ class AutomationFacade private constructor(
             videoRendererId = videoOutcome.rendererId,
             videoAttemptHistory = runtimeJob.videoAttemptHistory + listOfNotNull(videoOutcome.rendererId),
             videoRendererMode = normalizeVideoRendererMode(videoRendererMode ?: runtimeJob.videoRendererMode),
-            videoWorkerUrl = videoWorkerUrl ?: runtimeJob.videoWorkerUrl
-        )
-        runtimeJobs[jobId] = updatedRuntime
+            videoWorkerUrl = videoWorkerUrl ?: runtimeJob.videoWorkerUrl,
+            videoQualityTier = normalizeVideoQualityTier(videoQualityTier ?: runtimeJob.videoQualityTier),
+            videoBackgroundMode = normalizeVideoBackgroundMode(videoBackgroundMode ?: runtimeJob.videoBackgroundMode),
+            videoMotionMode = normalizeVideoMotionMode(videoMotionMode ?: runtimeJob.videoMotionMode),
+            backgroundMusicFilePath = backgroundMusicFilePath ?: runtimeJob.backgroundMusicFilePath,
+            backgroundMusicLoop = backgroundMusicLoop ?: runtimeJob.backgroundMusicLoop,
+            backgroundMusicVolume = (backgroundMusicVolume ?: runtimeJob.backgroundMusicVolume).coerceIn(0f, 1f),
+            videoSubtitleColor = normalizeVideoSubtitleColor(videoSubtitleColor ?: runtimeJob.videoSubtitleColor)
+        ).let { if (videoOutcome.videoStepStatus == AutomationStepStatus.COMPLETED.name) stampFreshSignatures(it) else it }
+        putRuntimeJob(jobId, updatedRuntime)
         return persisted.toUiSnapshot(runtimeJob = updatedRuntime)
     }
 
@@ -1173,6 +1559,23 @@ class AutomationFacade private constructor(
         return persisted.toUiSnapshot(runtimeJob = runtimeJobs[jobId])
     }
 
+    /**
+     * Xoa hoan toan 1 phien: DB rows (job/step/artifact/connector binding/outbox) va
+     * cac file that (anh/giong doc/video MP4) tren app-private storage. Truoc day JS
+     * "xoa phien" chi xoa khoi danh sach hien thi (localStorage), du lieu that van
+     * con vinh vien tren may.
+     */
+    suspend fun deleteAutomationJob(jobId: String) {
+        require(jobId.isNotBlank()) { "Job ID is required." }
+        val artifactUris = repository.deleteJobGraph(jobId)
+        artifactUris.forEach { uri ->
+            runCatching { artifactStore.deleteArtifactByUri(uri) }
+        }
+        runtimeJobs.remove(jobId)
+        runCatching { runtimeJobStore?.delete(jobId) }
+        runtimeProgressClientIds.remove(jobId)
+    }
+
     suspend fun exportVideoMp4ToDownloads(
         jobId: String
     ): AutomationVideoExportResult {
@@ -1184,6 +1587,350 @@ class AutomationFacade private constructor(
         val exported = artifactStore.exportVideoArtifactToDownloads(videoArtifact, jobId)
             ?: throw IllegalStateException("Artifact store khong ho tro export VIDEO_MP4.")
         return exported.toUiVideoExportResult()
+    }
+
+    /**
+     * Duong dan file MP4 app-private cua job de XEM TRUOC ngay trong app (VideoView),
+     * khong can export ra Downloads. Null neu job chua co VIDEO_MP4.
+     */
+    fun resolvePreviewableVideoPath(jobId: String): String? {
+        require(jobId.isNotBlank()) { "Job ID is required." }
+        val runtimeJob = runtimeJobs[jobId] ?: return null
+        val videoArtifact = runtimeJob.artifacts.firstOrNull { it.artifactType == "VIDEO_MP4" } ?: return null
+        return artifactStore.resolveArtifactAbsolutePath(videoArtifact)
+    }
+
+    /**
+     * Sua tay l-oi doc + tieu de cua 1 canh (runtimeJob.scenePrompts). Sau khi sua,
+     * nguoi dung bam "Chay lai (giu noi dung & anh)" de tao lai giong + video. Tra
+     * ve false neu khong tim thay job/canh.
+     */
+    fun updateSceneText(
+        jobId: String,
+        sceneId: String,
+        voiceText: String?,
+        onScreenText: String?,
+        stockSearchQuery: String?
+    ): Boolean {
+        val runtimeJob = runtimeJobs[jobId] ?: return false
+        if (runtimeJob.scenePrompts.none { it.sceneId == sceneId }) return false
+        val updated = runtimeJob.scenePrompts.map { scene ->
+            if (scene.sceneId != sceneId) scene
+            else scene.copy(
+                voiceText = voiceText?.trim()?.ifBlank { null } ?: scene.voiceText,
+                onScreenText = onScreenText?.trim() ?: scene.onScreenText,
+                stockSearchQuery = stockSearchQuery?.trim()?.ifBlank { null } ?: scene.stockSearchQuery
+            )
+        }
+        putRuntimeJob(jobId, runtimeJob.copy(scenePrompts = updated))
+        return true
+    }
+
+    /**
+     * Timeline editor: dat THOI LUONG (ms) cho 1 canh - keo mep clip trong timeline.
+     * Ghi vao plannedDurationMs; buoc render/xuat video se dung do dai nay. Kep toi
+     * thieu 800ms. Danh dau video can render lai. Tra ve false neu khong tim thay.
+     */
+    fun setSceneDuration(jobId: String, sceneId: String, durationMs: Long): Boolean {
+        val rj = runtimeJobs[jobId] ?: return false
+        if (rj.scenePrompts.none { it.sceneId == sceneId }) return false
+        val clamped = durationMs.coerceIn(800L, 120_000L)
+        val updated = rj.scenePrompts.map { s ->
+            if (s.sceneId == sceneId) s.copy(plannedDurationMs = clamped) else s
+        }
+        val steps = rj.stepOverrides.toMutableMap().apply {
+            this["VIDEO"] = StepOverride(
+                status = AutomationStepStatus.NOT_CONFIGURED.name,
+                waitingReason = "VIDEO_WAITING_FOR_RENDER_RETRY"
+            )
+        }
+        putRuntimeJob(jobId, rj.copy(
+            scenePrompts = updated,
+            stepOverrides = steps,
+            videoRenderPlan = null
+        ))
+        return true
+    }
+
+    /**
+     * Timeline: TACH 1 canh tai vi tri offsetMs (tinh tu dau canh) thanh 2 canh -
+     * clip 1 giu do dai offsetMs, clip 2 do dai con lai. Ca 2 dung CHUNG anh (nhan
+     * ban artifact IMAGE tro cung file), cung tieu de/loi doc. Danh lai ordinal.
+     * Dung cho nut "Tach" tai vach playhead giua man hinh.
+     */
+    fun splitScene(jobId: String, sceneId: String, offsetMs: Long): Boolean {
+        val rj = runtimeJobs[jobId] ?: return false
+        val scene = rj.scenePrompts.firstOrNull { it.sceneId == sceneId } ?: return false
+        val dur = scene.plannedDurationMs.takeIf { it > 0L } ?: 4_000L
+        if (offsetMs < 400L || offsetMs > dur - 400L) return false
+        val newSceneId = "scene-" + java.util.UUID.randomUUID().toString().substring(0, 8)
+        val first = scene.copy(plannedDurationMs = offsetMs)
+        val second = scene.copy(sceneId = newSceneId, plannedDurationMs = dur - offsetMs)
+        // Chen second ngay sau first, danh lai ordinal toan bo.
+        val ordered = rj.scenePrompts.sortedBy { it.ordinal }.toMutableList()
+        val idx = ordered.indexOfFirst { it.sceneId == sceneId }
+        ordered[idx] = first
+        ordered.add(idx + 1, second)
+        val renumbered = ordered.mapIndexed { i, s -> s.copy(ordinal = i + 1) }
+        // Nhan ban asset plan.
+        val plans = rj.assetPlans.toMutableList()
+        rj.assetPlans.firstOrNull { it.sceneId == sceneId }?.let { p ->
+            plans.add(p.copy(sceneId = newSceneId))
+        }
+        val renumberedPlans = renumbered.mapNotNull { s ->
+            plans.firstOrNull { it.sceneId == s.sceneId }?.copy(ordinal = s.ordinal)
+        }
+        // Nhan ban anh: artifact moi tro cung file (cung uri) nhung sceneId moi.
+        val artifacts = rj.artifacts.toMutableList()
+        rj.artifacts.firstOrNull { it.artifactType == "IMAGE" && it.sceneId == sceneId }?.let { img ->
+            artifacts.add(img.copy(
+                artifactId = "artifact-" + java.util.UUID.randomUUID().toString().substring(0, 8),
+                sceneId = newSceneId
+            ))
+        }
+        val cleaned = artifacts.filterNot { it.artifactType == "VIDEO_RENDER_PLAN" || it.artifactType == "VIDEO_MP4" }
+        val steps = rj.stepOverrides.toMutableMap().apply {
+            this["VIDEO"] = StepOverride(AutomationStepStatus.NOT_CONFIGURED.name, "VIDEO_WAITING_FOR_RENDER_RETRY")
+        }
+        putRuntimeJob(jobId, rj.copy(
+            scenePrompts = renumbered,
+            assetPlans = renumberedPlans,
+            artifacts = cleaned,
+            stepOverrides = steps,
+            videoRenderPlan = null
+        ))
+        return true
+    }
+
+    /**
+     * Them 1 canh moi (nguoi dung tu them) vao cuoi danh sach - kem asset plan de
+     * buoc anh/video hoat dong. Sau khi them, nguoi dung cao anh cho canh moi roi
+     * "Chay lai". Tra ve false neu khong tim thay job.
+     */
+    fun addScene(jobId: String, voiceText: String, onScreenText: String, stockSearchQuery: String): Boolean {
+        val rj = runtimeJobs[jobId] ?: return false
+        val aspect = rj.scenePrompts.firstOrNull()?.aspectRatio ?: DEFAULT_TARGET_ASPECT_RATIO
+        val newSceneId = "scene-" + java.util.UUID.randomUUID().toString().substring(0, 8)
+        val newOrdinal = (rj.scenePrompts.maxOfOrNull { it.ordinal } ?: 0) + 1
+        val vt = voiceText.trim()
+        val ost = onScreenText.trim()
+        val q = stockSearchQuery.trim().ifBlank { ost.ifBlank { vt.take(60) } }.ifBlank { "video" }
+        val scene = ScenePrompt(
+            sceneId = newSceneId,
+            ordinal = newOrdinal,
+            summary = ost.ifBlank { vt.take(60) },
+            visualPrompt = q,
+            negativePrompt = null,
+            aspectRatio = aspect,
+            voiceText = vt,
+            onScreenText = ost,
+            plannedDurationMs = 4_000L,
+            stockSearchQuery = q,
+            visualDirection = vt
+        )
+        val template = rj.assetPlans.firstOrNull()
+        val plan = VisualAssetPlan(
+            sceneId = newSceneId,
+            ordinal = newOrdinal,
+            strategy = template?.strategy ?: "stock_search",
+            preferredProviderId = null,
+            assetQuery = q,
+            templateId = template?.templateId ?: "default",
+            renderMode = template?.renderMode ?: "image",
+            durationMs = 4_000L,
+            rationale = "Canh nguoi dung them tay"
+        )
+        putRuntimeJob(jobId, rj.copy(scenePrompts = rj.scenePrompts + scene, assetPlans = rj.assetPlans + plan))
+        return true
+    }
+
+    /**
+     * Xoa 1 canh (scenePrompt + asset plan + anh cua canh do), danh lai so thu tu
+     * (ordinal) cho cac canh con lai. Anh gan theo sceneId nen khong lech.
+     */
+    fun deleteScene(jobId: String, sceneId: String): Boolean {
+        val rj = runtimeJobs[jobId] ?: return false
+        if (rj.scenePrompts.none { it.sceneId == sceneId }) return false
+        val newScenes = rj.scenePrompts.filter { it.sceneId != sceneId }
+            .sortedBy { it.ordinal }
+            .mapIndexed { i, s -> s.copy(ordinal = i + 1) }
+        val newPlans = rj.assetPlans.filter { it.sceneId != sceneId }
+            .sortedBy { it.ordinal }
+            .mapIndexed { i, p -> p.copy(ordinal = i + 1) }
+        val newArtifacts = rj.artifacts.filterNot { it.artifactType == "IMAGE" && it.sceneId == sceneId }
+        putRuntimeJob(jobId, rj.copy(scenePrompts = newScenes, assetPlans = newPlans, artifacts = newArtifacts))
+        return true
+    }
+
+    /**
+     * Doi thu tu 1 canh. direction < 0 = len tren, direction > 0 = xuong duoi.
+     * Danh lai ordinal cho ca scenePrompts va assetPlans. Anh gan theo sceneId nen
+     * khong lech; video se tu dong bi danh dau STALE (do currentVideoSignature phu
+     * thuoc thu tu). Tra ve false neu khong the di chuyen (dau/cuoi danh sach).
+     */
+    fun moveScene(jobId: String, sceneId: String, direction: Int): Boolean {
+        val rj = runtimeJobs[jobId] ?: return false
+        val ordered = rj.scenePrompts.sortedBy { it.ordinal }.toMutableList()
+        val idx = ordered.indexOfFirst { it.sceneId == sceneId }
+        if (idx < 0) return false
+        val target = idx + if (direction < 0) -1 else 1
+        if (target < 0 || target >= ordered.size) return false
+        val tmp = ordered[idx]; ordered[idx] = ordered[target]; ordered[target] = tmp
+        val renumberedScenes = ordered.mapIndexed { i, s -> s.copy(ordinal = i + 1) }
+        val planBySceneId = rj.assetPlans.associateBy { it.sceneId }
+        val renumberedPlans = renumberedScenes.mapNotNull { s -> planBySceneId[s.sceneId]?.copy(ordinal = s.ordinal) }
+        putRuntimeJob(jobId, rj.copy(scenePrompts = renumberedScenes, assetPlans = renumberedPlans))
+        return true
+    }
+
+    /** Cau tim anh cua DUNG 1 canh (de JS cao lai rieng canh do qua Pinterest/web). */
+    fun getSceneImageQuery(jobId: String, sceneId: String): String? {
+        val rj = runtimeJobs[jobId] ?: return null
+        val scene = rj.scenePrompts.firstOrNull { it.sceneId == sceneId } ?: return null
+        val plan = rj.assetPlans.firstOrNull { it.sceneId == sceneId }
+        return resolveImagePrompt(scene, plan)
+    }
+
+    /**
+     * Thay anh cho DUNG 1 canh (cao web 1 anh hoac chon tu may) - giu nguyen anh
+     * cac canh khac. Xoa anh cu cua rieng canh nay + video, danh dau canh nay co
+     * anh moi (imageSignature) va video can render lai.
+     */
+    suspend fun replaceSceneImage(
+        jobId: String,
+        sceneId: String,
+        image: ImportedAutomationImage
+    ): AutomationUiJobSnapshot {
+        require(jobId.isNotBlank()) { "Job ID is required." }
+        val persisted = repository.getJobGraph(jobId)
+            ?: throw IllegalArgumentException("Khong tim thay job tu dong hoa.")
+        val rj = runtimeJobs[jobId]
+            ?: throw IllegalArgumentException("Khong tim thay runtime job de thay anh.")
+        val scene = rj.scenePrompts.firstOrNull { it.sceneId == sceneId }
+            ?: throw IllegalArgumentException("Khong tim thay canh de thay anh.")
+        val imageStepId = persisted.steps.firstOrNull { it.stepType == "IMAGES_VISUALS" }?.stepId
+            ?: throw IllegalArgumentException("Khong tim thay buoc IMAGE trong job.")
+        val saved = artifactStore.saveGeneratedImageArtifact(
+            jobId = jobId,
+            stepId = imageStepId,
+            bytes = image.bytes,
+            providerId = MANUAL_IMAGE_IMPORT_PROVIDER_ID,
+            model = "scene-replace",
+            mimeType = image.mimeType,
+            sourceUrl = "scene-replace;displayName=${image.displayName.replace(';', ',')}",
+            sceneId = sceneId,
+            ordinal = scene.ordinal,
+            providerRequestId = null
+        ) ?: throw IllegalStateException("Khong luu duoc anh thay the cho canh.")
+        val updatedArtifacts = rj.artifacts
+            .filterNot {
+                (it.artifactType == "IMAGE" && it.sceneId == sceneId) ||
+                    it.artifactType == "VIDEO_RENDER_PLAN" || it.artifactType == "VIDEO_MP4"
+            }
+            .toMutableList()
+            .apply { add(saved) }
+        val updatedSteps = rj.stepOverrides.toMutableMap().apply {
+            this["VIDEO"] = StepOverride(
+                status = AutomationStepStatus.NOT_CONFIGURED.name,
+                waitingReason = "VIDEO_WAITING_FOR_RENDER_RETRY"
+            )
+        }
+        val updated = rj.copy(
+            status = AutomationJobStatus.WAITING_USER.name,
+            artifacts = updatedArtifacts,
+            stepOverrides = updatedSteps,
+            videoRenderPlan = null,
+            metadataPlan = null,
+            reviewState = null,
+            publishPlan = null,
+            runtimeMessage = "Da thay anh cho canh ${scene.ordinal}. Bam \"Cap nhat thay doi\" de render lai video."
+        ).let { stampImageSignatures(it, setOf(sceneId)) }
+        putRuntimeJob(jobId, updated)
+        return persisted.toUiSnapshot(runtimeJob = updated)
+    }
+
+    /**
+     * Xoa anh cua DUNG 1 canh (danh dau canh do "thieu anh") de luong cao web
+     * missing-only tim lai dung canh do theo tu khoa moi - giu nguyen anh cac canh
+     * khac. Video bi danh dau can render lai. Tra ve false neu khong tim thay.
+     */
+    fun clearSceneImage(jobId: String, sceneId: String): Boolean {
+        val rj = runtimeJobs[jobId] ?: return false
+        if (rj.scenePrompts.none { it.sceneId == sceneId }) return false
+        val hadImage = rj.artifacts.any { it.artifactType == "IMAGE" && it.sceneId == sceneId }
+        if (!hadImage) return true
+        val newArtifacts = rj.artifacts.filterNot {
+            (it.artifactType == "IMAGE" && it.sceneId == sceneId) ||
+                it.artifactType == "VIDEO_RENDER_PLAN" || it.artifactType == "VIDEO_MP4"
+        }
+        val newScenes = rj.scenePrompts.map {
+            if (it.sceneId == sceneId) it.copy(imageSignature = "") else it
+        }
+        val steps = rj.stepOverrides.toMutableMap().apply {
+            this["IMAGES_VISUALS"] = StepOverride(
+                status = AutomationStepStatus.WAITING_USER.name,
+                waitingReason = "WAITING_WEB_IMAGE_SCRAPE"
+            )
+            this["VIDEO"] = StepOverride(
+                status = AutomationStepStatus.NOT_CONFIGURED.name,
+                waitingReason = "VIDEO_WAITING_FOR_RENDER_RETRY"
+            )
+        }
+        putRuntimeJob(jobId, rj.copy(
+            scenePrompts = newScenes,
+            artifacts = newArtifacts,
+            stepOverrides = steps,
+            videoRenderPlan = null,
+            metadataPlan = null,
+            reviewState = null,
+            publishPlan = null
+        ))
+        return true
+    }
+
+    /** Duong dan file that (app-private) cua anh 1 canh - de native tai ve may. */
+    fun resolveSceneImagePath(jobId: String, sceneId: String): String? {
+        val rj = runtimeJobs[jobId] ?: return null
+        val art = rj.artifacts.firstOrNull { it.artifactType == "IMAGE" && it.sceneId == sceneId } ?: return null
+        return artifactStore.resolveArtifactAbsolutePath(art)
+    }
+
+    /**
+     * Timeline preview: tra ve giong doc tong duoi dang data URL (base64) de <audio>
+     * trong WebView phat kem khi tua timeline. Null neu chua co giong. Chi dung cho
+     * xem truoc (file WAV vai MB) - khong dung cho render.
+     */
+    suspend fun getVoiceDataUrl(jobId: String): String? {
+        val rj = runtimeJobs[jobId] ?: return null
+        val voice = rj.artifacts.firstOrNull { it.artifactType == "VOICE" } ?: return null
+        val bytes = artifactStore.readArtifactBytes(voice) ?: return null
+        val mime = voice.mimeType.ifBlank { "audio/wav" }
+        return "data:$mime;base64," + android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+    }
+
+    data class YouTubePublishData(
+        val videoFilePath: String,
+        val title: String,
+        val description: String,
+        val tags: List<String>
+    )
+
+    /** Du lieu de auto-upload YouTube: file MP4 + title/description/tags tu metadataPlan. */
+    fun getYouTubePublishData(jobId: String): YouTubePublishData? {
+        require(jobId.isNotBlank()) { "Job ID is required." }
+        val runtimeJob = runtimeJobs[jobId] ?: return null
+        val videoArtifact = runtimeJob.artifacts.firstOrNull { it.artifactType == "VIDEO_MP4" } ?: return null
+        val path = artifactStore.resolveArtifactAbsolutePath(videoArtifact) ?: return null
+        val meta = runtimeJob.metadataPlan
+        val title = meta?.title?.trim()?.ifBlank { null } ?: "Video"
+        val description = meta?.description?.trim().orEmpty()
+        val tags = meta?.hashtags.orEmpty().map { it.trim().removePrefix("#") }.filter { it.isNotBlank() }
+        return YouTubePublishData(
+            videoFilePath = path,
+            title = title,
+            description = description,
+            tags = tags
+        )
     }
 
     suspend fun listRecentAutomationJobs(
@@ -1230,14 +1977,9 @@ class AutomationFacade private constructor(
         } else {
             ""
         }
-        val sceneMessage = if (check != null && check.expectedItemCount > 0) {
-            " So muc hien co ${check.foundItemCount}/${check.expectedItemCount}."
-        } else {
-            ""
-        }
         throw ContentProviderException(
             ContentProviderErrorCode.PROVIDER_FAILURE,
-            "Gemini chua tao du noi dung theo yeu cau.$durationMessage$sceneMessage Hay thu lai SCRIPT."
+            "Gemini chua tao du noi dung theo yeu cau.$durationMessage Hay thu lai SCRIPT."
         )
     }
 
@@ -1288,7 +2030,7 @@ class AutomationFacade private constructor(
             status = AutomationJobStatus.WAITING_USER.name,
             runtimeMessage = "Metadata da duoc tao lai. Can review truoc khi publish."
         )
-        runtimeJobs[jobId] = updatedRuntime
+        putRuntimeJob(jobId, updatedRuntime)
         return persisted.toUiSnapshot(runtimeJob = updatedRuntime)
     }
 
@@ -1329,7 +2071,7 @@ class AutomationFacade private constructor(
             status = AutomationJobStatus.WAITING_USER.name,
             runtimeMessage = "Review da duoc duyet. Ban co the export/share va danh dau published thu cong."
         )
-        runtimeJobs[jobId] = updatedRuntime
+        putRuntimeJob(jobId, updatedRuntime)
         return persisted.toUiSnapshot(runtimeJob = updatedRuntime)
     }
 
@@ -1367,7 +2109,7 @@ class AutomationFacade private constructor(
             status = AutomationJobStatus.WAITING_USER.name,
             runtimeMessage = "Review da bi tu choi. Ban co the retry metadata truoc khi publish."
         )
-        runtimeJobs[jobId] = updatedRuntime
+        putRuntimeJob(jobId, updatedRuntime)
         return persisted.toUiSnapshot(runtimeJob = updatedRuntime)
     }
 
@@ -1400,7 +2142,7 @@ class AutomationFacade private constructor(
             stepOverrides = updatedStepOverrides,
             runtimeMessage = "Share sheet da duoc mo. Hay xac nhan dang trong app nen tang roi danh dau Published."
         )
-        runtimeJobs[jobId] = updatedRuntime
+        putRuntimeJob(jobId, updatedRuntime)
         return AutomationPublishShareResult(
             job = persisted.toUiSnapshot(runtimeJob = updatedRuntime),
             export = export,
@@ -1439,7 +2181,90 @@ class AutomationFacade private constructor(
             status = AutomationJobStatus.COMPLETED.name,
             runtimeMessage = "Publish da duoc danh dau hoan tat."
         )
-        runtimeJobs[jobId] = updatedRuntime
+        putRuntimeJob(jobId, updatedRuntime)
+        return persisted.toUiSnapshot(runtimeJob = updatedRuntime)
+    }
+
+    /**
+     * Giong importImageArtifacts() nhung nhan Map<sceneIndex, image> thay vi List
+     * gan theo VI TRI - dung cho luong cao anh tu web (Google Images/Pinterest),
+     * noi 1 vai canh co the cao that bai va bi bo qua. Neu dung List thuong va loai
+     * bo canh loi, cac canh sau se bi day len sai vi tri (gan nham anh nhan vat nay
+     * cho nhan vat khac) - Map giu dung sceneIndex nen khong bi loi nay.
+     */
+    suspend fun importImageArtifactsByIndex(
+        jobId: String,
+        imagesBySceneIndex: Map<Int, ImportedAutomationImage>
+    ): AutomationUiJobSnapshot {
+        require(jobId.isNotBlank()) { "Job ID is required." }
+        require(imagesBySceneIndex.isNotEmpty()) { "Can co it nhat mot anh cao duoc." }
+        val persisted = repository.getJobGraph(jobId)
+            ?: throw IllegalArgumentException("Khong tim thay job tu dong hoa.")
+        val runtimeJob = runtimeJobs[jobId]
+            ?: throw IllegalArgumentException("Khong tim thay runtime job de import anh.")
+        require(runtimeJob.scenePrompts.isNotEmpty()) {
+            "Job nay chua co scene prompts de gan anh."
+        }
+        val imageStepId = persisted.steps.firstOrNull { it.stepType == "IMAGES_VISUALS" }?.stepId
+            ?: throw IllegalArgumentException("Khong tim thay buoc IMAGE trong job.")
+        val targetScenes = runtimeJob.scenePrompts.sortedBy { it.ordinal }
+        val existingImagesByScene = runtimeJob.artifacts
+            .filter { it.artifactType == "IMAGE" && !it.sceneId.isNullOrBlank() }
+            .associateBy { it.sceneId!! }
+            .toMutableMap()
+        val providerId = resolveSelectedImageProviderId() ?: AutomationImageProviders.CHATGPT_IMAGE_SEARCH_WEB
+        val savedArtifacts = imagesBySceneIndex.mapNotNull { (index, image) ->
+            val scene = targetScenes.getOrNull(index) ?: return@mapNotNull null
+            artifactStore.saveGeneratedImageArtifact(
+                jobId = jobId,
+                stepId = imageStepId,
+                bytes = image.bytes,
+                providerId = providerId,
+                model = "web-scrape",
+                mimeType = image.mimeType,
+                sourceUrl = "web-scrape;displayName=${image.displayName.replace(';', ',')}",
+                sceneId = scene.sceneId,
+                ordinal = scene.ordinal,
+                providerRequestId = null
+            )
+        }
+        savedArtifacts.forEach { artifact ->
+            artifact.sceneId?.let { sceneId -> existingImagesByScene[sceneId] = artifact }
+        }
+        val mergedImages = targetScenes.mapNotNull { scene -> existingImagesByScene[scene.sceneId] }
+        val complete = mergedImages.size >= targetScenes.size
+        val updatedArtifacts = runtimeJob.artifacts
+            .filterNot { it.artifactType == "IMAGE" || it.artifactType == "VIDEO_RENDER_PLAN" || it.artifactType == "VIDEO_MP4" }
+            .toMutableList()
+            .apply { addAll(mergedImages) }
+        val updatedSteps = runtimeJob.stepOverrides.toMutableMap().apply {
+            this["IMAGES_VISUALS"] = StepOverride(
+                status = if (complete) AutomationStepStatus.COMPLETED.name else AutomationStepStatus.WAITING_USER.name,
+                waitingReason = if (complete) "WEB_SCRAPE_IMAGES_READY" else "WAITING_WEB_IMAGE_SCRAPE"
+            )
+            this["VIDEO"] = StepOverride(
+                status = AutomationStepStatus.NOT_CONFIGURED.name,
+                waitingReason = "VIDEO_WAITING_FOR_RENDER_RETRY"
+            )
+        }
+        val updatedRuntime = runtimeJob.copy(
+            status = if (complete) AutomationJobStatus.WAITING_USER.name else runtimeJob.status,
+            artifacts = updatedArtifacts,
+            runtimeMessage = if (complete) {
+                "Da cao du anh tu web. Ban co the tiep tuc tao giong doc/video cho phien nay."
+            } else {
+                "Da co ${mergedImages.size}/${targetScenes.size} anh trong phien; vua cao them ${savedArtifacts.size} anh tu web."
+            },
+            stepOverrides = updatedSteps,
+            imageProviderId = providerId,
+            imageModel = "web-scrape",
+            imageAttemptHistory = runtimeJob.imageAttemptHistory + providerId,
+            videoRenderPlan = null,
+            metadataPlan = null,
+            reviewState = null,
+            publishPlan = null
+        ).let { stampImageSignatures(it, savedArtifacts.mapNotNull { a -> a.sceneId }.toSet()) }
+        putRuntimeJob(jobId, updatedRuntime)
         return persisted.toUiSnapshot(runtimeJob = updatedRuntime)
     }
 
@@ -1510,8 +2335,8 @@ class AutomationFacade private constructor(
             imageModel = "device-import",
             imageAttemptHistory = runtimeJob.imageAttemptHistory + MANUAL_IMAGE_IMPORT_PROVIDER_ID,
             videoRenderPlan = null
-        )
-        runtimeJobs[jobId] = updatedRuntime
+        ).let { stampImageSignatures(it, savedArtifacts.mapNotNull { a -> a.sceneId }.toSet()) }
+        putRuntimeJob(jobId, updatedRuntime)
         return persisted.toUiSnapshot(runtimeJob = updatedRuntime)
     }
 
@@ -1521,9 +2346,7 @@ class AutomationFacade private constructor(
         val wordCount: Int,
         val minimumWordCount: Int,
         val estimatedDurationMs: Long,
-        val targetDurationMs: Long,
-        val foundItemCount: Int,
-        val expectedItemCount: Int
+        val targetDurationMs: Long
     )
 
     private fun evaluateContentSufficiency(
@@ -1538,27 +2361,23 @@ class AutomationFacade private constructor(
         val enforceDuration = durationPolicy?.explicitDuration == true
         val minimumWordCount = if (enforceDuration) minimumNarrationWordCount(targetDurationMs) else 0
         val estimatedDurationMs = estimateNarrationDurationMs(wordCount)
-        val expectedItemCount = durationPolicy?.targetItemCount ?: 0
-        val foundItemCount = result.structuredScript?.itemCount ?: 0
-        val itemCountSufficient = expectedItemCount <= 0 || foundItemCount >= expectedItemCount
+        // Khong con kiem tra "du so muc" - Gemini tu quyet so muc/co cau truc phu
+        // hop, lqlq khong doan/ep buoc con so nao. Chi con dieu kien noi dung THAT
+        // (co loi thoai) va DU THOI LUONG (word count/duration) - ca 2 deu khong
+        // phu thuoc vao viec lqlq doan chu de la loai gi.
         val durationSufficient = !enforceDuration || wordCount >= minimumWordCount
         val hasNarration = narration.isNotBlank()
         return ContentSufficiencyCheck(
-            isSufficient = hasNarration && itemCountSufficient && durationSufficient,
+            isSufficient = hasNarration && durationSufficient,
             wordCount = wordCount,
             minimumWordCount = minimumWordCount,
             estimatedDurationMs = estimatedDurationMs,
-            targetDurationMs = targetDurationMs,
-            foundItemCount = foundItemCount,
-            expectedItemCount = expectedItemCount
+            targetDurationMs = targetDurationMs
         )
     }
 
     private fun buildContentRepairInstruction(check: ContentSufficiencyCheck): String {
         val requirements = mutableListOf<String>()
-        if (check.expectedItemCount > 0 && check.foundItemCount < check.expectedItemCount) {
-            requirements += "Ban moi tao ${check.foundItemCount}/${check.expectedItemCount} muc. Hay tao day du tu muc 1 den muc ${check.expectedItemCount}, khong rut gon va khong bo muc."
-        }
         if (check.minimumWordCount > 0 && check.wordCount < check.minimumWordCount) {
             requirements += "Loi doc hien tai chi khoang ${check.estimatedDurationMs / 1000L} giay voi ${check.wordCount} tu. Hay viet lai va mo rong tu nhien de co IT NHAT ${check.minimumWordCount} tu, tuong duong toi thieu ${check.targetDurationMs / 1000L} giay doc binh thuong; dai hon duoc phep, ngan hon khong dat."
         }
@@ -1593,6 +2412,30 @@ class AutomationFacade private constructor(
         return NARRATION_WORD_PATTERN.findAll(text).count()
     }
 
+    // Nguon anh mien phi khong can API key (Openverse/Wikimedia) gioi han toc do
+    // rat chat cho khach vang lai. Mot job co nhieu canh (vd "top 10") goi lien
+    // tiep de bi RATE_LIMITED giua chung du tung anh rieng le van tim duoc. Thu
+    // lai co nghi (backoff tang dan) truoc khi thuc su bao loi, thay vi hong ca
+    // buoc anh chi vi 1 canh bi gioi han tam thoi.
+    private suspend fun generateImageWithRateLimitRetry(
+        connector: ImageGenerationConnector,
+        config: ImageProviderConfig,
+        request: ImageGenerationRequest
+    ): ImageGenerationResult {
+        var attempt = 0
+        while (true) {
+            try {
+                return connector.generateImage(config, request)
+            } catch (error: ImageProviderException) {
+                if (error.code != ImageProviderErrorCode.RATE_LIMITED || attempt >= MAX_RATE_LIMIT_RETRIES) {
+                    throw error
+                }
+                attempt += 1
+                delay(RATE_LIMIT_RETRY_BASE_DELAY_MS * attempt)
+            }
+        }
+    }
+
     private suspend fun executeImageStage(
         jobId: String,
         stepId: String,
@@ -1624,7 +2467,20 @@ class AutomationFacade private constructor(
             )
         }
 
-        val config = credentialStore.getImageProviderConfiguration(definition.providerId)
+        var config = credentialStore.getImageProviderConfiguration(definition.providerId)
+        if (config == null && definition.authType == ImageProviderAuthType.NONE) {
+            // Provider khong can credential (Tu dong/Openverse/Wikimedia...) khong nen
+            // bat nguoi dung phai vao Cai dat luu tay truoc khi chay pipeline - tu luu
+            // 1 ban ghi cau hinh rong ngay tai day de tu phuc hoi, tranh phu thuoc vao
+            // dung thoi diem JS goi refresh/luu tren man Cai dat.
+            credentialStore.saveImageProviderConfiguration(
+                providerId = definition.providerId,
+                apiKey = "",
+                model = definition.capabilities.defaultModel.orEmpty(),
+                accountId = null
+            )
+            config = credentialStore.getImageProviderConfiguration(definition.providerId)
+        }
         if (config == null) {
             return ImageStageOutcome(
                 providerId = definition.providerId,
@@ -1637,30 +2493,54 @@ class AutomationFacade private constructor(
             )
         }
 
+        if (definition.providerId in WEB_SCRAPE_IMAGE_PROVIDER_IDS) {
+            // Google Images/Pinterest can WebView foreground de cao anh (giong Gemini
+            // web) - khong the goi nhu 1 ImageGenerationConnector chay ngam trong
+            // WorkManager. Dung o day, giu nguyen scene prompts/asset plan, cho JS
+            // goi rieng bridge scrapeWebImages() trong luc app dang mo, sau do
+            // importImageArtifacts() se day buoc anh sang COMPLETED nhu binh thuong.
+            return ImageStageOutcome(
+                providerId = definition.providerId,
+                model = definition.capabilities.defaultModel,
+                artifacts = emptyList(),
+                stepStatus = AutomationStepStatus.WAITING_USER.name,
+                jobStatus = AutomationJobStatus.WAITING_USER.name,
+                waitingReason = "WAITING_WEB_IMAGE_SCRAPE",
+                runtimeMessage = "Content va scene prompts da san sang. Dang tu dong cao anh tu ${definition.displayName} (can giu app dang mo, khong can bam gi them)."
+            )
+        }
+
         val connector = requireImageConnector(definition.providerId)
         val assetPlanBySceneId = assetPlans.associateBy { it.sceneId }
-        return try {
-            val imageArtifacts = scenePrompts
+        suspend fun runImageGeneration(
+            effectiveDefinition: ImageProviderDefinition,
+            effectiveConfig: ImageProviderCredentialConfiguration,
+            effectiveConnector: ImageGenerationConnector
+        ): List<AutomationSavedArtifact> {
+            return scenePrompts
                 .sortedBy { it.ordinal }
                 .mapNotNull { scene ->
                     val assetPlan = assetPlanBySceneId[scene.sceneId]
                     val requestPrompt = resolveImagePrompt(scene, assetPlan)
-                    val imageResult = connector.generateImage(
-                        config = ImageProviderConfig(
-                            providerId = config.providerId,
-                            apiKey = config.apiKey,
-                            model = config.model,
-                            accountId = config.accountId
-                        ),
-                        request = ImageGenerationRequest(
-                            jobId = jobId,
-                            sceneId = scene.sceneId,
-                            ordinal = scene.ordinal,
-                            prompt = requestPrompt,
-                            aspectRatio = scene.aspectRatio,
-                            negativePrompt = scene.negativePrompt
-                        )
+                    val imageRequest = ImageGenerationRequest(
+                        jobId = jobId,
+                        sceneId = scene.sceneId,
+                        ordinal = scene.ordinal,
+                        prompt = requestPrompt,
+                        aspectRatio = scene.aspectRatio,
+                        negativePrompt = scene.negativePrompt
                     )
+                    val imageConfig = ImageProviderConfig(
+                        providerId = effectiveConfig.providerId,
+                        apiKey = effectiveConfig.apiKey,
+                        model = effectiveConfig.model,
+                        accountId = effectiveConfig.accountId
+                    )
+                    // Nguon mien phi khong key (Openverse/Wikimedia) gioi han toc do rat
+                    // chat cho khach vang lai - goi lien tiep nhieu canh trong 1 job de
+                    // bi RATE_LIMITED giua chung. Thu lai co nghi (backoff) thay vi hong
+                    // ca buoc anh chi vi 1 canh bi gioi han tam thoi.
+                    val imageResult = generateImageWithRateLimitRetry(effectiveConnector, imageConfig, imageRequest)
                     artifactStore.saveGeneratedImageArtifact(
                         jobId = jobId,
                         stepId = stepId,
@@ -1674,6 +2554,9 @@ class AutomationFacade private constructor(
                         providerRequestId = imageResult.providerRequestId
                     )
                 }
+        }
+        return try {
+            val imageArtifacts = runImageGeneration(definition, config, connector)
 
             credentialStore.markImageProviderState(
                 definition.providerId,
@@ -1709,8 +2592,32 @@ class AutomationFacade private constructor(
                 stepStatus = stepStatus,
                 jobStatus = jobStatus,
                 waitingReason = mapImageWaitingReason(error.code),
-                runtimeMessage = "Content va scene prompts da duoc giu nguyen, nhung ${definition.displayName} chua tao duoc anh that luc nay. Ban co the sua cau hinh hien tai hoac thu lai voi provider khac ma khong can chay lai CONTENT."
+                // Ghep them error.message (vd Openverse/Wikimedia deu khong tim thay
+                // anh phu hop, ly do cu the tu tung nguon) thay vi chi hien cau chung
+                // chung khong noi ro vi sao that bai.
+                runtimeMessage = "Content va scene prompts da duoc giu nguyen, nhung ${definition.displayName} chua tao duoc anh that luc nay: ${error.message.orEmpty()} Ban co the sua cau hinh hien tai hoac thu lai voi provider khac ma khong can chay lai CONTENT."
             )
+        }
+    }
+
+    /**
+     * Gan thoi luong THAT do duoc tu buoc voice (theo ordinal tang dan) vao
+     * plannedDurationMs cua tung ScenePrompt. Neu so luong khong khop hoac rong
+     * (fallback khong tach canh) thi tra ve nguyen ban, giu uoc luong cu.
+     */
+    private fun applyRealSceneDurations(
+        scenePrompts: List<ScenePrompt>,
+        sceneDurationsMs: List<Long>
+    ): List<ScenePrompt> {
+        if (sceneDurationsMs.isEmpty()) return scenePrompts
+        val ordered = scenePrompts.sortedBy { it.ordinal }
+        if (sceneDurationsMs.size != ordered.size) return scenePrompts
+        val updatedBySceneId = ordered.mapIndexed { index, scene ->
+            scene.sceneId to sceneDurationsMs[index].coerceAtLeast(1L)
+        }.toMap()
+        return scenePrompts.map { scene ->
+            val realDuration = updatedBySceneId[scene.sceneId] ?: return@map scene
+            scene.copy(plannedDurationMs = realDuration)
         }
     }
 
@@ -1747,7 +2654,19 @@ class AutomationFacade private constructor(
             )
         }
 
-        val config = credentialStore.getVoiceProviderConfiguration(definition.providerId)
+        var config = credentialStore.getVoiceProviderConfiguration(definition.providerId)
+        if (config == null && definition.authType == VoiceProviderAuthType.NONE) {
+            // Cung logic tu phuc hoi nhu image: provider khong can credential (vd
+            // Google TTS tren may) khong nen bat cho nguoi dung vao Cai dat luu tay.
+            credentialStore.saveVoiceProviderConfiguration(
+                VoiceProviderCredentialConfiguration(
+                    providerId = definition.providerId,
+                    locale = definition.capabilities.defaultLocale,
+                    outputFormat = definition.capabilities.supportedOutputFormats.firstOrNull() ?: "wav"
+                )
+            )
+            config = credentialStore.getVoiceProviderConfiguration(definition.providerId)
+        }
         if (config == null) {
             return VoiceStageOutcome(
                 providerId = definition.providerId,
@@ -1764,48 +2683,105 @@ class AutomationFacade private constructor(
         val connector = requireVoiceConnector(definition.providerId)
         return try {
             val orderedVoiceScenes = scenePrompts.sortedBy { it.ordinal }
-            val itemSceneCount = orderedVoiceScenes.count { isItemScene(it) }
-            if (durationPolicy.targetItemCount != null && itemSceneCount < durationPolicy.targetItemCount) {
-                return VoiceStageOutcome(
-                    providerId = definition.providerId,
-                    voiceId = config.voiceId,
-                    locale = config.locale,
-                    artifacts = emptyList(),
-                    stepStatus = AutomationStepStatus.FAILED.name,
-                    jobStatus = AutomationJobStatus.FAILED.name,
-                    waitingReason = "VOICE_INPUT_SCENE_COUNT_TOO_LOW",
-                    runtimeMessage = "Topic dang yeu cau it nhat ${durationPolicy.targetItemCount} muc, nhung pipeline moi co $itemSceneCount scene item. Voice se khong duoc tao tu preview/intro khong day du."
+            // Sinh TTS TUNG CANH rieng (thay vi gop ca kich ban lam 1 file) de do
+            // duoc thoi luong THAT cua tung canh -> renderer dat anh dung theo loi
+            // doc. Canh voiceText rong tra ve null -> assembler chen khoang lang
+            // placeholder giu timeline khong lech.
+            val perSceneWavs = ArrayList<ByteArray?>(orderedVoiceScenes.size)
+            var lastMetadataMime = "audio/wav"
+            var lastVoiceId = config.voiceId
+            var lastLocale = config.locale
+            var totalChunkCount = 0
+            var totalInputChars = 0
+            orderedVoiceScenes.forEach { scene ->
+                val sceneText = scene.voiceText.trim()
+                if (sceneText.isEmpty()) {
+                    perSceneWavs += null
+                    return@forEach
+                }
+                val sceneResult = connector.generateVoice(
+                    config = config.toVoiceProviderConfig(),
+                    request = VoiceGenerationRequest(
+                        jobId = jobId,
+                        scriptArtifactId = "generated-script-$jobId-scene-${scene.ordinal}",
+                        text = sceneText,
+                        providerId = definition.providerId,
+                        voiceId = config.voiceId,
+                        locale = config.locale,
+                        speechRate = config.speechRate,
+                        pitch = config.pitch,
+                        outputFormat = config.outputFormat
+                    )
                 )
+                perSceneWavs += sceneResult.bytes
+                lastMetadataMime = sceneResult.mimeType
+                lastVoiceId = sceneResult.metadata.voiceId
+                lastLocale = sceneResult.metadata.locale
+                totalChunkCount += sceneResult.metadata.chunkCount
+                totalInputChars += sceneText.length
             }
-            val voiceInputText = orderedVoiceScenes.joinToString("\n\n") { it.voiceText.trim() }.trim()
-            val result = connector.generateVoice(
-                config = config.toVoiceProviderConfig(),
-                request = VoiceGenerationRequest(
-                    jobId = jobId,
-                    scriptArtifactId = "generated-script-$jobId",
-                    text = voiceInputText,
-                    providerId = definition.providerId,
-                    voiceId = config.voiceId,
-                    locale = config.locale,
-                    speechRate = config.speechRate,
-                    pitch = config.pitch,
-                    outputFormat = config.outputFormat
-                )
-            )
+            require(perSceneWavs.any { it != null }) {
+                "Tat ca cac canh deu rong voiceText, khong tao duoc giong doc."
+            }
 
-            val savedArtifact = artifactStore.saveGeneratedVoiceArtifact(
-                jobId = jobId,
-                stepId = stepId,
-                bytes = result.bytes,
-                providerId = result.metadata.providerId,
-                voiceId = result.metadata.voiceId,
-                locale = result.metadata.locale,
-                mimeType = result.mimeType,
-                durationMs = result.metadata.durationMs,
-                chunkCount = result.metadata.chunkCount,
-                inputCharCount = voiceInputText.length,
-                inputSceneCount = orderedVoiceScenes.size
-            )
+            // Chi Android TTS tra ve WAV nen chi ghep-theo-canh khi la WAV. Provider
+            // khac (mp3...) tam thoi giu luong cu (chua tach canh) de khong lam hong;
+            // se mo rong khi lam Edge TTS o workstream B.
+            val combined = if (lastMetadataMime == "audio/wav") {
+                runCatching { WavAudioAssembler.combine(perSceneWavs, silenceGapMs = SCENE_TRANSITION_SILENCE_MS) }.getOrNull()
+            } else {
+                null
+            }
+
+            val savedArtifact: AutomationSavedArtifact?
+            val sceneDurationsMs: List<Long>
+            if (combined != null) {
+                savedArtifact = artifactStore.saveGeneratedVoiceArtifact(
+                    jobId = jobId,
+                    stepId = stepId,
+                    bytes = combined.wavBytes,
+                    providerId = definition.providerId,
+                    voiceId = lastVoiceId,
+                    locale = lastLocale,
+                    mimeType = "audio/wav",
+                    durationMs = combined.totalDurationMs,
+                    chunkCount = totalChunkCount,
+                    inputCharCount = totalInputChars,
+                    inputSceneCount = orderedVoiceScenes.size
+                )
+                sceneDurationsMs = combined.sceneDurationsMs
+            } else {
+                // Fallback an toan: gop ca kich ban lam 1 lan nhu truoc (khong tach canh).
+                val voiceInputText = orderedVoiceScenes.joinToString("\n\n") { it.voiceText.trim() }.trim()
+                val result = connector.generateVoice(
+                    config = config.toVoiceProviderConfig(),
+                    request = VoiceGenerationRequest(
+                        jobId = jobId,
+                        scriptArtifactId = "generated-script-$jobId",
+                        text = voiceInputText,
+                        providerId = definition.providerId,
+                        voiceId = config.voiceId,
+                        locale = config.locale,
+                        speechRate = config.speechRate,
+                        pitch = config.pitch,
+                        outputFormat = config.outputFormat
+                    )
+                )
+                savedArtifact = artifactStore.saveGeneratedVoiceArtifact(
+                    jobId = jobId,
+                    stepId = stepId,
+                    bytes = result.bytes,
+                    providerId = result.metadata.providerId,
+                    voiceId = result.metadata.voiceId,
+                    locale = result.metadata.locale,
+                    mimeType = result.mimeType,
+                    durationMs = result.metadata.durationMs,
+                    chunkCount = result.metadata.chunkCount,
+                    inputCharCount = voiceInputText.length,
+                    inputSceneCount = orderedVoiceScenes.size
+                )
+                sceneDurationsMs = emptyList()
+            }
 
             credentialStore.markVoiceProviderState(
                 definition.providerId,
@@ -1815,13 +2791,14 @@ class AutomationFacade private constructor(
 
             VoiceStageOutcome(
                 providerId = definition.providerId,
-                voiceId = result.metadata.voiceId,
-                locale = result.metadata.locale,
+                voiceId = lastVoiceId,
+                locale = lastLocale,
                 artifacts = listOfNotNull(savedArtifact),
                 stepStatus = AutomationStepStatus.COMPLETED.name,
                 jobStatus = AutomationJobStatus.WAITING_USER.name,
                 waitingReason = "REAL_VOICE_READY",
-                runtimeMessage = "Content, scene prompts, image artifact va voice artifact da san sang voi ${definition.displayName}. Video, metadata va publish van chua duoc cau hinh trong pass nay."
+                runtimeMessage = "Content, scene prompts, image artifact va voice artifact da san sang voi ${definition.displayName}. Video, metadata va publish van chua duoc cau hinh trong pass nay.",
+                sceneDurationsMs = sceneDurationsMs
             )
         } catch (error: VoiceProviderException) {
             updateVoiceProviderFailureState(definition.providerId, error)
@@ -1857,7 +2834,15 @@ class AutomationFacade private constructor(
         assetPlans: List<VisualAssetPlan>,
         artifacts: List<AutomationSavedArtifact>,
         videoRendererMode: String,
-        videoWorkerUrl: String?
+        videoWorkerUrl: String?,
+        videoQualityTier: String = "1080p",
+        videoBackgroundMode: String = "blurred_fill",
+        videoMotionMode: String = "auto_mix",
+        backgroundMusicFilePath: String? = null,
+        backgroundMusicLoop: Boolean = true,
+        backgroundMusicVolume: Float = 0.35f,
+        videoSubtitleColor: String = "#FFFFFF",
+        videoTitle: String = ""
     ): VideoStageOutcome {
         val imageArtifacts = artifacts
             .filter { it.artifactType == "IMAGE" }
@@ -1898,7 +2883,15 @@ class AutomationFacade private constructor(
                 imageArtifacts = imageArtifacts,
                 voiceArtifact = voiceArtifact,
                 videoRendererMode = videoRendererMode,
-                videoWorkerUrl = videoWorkerUrl
+                videoWorkerUrl = videoWorkerUrl,
+                videoQualityTier = videoQualityTier,
+                videoBackgroundMode = videoBackgroundMode,
+                videoMotionMode = videoMotionMode,
+                backgroundMusicFilePath = backgroundMusicFilePath,
+                backgroundMusicLoop = backgroundMusicLoop,
+                backgroundMusicVolume = backgroundMusicVolume,
+                videoSubtitleColor = videoSubtitleColor,
+                videoTitle = videoTitle
             )
         )
         val planJson = VideoRenderPlanJson.encode(result.plan)
@@ -1921,7 +2914,15 @@ class AutomationFacade private constructor(
                         imageArtifacts = imageArtifacts,
                         voiceArtifact = voiceArtifact,
                         videoRendererMode = videoRendererMode,
-                        videoWorkerUrl = videoWorkerUrl
+                        videoWorkerUrl = videoWorkerUrl,
+                        videoQualityTier = videoQualityTier,
+                        videoBackgroundMode = videoBackgroundMode,
+                        videoMotionMode = videoMotionMode,
+                        backgroundMusicFilePath = backgroundMusicFilePath,
+                        backgroundMusicLoop = backgroundMusicLoop,
+                        backgroundMusicVolume = backgroundMusicVolume,
+                        videoSubtitleColor = videoSubtitleColor,
+                        videoTitle = videoTitle
                     ),
                     plan = result.plan,
                     artifactStore = artifactStore
@@ -2545,8 +3546,7 @@ class AutomationFacade private constructor(
         val normalizedContentType = contentType.trim().ifEmpty { DEFAULT_CONTENT_TYPE }
         val durationPolicy = ContentDurationPolicy.fromTopic(
             topic = normalizedTopic,
-            desiredDurationSeconds = desiredDurationSeconds,
-            requestedSceneCount = requestedSceneCount
+            desiredDurationSeconds = desiredDurationSeconds
         )
         require(normalizedTopic.isNotBlank()) { "Topic is required." }
         require(normalizedTopic.length <= MAX_AUTOMATION_CONTENT_LENGTH) { "Topic is too long." }
@@ -2582,9 +3582,110 @@ class AutomationFacade private constructor(
             maximumOutputLength = adjustedMaximumOutputLength,
             desiredDurationSeconds = desiredDurationSeconds,
             requestedSceneCount = requestedSceneCount,
+            aspectRatio = normalizeAspectRatio(aspectRatio),
             clientRequestId = clientRequestId?.trim()?.ifBlank { null },
             videoRendererMode = normalizeVideoRendererMode(videoRendererMode),
-            videoWorkerUrl = videoWorkerUrl?.trim()?.ifBlank { null }
+            videoWorkerUrl = videoWorkerUrl?.trim()?.ifBlank { null },
+            videoQualityTier = normalizeVideoQualityTier(videoQualityTier),
+            videoBackgroundMode = normalizeVideoBackgroundMode(videoBackgroundMode),
+            videoMotionMode = normalizeVideoMotionMode(videoMotionMode),
+            backgroundMusicFilePath = backgroundMusicFilePath?.trim()?.ifBlank { null },
+            backgroundMusicVolume = backgroundMusicVolume.coerceIn(0f, 2f),
+            videoSubtitleColor = normalizeVideoSubtitleColor(videoSubtitleColor)
+        )
+    }
+
+    private fun normalizeVideoQualityTier(value: String): String {
+        return if (value.trim().equals("720p", ignoreCase = true)) "720p" else "1080p"
+    }
+
+    /** Rut TIEU DE ngan gon tu chu de nguoi dung nhap (KHONG hot ca mo ta dai). */
+    private fun deriveVideoTitle(topic: String): String {
+        val normalized = topic.replace("\r", "\n").trim()
+        if (normalized.isEmpty()) return ""
+        // Uu tien dong "Chu de:" neu co; neu khong lay dong/cau dau tien.
+        val firstLine = normalized.lineSequence().map { it.trim() }.firstOrNull { it.isNotBlank() }.orEmpty()
+        val candidate = firstLine.substringAfter("chu de:", firstLine)
+            .substringAfter("Chủ đề:", firstLine)
+            .trim()
+            .ifBlank { firstLine }
+        // Cat theo cau/gioi han ~70 ky tu de la TIEU DE, khong phai ca doan mo ta.
+        val bySentence = candidate.split(Regex("(?<=[.!?])\\s+")).firstOrNull()?.trim().orEmpty().ifBlank { candidate }
+        return if (bySentence.length <= 70) bySentence else bySentence.take(67).trimEnd() + "..."
+    }
+
+    private fun normalizeVideoSubtitleColor(value: String): String {
+        val v = value.trim()
+        return if (Regex("^#[0-9a-fA-F]{6}$").matches(v)) v.uppercase() else "#FFFFFF"
+    }
+
+    private fun normalizeVideoBackgroundMode(value: String): String {
+        return if (value.trim().equals("black_bars", ignoreCase = true)) "black_bars" else "blurred_fill"
+    }
+
+    private fun normalizeVideoMotionMode(value: String): String {
+        return when (value.trim().lowercase()) {
+            "zoom_in", "zoom_out", "pan_left_to_right", "pan_right_to_left", "none" -> value.trim().lowercase()
+            else -> "auto_mix"
+        }
+    }
+
+    private fun normalizeAspectRatio(value: String): String {
+        val normalized = value.trim()
+        return if (normalized in SUPPORTED_ASPECT_RATIOS) normalized else DEFAULT_TARGET_ASPECT_RATIO
+    }
+
+    /**
+     * Dung cho nguon noi dung "Gemini web" (khong qua API): van ban da lay san tu
+     * phien Gemini web (WebView) duoc bien thanh ContentGenerationResult y het
+     * dinh dang duong API tra ve, de toan bo pipeline phia sau (chia canh, anh,
+     * giong, video) chay lai HOAN TOAN giong nhau, khong phai viet lai gi ca.
+     */
+    private fun buildContentResultFromRawText(
+        rawText: String,
+        durationPolicy: ContentDurationPolicy,
+        providerId: String,
+        model: String
+    ): ContentGenerationResult {
+        require(rawText.isNotBlank()) { "Gemini web chua tra ve noi dung nao." }
+        // Luon thu parse JSON co cau truc (Gemini web dung chung prompt yeu cau JSON
+        // voi duong API, xem buildWebContentPrompt) - khong con gioi han chi cho
+        // listicle, de Gemini tu quyet so canh cho MOI loai noi dung.
+        //
+        // Duong web KHONG co vong lap kiem tra du noi dung + tu retry nhu duong API
+        // (generateCanonicalContent/evaluateContentSufficiency) - cao JSON tu trang
+        // web kem tin cay hon API that (de bi cat cut/parse thieu). Neu JSON parse
+        // duoc nhung qua ngan so voi chinh rawText (vd chi bat duoc 1 doan do JSON
+        // bi cat), uu tien dung rawText tho thay vi cau truc thieu, tranh mat phan
+        // lon noi dung that Gemini da viet.
+        val structured = StructuredScriptParser.parse(rawText, durationPolicy)
+        // Neu response CO DANG JSON ("{...") thi LUON dung structured da parse -
+        // tuyet doi khong duoc do raw JSON vao narration (se lot key "voiceText"/
+        // "visualQuery"/"onScreenText"... vao ca giong doc lan phu de).
+        // StructuredScriptParser da tu xu ly JSON day du / thieu / cat cut qua 3
+        // tang parse (parseJson -> parseJsonLike regex tung item -> parseFallback),
+        // nen o day khong so mat noi dung.
+        //
+        // Guard so-sanh so tu (chong mat noi dung khi JSON bi cat) chi con ap dung
+        // cho truong hop rawText la VAN XUOI thuc su (khong bat dau bang "{") - luc
+        // do so tu structured vs raw moi cung don vi de so. Truoc day so structured
+        // (chi voiceText) voi raw (ca key JSON + visualQuery + onScreenText...) la
+        // sai don vi, khien listicle JSON hop le bi vut bo oan -> lot key.
+        val isJsonShaped = rawText.trim().startsWith("{")
+        val structuredWordCount = structured?.fullVoiceText()?.let(::countNarrationWords) ?: 0
+        val rawWordCount = countNarrationWords(rawText)
+        val useStructured = structured != null &&
+            (isJsonShaped || rawWordCount == 0 || structuredWordCount >= rawWordCount / 2)
+        // Khi dung structured: generatedText = narration SACH (fullVoiceText) giong
+        // het duong API (GeminiContentConnector), khong luu raw JSON - de JSON khong
+        // lot sang metadata/hien thi transcript. Chi giu raw khi that su la van xuoi.
+        val cleanNarration = structured?.fullVoiceText()?.takeUnless { it.isNullOrBlank() }
+        val generatedText = if (useStructured && cleanNarration != null) cleanNarration else rawText
+        return ContentGenerationResult(
+            generatedText = generatedText,
+            providerId = providerId,
+            model = model,
+            structuredScript = if (useStructured) structured else null
         )
     }
 
@@ -2629,18 +3730,23 @@ class AutomationFacade private constructor(
             model = runtimeJob?.contentModel,
             requestId = runtimeJob?.requestId,
             usageMetadata = runtimeJob?.usageMetadata.orEmpty(),
-            scenePrompts = runtimeJob?.scenePrompts?.map { it.toUiScenePrompt() }.orEmpty(),
+            scenePrompts = runtimeJob?.let { rj ->
+                val plans = rj.assetPlans.associateBy { it.sceneId }
+                rj.scenePrompts.map { it.toUiScenePrompt(sceneImageStatus(rj, it, plans)) }
+            }.orEmpty(),
             assetPlans = runtimeJob?.assetPlans?.map { it.toUiAssetPlan() }.orEmpty(),
             videoRenderPlan = runtimeJob?.videoRenderPlan?.toUiVideoRenderPlan(),
             metadataPlan = runtimeJob?.metadataPlan,
             reviewState = runtimeJob?.reviewState,
             publishPlan = runtimeJob?.publishPlan,
             artifacts = runtimeJob?.artifacts?.map { it.toUiArtifact() }.orEmpty(),
-            runtimeMessage = runtimeJob?.runtimeMessage
+            runtimeMessage = runtimeJob?.runtimeMessage,
+            voiceStatus = runtimeJob?.let { jobVoiceStatus(it) } ?: "MISSING",
+            videoStatus = runtimeJob?.let { jobVideoStatus(it) } ?: "MISSING"
         )
     }
 
-    private fun ScenePrompt.toUiScenePrompt(): AutomationUiScenePromptSnapshot {
+    private fun ScenePrompt.toUiScenePrompt(imageStatus: String = "READY"): AutomationUiScenePromptSnapshot {
         return AutomationUiScenePromptSnapshot(
             sceneId = sceneId,
             ordinal = ordinal,
@@ -2652,7 +3758,8 @@ class AutomationFacade private constructor(
             onScreenText = onScreenText,
             plannedDurationMs = plannedDurationMs,
             stockSearchQuery = stockSearchQuery,
-            visualDirection = visualDirection
+            visualDirection = visualDirection,
+            imageStatus = imageStatus
         )
     }
 
@@ -2661,11 +3768,110 @@ class AutomationFacade private constructor(
         assetPlan: VisualAssetPlan?
     ): String {
         return listOf(
-            assetPlan?.assetQuery,
+            // Uu tien stockSearchQuery TRUOC (nguoi dung co the sua tay tu khoa nay)
+            // roi moi den asset plan tu dong.
             scene.stockSearchQuery.takeIf { it.isNotBlank() },
+            assetPlan?.assetQuery,
             scene.visualDirection.takeIf { it.isNotBlank() },
             scene.visualPrompt
         ).firstOrNull { !it.isNullOrBlank() }.orEmpty()
+    }
+
+    // ------------------------------------------------------------------
+    // STALE / chu ky dau vao: biet phan nao (anh/giong/video) da cu sau khi
+    // nguoi dung sua canh, de chi tao lai dung phan do - KHONG goi lai
+    // Gemini/Pinterest, KHONG dung sach anh cu.
+    // ------------------------------------------------------------------
+    private fun shortSignature(raw: String): String {
+        return runCatching {
+            val digest = java.security.MessageDigest.getInstance("MD5").digest(raw.toByteArray(Charsets.UTF_8))
+            digest.joinToString("") { "%02x".format(it) }.take(12)
+        }.getOrElse { raw.hashCode().toString() }
+    }
+
+    private fun currentImageSignature(scene: ScenePrompt, assetPlan: VisualAssetPlan?): String =
+        shortSignature("q=" + resolveImagePrompt(scene, assetPlan))
+
+    private fun currentVoiceSignature(job: RuntimeAutomationJob): String {
+        val body = job.scenePrompts.sortedBy { it.ordinal }
+            .joinToString("~") { "${it.sceneId}:${it.voiceText}" }
+        return shortSignature("v=${job.voiceProviderId}|${job.voiceId}|$body")
+    }
+
+    private fun currentVideoSignature(job: RuntimeAutomationJob): String {
+        val imageBySceneId = job.artifacts
+            .filter { it.artifactType == "IMAGE" && !it.sceneId.isNullOrBlank() }
+            .associateBy { it.sceneId!! }
+        val body = job.scenePrompts.sortedBy { it.ordinal }.joinToString("~") { s ->
+            "${s.sceneId}:${s.ordinal}:${s.onScreenText}:${imageBySceneId[s.sceneId]?.artifactId.orEmpty()}"
+        }
+        return shortSignature(
+            "vid=$body|${job.videoBackgroundMode}|${job.videoMotionMode}|${job.videoQualityTier}|${job.videoSubtitleColor}|${job.backgroundMusicFilePath}"
+        )
+    }
+
+    /**
+     * Dong dau "moi" cho toan bo chu ky: goi sau khi vua tao lai giong + video tu
+     * du lieu HIEN TAI (pipeline day du / retry voice / retry video). Moi canh co
+     * anh se duoc dong dau imageSignature theo dau vao hien tai; job duoc dong dau
+     * voice/video signature. Sau do neu nguoi dung sua canh, hash lech -> STALE.
+     */
+    private fun stampFreshSignatures(job: RuntimeAutomationJob): RuntimeAutomationJob {
+        val plans = job.assetPlans.associateBy { it.sceneId }
+        val imagedSceneIds = job.artifacts
+            .filter { it.artifactType == "IMAGE" && !it.sceneId.isNullOrBlank() }
+            .mapNotNull { it.sceneId }.toSet()
+        val stampedScenes = job.scenePrompts.map { s ->
+            if (s.sceneId in imagedSceneIds) s.copy(imageSignature = currentImageSignature(s, plans[s.sceneId]))
+            else s.copy(imageSignature = "")
+        }
+        val withScenes = job.copy(scenePrompts = stampedScenes)
+        return withScenes.copy(
+            lastVoiceSignature = currentVoiceSignature(withScenes),
+            lastVideoSignature = currentVideoSignature(withScenes)
+        )
+    }
+
+    /**
+     * Chi dong dau lai imageSignature cho cac canh vua co anh moi (import/cao/thay
+     * anh 1 canh). KHONG dung voice/video signature -> nen chung tu dong STALE de
+     * nguoi dung biet can render lai video.
+     */
+    private fun stampImageSignatures(job: RuntimeAutomationJob, sceneIds: Set<String>): RuntimeAutomationJob {
+        if (sceneIds.isEmpty()) return job
+        val plans = job.assetPlans.associateBy { it.sceneId }
+        val stamped = job.scenePrompts.map { s ->
+            if (s.sceneId in sceneIds) s.copy(imageSignature = currentImageSignature(s, plans[s.sceneId])) else s
+        }
+        return job.copy(scenePrompts = stamped)
+    }
+
+    private fun sceneImageStatus(job: RuntimeAutomationJob, scene: ScenePrompt, plans: Map<String, VisualAssetPlan>): String {
+        val hasImage = job.artifacts.any { it.artifactType == "IMAGE" && it.sceneId == scene.sceneId }
+        if (!hasImage) return "MISSING"
+        if (scene.imageSignature.isBlank()) return "READY" // job cu chua co chu ky -> khong bao dong gia
+        return if (scene.imageSignature == currentImageSignature(scene, plans[scene.sceneId])) "READY" else "STALE"
+    }
+
+    private fun jobVoiceStatus(job: RuntimeAutomationJob): String {
+        val hasVoice = job.artifacts.any { it.artifactType == "VOICE" }
+        if (!hasVoice) return "MISSING"
+        if (job.lastVoiceSignature.isBlank()) return "READY"
+        return if (job.lastVoiceSignature == currentVoiceSignature(job)) "READY" else "STALE"
+    }
+
+    private fun jobVideoStatus(job: RuntimeAutomationJob): String {
+        val hasVideo = job.artifacts.any { it.artifactType == "VIDEO_MP4" }
+        if (!hasVideo) return "MISSING"
+        // Video phu thuoc giong + anh: neu giong cu, hoac co anh thieu/cu -> video cu.
+        if (jobVoiceStatus(job) == "STALE") return "STALE"
+        val plans = job.assetPlans.associateBy { it.sceneId }
+        val anyImageStale = job.scenePrompts.any {
+            val st = sceneImageStatus(job, it, plans); st == "STALE" || st == "MISSING"
+        }
+        if (anyImageStale) return "STALE"
+        if (job.lastVideoSignature.isBlank()) return "READY"
+        return if (job.lastVideoSignature == currentVideoSignature(job)) "READY" else "STALE"
     }
 
     private fun buildImageArtifactDebugSource(
@@ -2997,11 +4203,6 @@ class AutomationFacade private constructor(
         }
     }
 
-    private fun isItemScene(scenePrompt: ScenePrompt): Boolean {
-        val normalized = scenePrompt.summary.lowercase()
-        return !normalized.startsWith("intro") && !normalized.startsWith("outro")
-    }
-
     private fun inferRequestedSceneCount(
         topic: String,
         generatedScript: String
@@ -3084,7 +4285,18 @@ class AutomationFacade private constructor(
         val videoRendererId: String?,
         val videoAttemptHistory: List<String>,
         val videoRendererMode: String,
-        val videoWorkerUrl: String?
+        val videoWorkerUrl: String?,
+        val videoQualityTier: String,
+        val videoBackgroundMode: String,
+        val videoMotionMode: String,
+        val backgroundMusicFilePath: String?,
+        val backgroundMusicLoop: Boolean,
+        val backgroundMusicVolume: Float,
+        val videoSubtitleColor: String = "#FFFFFF",
+        // Chu ky dau vao GIONG DOC / VIDEO tai lan tao gan nhat. Khac hash hien
+        // tai -> phan do da CU (STALE) sau khi nguoi dung sua canh. Rong = chua tao.
+        val lastVoiceSignature: String = "",
+        val lastVideoSignature: String = ""
     )
 
     private data class StepOverride(
@@ -3110,7 +4322,12 @@ class AutomationFacade private constructor(
         val stepStatus: String,
         val jobStatus: String,
         val waitingReason: String,
-        val runtimeMessage: String
+        val runtimeMessage: String,
+        // Thoi luong THAT do duoc cua tung canh (theo ordinal tang dan), da gom
+        // khoang lang chuyen canh. Rong neu buoc voice chua thanh cong. Dung de
+        // nhoi vao ScenePrompt.plannedDurationMs cho renderer dat anh dung theo
+        // loi doc thay vi uoc luong cua Gemini.
+        val sceneDurationsMs: List<Long> = emptyList()
     )
 
     private data class VideoStageOutcome(
@@ -3156,9 +4373,20 @@ class AutomationFacade private constructor(
         const val DEFAULT_PUBLISH_MODE: String = "approval_required"
         const val DEFAULT_SCENE_COUNT: Int = 12
         const val DEFAULT_TARGET_ASPECT_RATIO: String = "9:16"
+        val SUPPORTED_ASPECT_RATIOS: Set<String> = setOf("9:16", "16:9", "1:1", "3:4", "4:3", "21:9")
         const val DEFAULT_VISUAL_STYLE: String = ScriptScenePromptGenerator.DEFAULT_VISUAL_STYLE
         const val MANUAL_IMAGE_IMPORT_PROVIDER_ID: String = "device-local-image"
+        const val WEB_CONTENT_PROVIDER_ID: String = "gemini-web"
+        const val MAX_RATE_LIMIT_RETRIES: Int = 3
+        const val RATE_LIMIT_RETRY_BASE_DELAY_MS: Long = 2_000L
+        val WEB_SCRAPE_IMAGE_PROVIDER_IDS: Set<String> = setOf(
+            AutomationImageProviders.CHATGPT_IMAGE_SEARCH_WEB,
+            AutomationImageProviders.PINTEREST_IMAGE_SEARCH_WEB
+        )
 
+        // Khoang lang chen SAU moi canh (tru canh cuoi) khi ghep giong doc tung
+        // canh - tao nhip "dung mot chut" khi chuyen canh thay vi doc lien tuc.
+        private const val SCENE_TRANSITION_SILENCE_MS: Int = 350
         private const val MIN_OUTPUT_LENGTH: Int = 128
         private const val MAX_OUTPUT_LENGTH: Int = 50_000
         private const val MAX_CONTENT_GENERATION_ATTEMPTS: Int = 3
@@ -3206,7 +4434,8 @@ class AutomationFacade private constructor(
             nativeVideoRenderer: NativeVideoRenderer = AndroidNativeSlideshowVideoRenderer(),
             videoRenderWorkerClient: VideoRenderWorkerClient = ExternalMoviePyVideoRenderer(),
             metadataGenerator: MetadataGenerator = HeuristicMetadataGenerator(),
-            progressListener: AutomationPipelineProgressListener = AutomationPipelineProgressListener.NONE
+            progressListener: AutomationPipelineProgressListener = AutomationPipelineProgressListener.NONE,
+            runtimeJobStore: RuntimeJobStore? = null
         ): AutomationFacade {
             val engine = AutomationEngine(
                 repository = repository,
@@ -3229,7 +4458,8 @@ class AutomationFacade private constructor(
                 nativeVideoRenderer = nativeVideoRenderer,
                 videoRenderWorkerClient = videoRenderWorkerClient,
                 metadataGenerator = metadataGenerator,
-                progressListener = progressListener
+                progressListener = progressListener,
+                runtimeJobStore = runtimeJobStore
             )
         }
 

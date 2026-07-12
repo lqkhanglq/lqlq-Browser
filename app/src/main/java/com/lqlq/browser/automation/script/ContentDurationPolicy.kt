@@ -1,7 +1,6 @@
 package com.lqlq.browser.automation.script
 
 data class ContentDurationPolicy(
-    val isListicle: Boolean,
     val targetItemCount: Int?,
     val targetSceneCount: Int,
     val targetDurationMs: Long,
@@ -10,10 +9,6 @@ data class ContentDurationPolicy(
     val explicitDuration: Boolean
 ) {
     companion object {
-        private val LISTICLE_REGEX = Regex(
-            "(\\d{1,2})\\s*(cau noi|cau|cach|bai hoc|thoi quen|meo|ly do|buoc|dieu|tips?)",
-            RegexOption.IGNORE_CASE
-        )
         private val SECONDS_REGEX = Regex(
             "(\\d{1,3})\\s*(giay|s|sec|secs|second|seconds)",
             RegexOption.IGNORE_CASE
@@ -23,47 +18,33 @@ data class ContentDurationPolicy(
             RegexOption.IGNORE_CASE
         )
 
+        // KHONG con doan "day co phai listicle khong" bang tu khoa/regex nua - lqlq
+        // khong tu doan noi dung, de Gemini tu quyet dinh so muc/co cau truc intro-
+        // items-outro hay khong (schema JSON da luon duoc yeu cau, xem
+        // GeminiContentConnector.buildPrompt). O day CHI con tinh thoi luong dich va
+        // 1 GOI Y so muc (khong bat buoc) de dua vao prompt lam diem khoi dau.
         fun fromTopic(
             topic: String,
-            desiredDurationSeconds: Int? = null,
-            requestedSceneCount: Int? = null
+            desiredDurationSeconds: Int? = null
         ): ContentDurationPolicy {
             val normalized = normalizeVietnamese(topic.trim())
-            val itemCount = parseListicleItemCount(normalized)
             val explicitDurationMs = desiredDurationSeconds
                 ?.takeIf { it > 0 }
                 ?.let { it * 1000L }
                 ?: parseExplicitDurationMs(normalized)
-            val isListicle = itemCount != null
-            val includeIntro = isListicle
-            val includeOutro = isListicle
-            val inferredSceneCount = when {
-                isListicle -> itemCount!! + (if (includeIntro) 1 else 0) + (if (includeOutro) 1 else 0)
-                else -> 3
-            }
-            val targetSceneCount = requestedSceneCount
-                ?.takeIf { it > 0 }
-                ?.coerceIn(1, 24)
-                ?: inferredSceneCount
-            val targetDurationMs = explicitDurationMs ?: when {
-                !isListicle -> 35_000L
-                itemCount!! <= 5 -> 35_000L
-                itemCount <= 10 -> 60_000L
-                else -> 80_000L
-            }
+            val targetDurationMs = explicitDurationMs ?: 35_000L
+            // Goi y so muc uoc luong ~1 muc/7 giay noi dung - CHI la diem khoi dau
+            // cho prompt, Gemini duoc yeu cau tu dieu chinh len/xuong theo chu de
+            // (xem "Rules" trong buildPrompt).
+            val estimatedItemCount = (targetDurationMs / 7_000L).toInt().coerceIn(3, 20)
             return ContentDurationPolicy(
-                isListicle = isListicle,
-                targetItemCount = itemCount,
-                targetSceneCount = targetSceneCount,
+                targetItemCount = estimatedItemCount,
+                targetSceneCount = estimatedItemCount + 2,
                 targetDurationMs = targetDurationMs,
-                includeIntro = includeIntro,
-                includeOutro = includeOutro,
+                includeIntro = true,
+                includeOutro = true,
                 explicitDuration = explicitDurationMs != null
             )
-        }
-
-        private fun parseListicleItemCount(topic: String): Int? {
-            return LISTICLE_REGEX.find(topic)?.groupValues?.getOrNull(1)?.toIntOrNull()
         }
 
         private fun parseExplicitDurationMs(topic: String): Long? {

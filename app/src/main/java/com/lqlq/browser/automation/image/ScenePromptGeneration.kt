@@ -23,7 +23,11 @@ data class ScenePrompt(
     val onScreenText: String = "",
     val plannedDurationMs: Long = 0L,
     val stockSearchQuery: String = "",
-    val visualDirection: String = ""
+    val visualDirection: String = "",
+    // Chu ky (hash) cua dau vao anh (cau tim/prompt) tai lan gan-anh gan nhat.
+    // Rong = chua tung gan anh. Neu khac voi hash hien tai -> anh da CU (STALE)
+    // vi nguoi dung sua tu khoa/prompt sau khi da co anh. Xem AutomationFacade.
+    val imageSignature: String = ""
 )
 
 interface ScenePromptGenerator {

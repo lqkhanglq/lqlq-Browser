@@ -180,6 +180,30 @@ class RoomAutomationRepository(
         database.jobDao().listRecentByProject(projectId, limit).map { it.toRecord() }
     }
 
+    override suspend fun deleteJobGraph(
+        jobId: String
+    ): List<String> = runStorage {
+        requireNotBlank(jobId, "Job ID is required.")
+        database.withTransaction {
+            val artifactUris = database.artifactDao().listByJob(jobId).map { it.storageUri }
+            // Thu tu XOA THU CONG BAT BUOC (khong the dua vao CASCADE tu-dong cua
+            // jobId vi co 2 rang buoc FK NO_ACTION cheo nhau gay loi
+            // SQLITE_CONSTRAINT_FOREIGNKEY neu xoa sai thu tu — day la ly do truoc
+            // day xoa duoc phien DRAFT (chua co job) nhung xoa phien DA CO job thi
+            // luon that bai:
+            //   1) automation_artifacts.producerStepId -> automation_steps.stepId (NO_ACTION)
+            //      => phai xoa ARTIFACTS truoc STEPS.
+            //   2) automation_steps.connectorBindingId -> automation_connector_bindings.bindingId (NO_ACTION)
+            //      => phai xoa STEPS truoc CONNECTOR_BINDINGS.
+            database.artifactDao().deleteByJob(jobId)
+            database.stepDao().deleteByJob(jobId)
+            database.connectorBindingDao().deleteByJob(jobId)
+            database.outboxDao().deleteByAggregate("JOB", jobId)
+            database.jobDao().deleteById(jobId)
+            artifactUris
+        }
+    }
+
     private suspend fun <T> runStorage(block: suspend () -> T): T {
         return withContext(Dispatchers.IO) {
             block()

@@ -222,6 +222,8 @@ class AutomationUiMvpJobCreationTest {
             artifact: AutomationSavedArtifact,
             jobId: String
         ): AutomationExportedArtifact? = null
+
+        override suspend fun deleteArtifactByUri(uri: String): Boolean = true
     }
 
     private class FakeContentConnector : ContentGenerationConnector {

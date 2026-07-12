@@ -132,10 +132,16 @@ open class FptAiVoiceConnector(
     override fun shouldRetry(code: VoiceProviderErrorCode): Boolean {
         return code == VoiceProviderErrorCode.RATE_LIMITED ||
             code == VoiceProviderErrorCode.PROVIDER_UNAVAILABLE ||
+            code == VoiceProviderErrorCode.PROVIDER_BUSY ||
             code == VoiceProviderErrorCode.NETWORK_TRANSIENT
     }
 
-    override fun retryBackoffMs(): LongArray = longArrayOf(1_000L, 2_000L)
+    // FPT bac mien phi gioi han toc do rat chat, ma minh chia canh theo cau nen ban
+    // nhieu request lien tiep -> hay dinh 429. Cho lau hon + nhieu lan hon de tu vuot
+    // qua gioi han thay vi fail ngay (danh doi: tao giong cham hon).
+    override fun maxTransientRetries(): Int = 4
+
+    override fun retryBackoffMs(): LongArray = longArrayOf(3_000L, 6_000L, 10_000L, 15_000L)
 
     protected override fun mapThrowable(error: Throwable): VoiceProviderException {
         val mapped = super.mapThrowable(error)
@@ -520,7 +526,11 @@ open class FptAiVoiceConnector(
     }
 
     private fun resolveVoiceId(config: VoiceProviderConfig): String {
-        return config.voiceId?.trim()?.lowercase().orEmpty().ifBlank { DEFAULT_VOICE_ID }
+        // Neu voiceId khong phai giong cua FPT (vd bi giu lai tu provider khac khi
+        // doi qua lai) thi ve giong mac dinh thay vi bao loi - nguoi dung khong phai
+        // luu lai cau hinh.
+        val requested = config.voiceId?.trim()?.lowercase().orEmpty()
+        return if (requested in SUPPORTED_VOICE_IDS) requested else DEFAULT_VOICE_ID
     }
 
     private fun resolveOutputFormat(config: VoiceProviderConfig): String {

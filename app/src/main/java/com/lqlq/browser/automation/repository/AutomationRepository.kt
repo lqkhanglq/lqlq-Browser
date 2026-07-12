@@ -33,6 +33,15 @@ interface AutomationRepository {
         limit: Int
     ): List<AutomationJobRecord>
 
+    /**
+     * Xoa sach job + step + artifact (DB rows) khoi automation database.
+     * Tra ve storageUri cua tung artifact da xoa de caller (facade) tu xoa
+     * file that tren disk (artifact store khong biet ve DB row).
+     */
+    suspend fun deleteJobGraph(
+        jobId: String
+    ): List<String>
+
     companion object {
         fun empty(): AutomationRepository = EmptyAutomationRepository
     }
@@ -70,6 +79,10 @@ private object EmptyAutomationRepository : AutomationRepository {
         projectId: String,
         limit: Int
     ): List<AutomationJobRecord> = unsupported()
+
+    override suspend fun deleteJobGraph(
+        jobId: String
+    ): List<String> = unsupported()
 
     private fun <T> unsupported(): T {
         throw UnsupportedOperationException("Empty automation repository does not support storage operations.")

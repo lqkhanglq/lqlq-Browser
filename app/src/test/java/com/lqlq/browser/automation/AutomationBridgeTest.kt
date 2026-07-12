@@ -648,6 +648,8 @@ class AutomationBridgeTest {
                 null
             }
         }
+
+        override suspend fun deleteArtifactByUri(uri: String): Boolean = true
     }
 
     private class FakeContentConnector : ContentGenerationConnector {

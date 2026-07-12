@@ -16,33 +16,61 @@ class ScriptScenePromptGenerator : ScenePromptGenerator {
         val normalizedAspectRatio = request.targetAspectRatio.trim().ifBlank { DEFAULT_ASPECT_RATIO }
         val canonicalTopic = extractCanonicalTopic(request.topic)
         request.structuredScript?.let { structured ->
-            return structured.segments.mapIndexed { index, segment ->
-                val ordinal = index + 1
-                val summary = segment.title.ifBlank { summarizeSection(segment.voiceText) }
-                val stockSearchQuery = segment.visualQuery.trim()
-                val visualDirection = segment.voiceText.trim()
-                ScenePrompt(
-                    sceneId = "scene-${UUID.randomUUID().toString().substring(0, 8)}",
-                    ordinal = ordinal,
-                    summary = summary,
-                    visualPrompt = buildVisualPrompt(
-                        topic = canonicalTopic,
+            // CHUAN SHORT-FORM: moi CAU (beat ngan) = 1 canh = 1 anh, thay vi 1 muc
+            // Gemini = 1 anh tinh suot ca doan dai. Tach voiceText cua tung segment
+            // thanh cac beat co (gop cau qua ngan de khong bi giat), moi beat 1 canh.
+            // Chu de tim anh (visualQuery) GIU NGUYEN theo muc goc (vd "Goku") de cac
+            // canh con cua cung 1 muc van dung dung nhan vat, chi khac khoanh khac/goc
+            // anh -> anh doi theo loi doc nhung van dung noi dung. onScreenText (tieu
+            // de "Top 1: Goku") cung giu nguyen xuyen suot cac canh con cua muc do.
+            // Do dai tung canh se duoc workstream A ghi de bang thoi luong audio THAT.
+            val subScenes = mutableListOf<ScenePrompt>()
+            var ordinalCounter = 0
+            // Chu the chinh lap lai (vd "Thach Hao") do Gemini quyet dinh. Neu co,
+            // BACKSTOP: bao dam MOI tu khoa canh deu mo dau bang chu the chinh de anh
+            // dung chu de tong the truoc, roi moi den boi canh canh. Rong (listicle
+            // nhieu chu the) -> khong chen gi, giu tu khoa rieng tung canh.
+            val mainSubject = structured.mainSubject.trim()
+            structured.segments.forEach { segment ->
+                val stockSearchQuery = applyMainSubject(segment.visualQuery.trim(), mainSubject)
+                val segmentTitle = segment.title.ifBlank { summarizeSection(segment.voiceText) }
+                val beats = splitVoiceIntoBeats(segment.voiceText)
+                    .ifEmpty { listOf(segment.voiceText.trim()) }
+                    .filter { it.isNotBlank() }
+                val beatDurationMs = if (beats.isNotEmpty()) {
+                    (segment.durationMs / beats.size).coerceAtLeast(1_500L)
+                } else {
+                    segment.durationMs
+                }
+                beats.forEach { beat ->
+                    ordinalCounter += 1
+                    val summary = summarizeSection(beat.ifBlank { segmentTitle })
+                    subScenes += ScenePrompt(
+                        sceneId = "scene-${UUID.randomUUID().toString().substring(0, 8)}",
+                        ordinal = ordinalCounter,
                         summary = summary,
-                        keywordText = stockSearchQuery.ifBlank { segment.voiceText },
-                        visualDescription = visualDirection,
-                        language = normalizedLanguage,
-                        visualStyle = normalizedStyle,
+                        visualPrompt = buildVisualPrompt(
+                            topic = canonicalTopic,
+                            summary = segmentTitle,
+                            keywordText = stockSearchQuery.ifBlank { segmentTitle },
+                            visualDescription = beat,
+                            language = normalizedLanguage,
+                            visualStyle = normalizedStyle,
+                            aspectRatio = normalizedAspectRatio,
+                            ordinal = ordinalCounter
+                        ),
+                        negativePrompt = DEFAULT_NEGATIVE_PROMPT,
                         aspectRatio = normalizedAspectRatio,
-                        ordinal = ordinal
-                    ),
-                    negativePrompt = DEFAULT_NEGATIVE_PROMPT,
-                    aspectRatio = normalizedAspectRatio,
-                    voiceText = segment.voiceText,
-                    onScreenText = segment.onScreenText,
-                    plannedDurationMs = segment.durationMs,
-                    stockSearchQuery = stockSearchQuery,
-                    visualDirection = visualDirection
-                )
+                        voiceText = beat,
+                        onScreenText = segment.onScreenText,
+                        plannedDurationMs = beatDurationMs,
+                        stockSearchQuery = stockSearchQuery,
+                        visualDirection = beat
+                    )
+                }
+            }
+            if (subScenes.isNotEmpty()) {
+                return subScenes
             }
         }
 
@@ -110,6 +138,63 @@ class ScriptScenePromptGenerator : ScenePromptGenerator {
                 visualDirection = section
             )
         }
+    }
+
+    /**
+     * Tach 1 doan voiceText thanh cac "beat" ngan (thuong 1 cau) de moi beat = 1 canh
+     * = 1 anh. Gop cac cau qua ngan lai cho toi khi dat MIN_BEAT_CHARS de tranh canh
+     * chop nhoang (giat); tach tiep neu 1 beat vuot MAX_BEAT_CHARS. Nho nay la "chuan
+     * short-form: doi hinh moi vai giay theo nhip ke".
+     */
+    private fun splitVoiceIntoBeats(voiceText: String): List<String> {
+        val normalized = voiceText.replace("\r", "\n").replace(Regex("\\s+"), " ").trim()
+        if (normalized.isEmpty()) return emptyList()
+        val sentences = normalized
+            .split(Regex("(?<=[.!?…])\\s+"))
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .ifEmpty { listOf(normalized) }
+
+        val beats = mutableListOf<String>()
+        val current = StringBuilder()
+        sentences.forEach { sentence ->
+            if (current.isNotEmpty() && current.length + 1 + sentence.length > MAX_BEAT_CHARS) {
+                beats += current.toString().trim()
+                current.setLength(0)
+            }
+            if (current.isNotEmpty()) current.append(' ')
+            current.append(sentence)
+            // Da du dai toi thieu va ket thuc 1 cau -> chot beat.
+            if (current.length >= MIN_BEAT_CHARS) {
+                beats += current.toString().trim()
+                current.setLength(0)
+            }
+        }
+        if (current.isNotEmpty()) {
+            // Cau du cuoi cung neu qua ngan thi gop vao beat truoc cho khoi giat.
+            val tail = current.toString().trim()
+            if (tail.length < MIN_BEAT_CHARS && beats.isNotEmpty()) {
+                beats[beats.lastIndex] = (beats.last() + " " + tail).trim()
+            } else {
+                beats += tail
+            }
+        }
+        return beats.filter { it.isNotBlank() }
+    }
+
+    /**
+     * Bao dam tu khoa tim anh mo dau bang chu the chinh (mainSubject) neu chu de
+     * co 1 chu the lap lai - de anh moi canh van dung nhan vat/chu de chinh, khong
+     * bi troi theo boi canh cau. Neu tu khoa da chua chu the (khong phan biet dau)
+     * hoac mainSubject rong thi giu nguyen.
+     */
+    private fun applyMainSubject(query: String, mainSubject: String): String {
+        if (mainSubject.isBlank()) return query
+        if (query.isBlank()) return mainSubject
+        val nq = normalize(query)
+        val ns = normalize(mainSubject)
+        if (ns.isNotBlank() && nq.contains(ns)) return query
+        return "$mainSubject - $query"
     }
 
     private fun parseSceneBlocks(script: String): List<SceneBlock> {
@@ -230,6 +315,7 @@ class ScriptScenePromptGenerator : ScenePromptGenerator {
             append("Search keywords: ")
             append(keywords.ifBlank { summary })
             append(". ")
+            append("Keep the search keywords short, clear, and close to both the video topic and this exact scene so the model can find a suitable image naturally. ")
             append("Visual direction: ")
             append(visual.ifBlank { summary })
             append(". ")
@@ -344,5 +430,9 @@ class ScriptScenePromptGenerator : ScenePromptGenerator {
         private const val SUMMARY_LIMIT = 140
         private const val MAX_SECTION_CHARS = 420
         private const val DEFAULT_FALLBACK_SCENE_DURATION_MS = 6_000L
+        // Do dai 1 "beat" (1 canh = 1 anh): du dai de khong giat, du ngan de hinh
+        // doi theo nhip ke. ~40-180 ky tu ~ 1 cau tieng Viet.
+        private const val MIN_BEAT_CHARS = 40
+        private const val MAX_BEAT_CHARS = 180
     }
 }

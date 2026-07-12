@@ -22,4 +22,9 @@ interface AutomationArtifactDao {
             "WHERE jobId = :jobId ORDER BY createdAtEpochMs ASC"
     )
     fun listByJob(jobId: String): List<AutomationArtifactEntity>
+
+    // Phai xoa TRUOC steps (artifacts.producerStepId la FK NO_ACTION toi
+    // steps.stepId) — xem RoomAutomationRepository.deleteJobGraph.
+    @Query("DELETE FROM automation_artifacts WHERE jobId = :jobId")
+    fun deleteByJob(jobId: String): Int
 }

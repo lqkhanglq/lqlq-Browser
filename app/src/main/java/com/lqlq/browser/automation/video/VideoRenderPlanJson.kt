@@ -34,6 +34,7 @@ object VideoRenderPlanJson {
                                 .put("strategy", scene.strategy)
                                 .put("durationMs", scene.durationMs)
                                 .put("subtitleText", scene.subtitleText)
+                                .put("titleText", scene.titleText)
                         )
                     }
                 }

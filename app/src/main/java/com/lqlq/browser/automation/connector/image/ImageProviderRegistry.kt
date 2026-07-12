@@ -59,7 +59,65 @@ class DefaultImageProviderRegistry(
 
     private val implemented = implementedProviderIds.map { it.trim().lowercase() }.toSet()
 
+    companion object {
+        private const val CHATGPT_IMAGE_SEARCH_WEB_MODEL = "chatgpt-image-search-web-v1"
+        private const val PINTEREST_IMAGE_SEARCH_WEB_MODEL = "pinterest-image-search-web-v1"
+    }
+
     private val definitions = listOf(
+        definition(
+            providerId = AutomationImageProviders.OPENVERSE,
+            displayName = "Openverse (miễn phí, sạch bản quyền)",
+            authType = ImageProviderAuthType.NONE,
+            costType = ImageProviderCostType.FREE_LIMITED,
+            defaultModel = OpenverseImageConnector.DEFAULT_MODEL,
+            supportedModels = listOf(OpenverseImageConnector.DEFAULT_MODEL),
+            syncOrAsync = "sync",
+            supportsPolling = false,
+            supportsAspectRatio = false,
+            supportsNegativePrompt = false,
+            supportedOutputFormats = listOf("jpeg", "png")
+        ),
+        definition(
+            providerId = AutomationImageProviders.CHATGPT_IMAGE_SEARCH_WEB,
+            displayName = "🌐 Tìm ảnh qua ChatGPT (web — không rõ bản quyền)",
+            authType = ImageProviderAuthType.NONE,
+            costType = ImageProviderCostType.USER_ASSISTED_WEB,
+            defaultModel = CHATGPT_IMAGE_SEARCH_WEB_MODEL,
+            supportedModels = listOf(CHATGPT_IMAGE_SEARCH_WEB_MODEL),
+            syncOrAsync = "async",
+            supportsPolling = true,
+            supportsAspectRatio = false,
+            supportsNegativePrompt = false,
+            supportedOutputFormats = listOf("jpeg", "png")
+        ),
+        definition(
+            providerId = AutomationImageProviders.PINTEREST_IMAGE_SEARCH_WEB,
+            displayName = "📌 Tìm ảnh Pinterest (web — nhanh hơn, nên đăng nhập Pinterest)",
+            authType = ImageProviderAuthType.NONE,
+            costType = ImageProviderCostType.USER_ASSISTED_WEB,
+            defaultModel = PINTEREST_IMAGE_SEARCH_WEB_MODEL,
+            supportedModels = listOf(PINTEREST_IMAGE_SEARCH_WEB_MODEL),
+            syncOrAsync = "async",
+            supportsPolling = true,
+            supportsAspectRatio = false,
+            supportsNegativePrompt = false,
+            supportedOutputFormats = listOf("jpeg", "png")
+        ),
+        definition(
+            providerId = AutomationImageProviders.AI_GENERATE_WEB,
+            displayName = "Tạo ảnh AI qua trình duyệt (chưa hỗ trợ)",
+            authType = ImageProviderAuthType.NONE,
+            costType = ImageProviderCostType.USER_ASSISTED_WEB,
+            defaultModel = null,
+            supportedModels = emptyList(),
+            syncOrAsync = "async",
+            supportsPolling = true,
+            supportsAspectRatio = false,
+            supportsNegativePrompt = false,
+            supportedOutputFormats = listOf("jpeg", "png"),
+            healthOverride = ImageProviderHealth.NOT_IMPLEMENTED
+        ),
         definition(
             providerId = AutomationImageProviders.CLOUDFLARE_WORKERS_AI,
             displayName = "Cloudflare Workers AI",
@@ -286,4 +344,8 @@ object AutomationImageProviders {
     const val PEXELS: String = "pexels"
     const val PIXABAY: String = "pixabay"
     const val COVERR: String = "coverr"
+    const val OPENVERSE: String = "openverse"
+    const val CHATGPT_IMAGE_SEARCH_WEB: String = "chatgpt-image-search-web"
+    const val PINTEREST_IMAGE_SEARCH_WEB: String = "pinterest-image-search-web"
+    const val AI_GENERATE_WEB: String = "ai-generate-web"
 }

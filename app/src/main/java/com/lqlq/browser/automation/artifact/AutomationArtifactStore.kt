@@ -113,10 +113,22 @@ interface AutomationArtifactStore {
         artifact: AutomationSavedArtifact
     ): ByteArray?
 
+    /**
+     * Duong dan file THAT tren disk cua artifact (app-private), dung de phat truc
+     * tiep trong app (vd VideoView xem truoc MP4) thay vi phai export ra Downloads.
+     * Null neu khong tim thay file.
+     */
+    fun resolveArtifactAbsolutePath(
+        artifact: AutomationSavedArtifact
+    ): String?
+
     suspend fun exportVideoArtifactToDownloads(
         artifact: AutomationSavedArtifact,
         jobId: String
     ): AutomationExportedArtifact?
+
+    /** Xoa file that (anh/giong doc/video...) tren disk theo storageUri luu trong DB. */
+    suspend fun deleteArtifactByUri(uri: String): Boolean
 
     companion object {
         fun empty(): AutomationArtifactStore = EmptyAutomationArtifactStore
@@ -301,6 +313,10 @@ class AppPrivateAutomationArtifactStore(
         findArtifactFile(artifact)?.readBytes()
     }
 
+    override fun resolveArtifactAbsolutePath(
+        artifact: AutomationSavedArtifact
+    ): String? = findArtifactFile(artifact)?.takeIf { it.exists() && it.length() > 0L }?.absolutePath
+
     override suspend fun exportVideoArtifactToDownloads(
         artifact: AutomationSavedArtifact,
         jobId: String
@@ -378,6 +394,14 @@ class AppPrivateAutomationArtifactStore(
             .ifBlank { artifact.artifactId }
         return artifactRoot.listFiles()
             ?.firstOrNull { it.nameWithoutExtension == artifactId }
+    }
+
+    override suspend fun deleteArtifactByUri(uri: String): Boolean = withContext(Dispatchers.IO) {
+        val artifactId = uri.substringAfterLast('/').ifBlank { return@withContext false }
+        val file = artifactRoot.listFiles()
+            ?.firstOrNull { it.nameWithoutExtension == artifactId }
+            ?: return@withContext false
+        file.delete()
     }
 
     private suspend fun saveJsonArtifact(
@@ -487,6 +511,10 @@ private object EmptyAutomationArtifactStore : AutomationArtifactStore {
         artifact: AutomationSavedArtifact
     ): ByteArray? = null
 
+    override fun resolveArtifactAbsolutePath(
+        artifact: AutomationSavedArtifact
+    ): String? = null
+
     override suspend fun saveMetadataPlanArtifact(
         jobId: String,
         stepId: String,
@@ -509,4 +537,6 @@ private object EmptyAutomationArtifactStore : AutomationArtifactStore {
         artifact: AutomationSavedArtifact,
         jobId: String
     ): AutomationExportedArtifact? = null
+
+    override suspend fun deleteArtifactByUri(uri: String): Boolean = false
 }

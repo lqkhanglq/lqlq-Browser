@@ -13,9 +13,28 @@ data class AutomationContentRunRequest(
     val maximumOutputLength: Int,
     val desiredDurationSeconds: Int? = null,
     val requestedSceneCount: Int? = null,
+    val aspectRatio: String = "9:16",
     val clientRequestId: String? = null,
     val videoRendererMode: String = "android_native_render",
-    val videoWorkerUrl: String? = null
+    val videoWorkerUrl: String? = null,
+    // "720p" hoac "1080p" - anh huong do phan giai/bitrate video xuat ra.
+    val videoQualityTier: String = "1080p",
+    // "blurred_fill" hoac "black_bars".
+    val videoBackgroundMode: String = "blurred_fill",
+    // "auto_mix" hoac 1 kieu co dinh: "zoom_in", "zoom_out", "pan_left_to_right", "pan_right_to_left", "none".
+    val videoMotionMode: String = "auto_mix",
+    // Duong dan file nhac nen toan cuc (tu AutomationBackgroundMusicStore), null neu khong co.
+    val backgroundMusicFilePath: String? = null,
+    val backgroundMusicLoop: Boolean = true,
+    val backgroundMusicVolume: Float = 0.35f,
+    // Mau chu phu de + tieu de video (hex "#RRGGBB").
+    val videoSubtitleColor: String = "#FFFFFF",
+    /**
+     * Khi khac null: noi dung da lay san tu Gemini web (khong qua API key),
+     * bo qua goi API Gemini va dung thang van ban nay cho cac buoc sau
+     * (chia canh/anh/giong/video). Xem AutomationFacade.generateAutomationContent.
+     */
+    val preFetchedRawText: String? = null
 )
 
 data class AutomationConnectionTestResult(
@@ -112,7 +131,11 @@ data class AutomationUiJobSnapshot(
     val reviewState: ReviewState? = null,
     val publishPlan: PublishPlan? = null,
     val artifacts: List<AutomationUiArtifactSnapshot> = emptyList(),
-    val runtimeMessage: String? = null
+    val runtimeMessage: String? = null,
+    // Trang thai tong: "READY" | "MISSING" | "STALE" cho giong doc va video, de JS
+    // hien nut "Cap nhat thay doi" dong (vd "Cap nhat giong + video").
+    val voiceStatus: String = "MISSING",
+    val videoStatus: String = "MISSING"
 )
 
 data class AutomationUiStepSnapshot(
@@ -154,7 +177,10 @@ data class AutomationUiScenePromptSnapshot(
     val onScreenText: String,
     val plannedDurationMs: Long,
     val stockSearchQuery: String,
-    val visualDirection: String
+    val visualDirection: String,
+    // Trang thai anh cua canh: "READY" | "MISSING" | "STALE" (tu khoa doi sau khi
+    // da co anh). JS dung de hien badge + nut "Thay anh".
+    val imageStatus: String = "READY"
 )
 
 data class AutomationUiAssetPlanSnapshot(

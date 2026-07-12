@@ -27,4 +27,10 @@ interface AutomationStepDao {
         jobId: String,
         status: String
     ): List<AutomationStepEntity>
+
+    // Phai xoa TRUOC connector_bindings (steps.connectorBindingId la FK NO_ACTION
+    // toi bindings.bindingId) va SAU artifacts (artifacts.producerStepId la FK
+    // NO_ACTION toi steps.stepId) — xem RoomAutomationRepository.deleteJobGraph.
+    @Query("DELETE FROM automation_steps WHERE jobId = :jobId")
+    fun deleteByJob(jobId: String): Int
 }

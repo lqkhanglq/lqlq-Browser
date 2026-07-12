@@ -27,4 +27,10 @@ interface AutomationJobDao {
         projectId: String,
         limit: Int
     ): List<AutomationJobEntity>
+
+    // steps/artifacts co onDelete = CASCADE tren jobId nen tu dong bi xoa theo;
+    // connector_bindings/outbox khong co FK cascade nen phai xoa rieng (xem
+    // AutomationConnectorBindingDao/AutomationOutboxDao).
+    @Query("DELETE FROM automation_jobs WHERE jobId = :jobId")
+    fun deleteById(jobId: String): Int
 }

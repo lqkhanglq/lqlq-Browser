@@ -40,6 +40,7 @@ class AutomationPipelineWorker(
             "retryVoice" -> "Đang tạo giọng đọc..."
             "retryVideo" -> "Đang render video..."
             "exportVideo" -> "Đang xuất MP4..."
+            "publishYouTube" -> "Đang đăng video lên YouTube..."
             else -> "Đang xử lý phiên tự động..."
         }
     }
@@ -75,6 +76,7 @@ class AutomationPipelineWorker(
             // thay vì chặn hẳn tác vụ.
         }
 
+        var doneMessage: String? = null
         return try {
             val facade = (applicationContext as LqlqApp).automationFacade
             val payload = JSONObject(payloadJson)
@@ -99,19 +101,40 @@ class AutomationPipelineWorker(
                     facade.retryVideoStep(
                         jobId = payload.optString("jobId"),
                         videoRendererMode = normalizeVideoRendererMode(payload.optString("videoRendererMode")),
-                        videoWorkerUrl = normalizeVideoWorkerUrl(payload.optString("videoWorkerUrl").ifBlank { null })
+                        videoWorkerUrl = normalizeVideoWorkerUrl(payload.optString("videoWorkerUrl").ifBlank { null }),
+                        videoQualityTier = payload.optString("videoQualityTier").ifBlank { null },
+                        videoBackgroundMode = payload.optString("videoBackgroundMode").ifBlank { null },
+                        videoMotionMode = payload.optString("videoMotionMode").ifBlank { null },
+                        backgroundMusicFilePath = com.lqlq.browser.automation.AutomationBackgroundMusicStore.getFilePathIfPresent(applicationContext),
+                        backgroundMusicLoop = com.lqlq.browser.automation.AutomationBackgroundMusicStore.getSettings(applicationContext).loop,
+                        backgroundMusicVolume = com.lqlq.browser.automation.AutomationBackgroundMusicStore.getSettings(applicationContext).volume,
+                        videoSubtitleColor = payload.optString("videoSubtitleColor").ifBlank { null }
                     ).jobId
                 }
                 "exportVideo" -> {
                     facade.exportVideoMp4ToDownloads(jobId = payload.optString("jobId").trim())
                     payload.optString("jobId").trim()
                 }
+                "publishYouTube" -> {
+                    val targetJobId = payload.optString("jobId").trim()
+                    val data = facade.getYouTubePublishData(targetJobId)
+                        ?: throw IllegalStateException("Job chua co VIDEO_MP4 de dang len YouTube.")
+                    val videoId = com.lqlq.browser.automation.publish.YouTubePublishManager.upload(
+                        context = applicationContext,
+                        videoFilePath = data.videoFilePath,
+                        title = data.title,
+                        description = data.description,
+                        tags = data.tags
+                    )
+                    doneMessage = "Đã đăng lên YouTube: https://youtu.be/$videoId"
+                    targetJobId
+                }
                 else -> throw IllegalArgumentException("Action khong ho tro: $action")
             }
             if (clientRequestId != null) {
-                AutomationAsyncTaskStore.markDone(applicationContext, clientRequestId, jobId, "Đã hoàn tất.")
+                AutomationAsyncTaskStore.markDone(applicationContext, clientRequestId, jobId, doneMessage ?: "Đã hoàn tất.")
             }
-            AutomationNotifications.showDone(applicationContext, title, "Đã hoàn tất: ${actionLabel(action)}")
+            AutomationNotifications.showDone(applicationContext, title, doneMessage ?: "Đã hoàn tất: ${actionLabel(action)}")
             Result.success()
         } catch (cancelled: CancellationException) {
             if (clientRequestId != null) {
@@ -150,9 +173,18 @@ class AutomationPipelineWorker(
             maximumOutputLength = payload.optInt("maximumOutputLength", DEFAULT_MAX_OUTPUT_LENGTH),
             desiredDurationSeconds = payload.optInt("desiredDurationSeconds", 0).takeIf { it > 0 },
             requestedSceneCount = payload.optInt("requestedSceneCount", 0).takeIf { it > 0 },
+            aspectRatio = payload.optString("aspectRatio").trim().ifBlank { "9:16" },
+            preFetchedRawText = payload.optString("preFetchedRawText").trim().ifBlank { null },
             clientRequestId = clientRequestId,
             videoRendererMode = normalizeVideoRendererMode(payload.optString("videoRendererMode")),
-            videoWorkerUrl = normalizeVideoWorkerUrl(payload.optString("videoWorkerUrl").ifBlank { null })
+            videoWorkerUrl = normalizeVideoWorkerUrl(payload.optString("videoWorkerUrl").ifBlank { null }),
+            videoQualityTier = payload.optString("videoQualityTier").ifBlank { "1080p" },
+            videoBackgroundMode = payload.optString("videoBackgroundMode").ifBlank { "blurred_fill" },
+            videoMotionMode = payload.optString("videoMotionMode").ifBlank { "auto_mix" },
+            backgroundMusicFilePath = com.lqlq.browser.automation.AutomationBackgroundMusicStore.getFilePathIfPresent(applicationContext),
+            backgroundMusicLoop = com.lqlq.browser.automation.AutomationBackgroundMusicStore.getSettings(applicationContext).loop,
+            backgroundMusicVolume = com.lqlq.browser.automation.AutomationBackgroundMusicStore.getSettings(applicationContext).volume,
+            videoSubtitleColor = payload.optString("videoSubtitleColor").ifBlank { "#FFFFFF" }
         )
     }
 

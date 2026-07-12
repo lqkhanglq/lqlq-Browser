@@ -102,18 +102,18 @@ class GeminiContentConnector(
                 val minimumSpokenWords = ((targetSeconds * 23L) + 9L) / 10L
                 appendLine("- target_duration_ms: ${policy.targetDurationMs}")
                 appendLine("- target_scene_count: ${policy.targetSceneCount}")
-                appendLine("- listicle: ${policy.isListicle}")
                 appendLine("- target_item_count: ${policy.targetItemCount ?: 0}")
                 appendLine("- minimum_spoken_word_count: $minimumSpokenWords")
                 appendLine("- The complete spoken narration must last AT LEAST $targetSeconds seconds at a normal reading speed; it may be longer, but must never be shorter.")
                 appendLine("- Expand explanations, transitions, examples and scene narration naturally until the minimum duration and word count are satisfied.")
             }
-            if (durationPolicy?.isListicle == true) {
+            if (durationPolicy != null) {
                 appendLine()
                 appendLine("## Structured Output Contract")
                 appendLine("Return valid JSON only.")
                 appendLine("Schema:")
                 appendLine("{")
+                appendLine("  \"mainSubject\": \"...\",")
                 appendLine("  \"intro\": { \"title\": \"...\", \"voiceText\": \"...\", \"onScreenText\": \"...\", \"visualQuery\": \"...\", \"durationMs\": 4000 },")
                 appendLine("  \"items\": [")
                 appendLine("    { \"index\": 1, \"title\": \"...\", \"voiceText\": \"...\", \"onScreenText\": \"...\", \"visualQuery\": \"...\", \"durationMs\": 5000 }")
@@ -121,12 +121,26 @@ class GeminiContentConnector(
                 appendLine("  \"outro\": { \"title\": \"...\", \"voiceText\": \"...\", \"onScreenText\": \"...\", \"visualQuery\": \"...\", \"durationMs\": 4000 }")
                 appendLine("}")
                 appendLine("Rules:")
-                appendLine("- Create exactly ${durationPolicy.targetItemCount} items.")
+                appendLine("- If the topic explicitly asks for a fixed number of entries such as \"top 10\", \"5 nhan vat\", \"3 ly do\", \"7 dia diem\" or any similar numbered list, the items array MUST contain exactly that many main entries. Never increase, decrease, merge, or split that count on your own.")
+                appendLine("- Intro and outro are separate sections and DO NOT count toward the requested number of main entries.")
+                appendLine("- Write as a professional video scriptwriter focused on audience retention, smooth narration, and practical scene planning.")
+                appendLine("- If the target duration is long, make each requested entry richer: add clearer context, stronger narration, smoother transitions, and more specific scene details. DO NOT create extra numbered entries just to fill time.")
+                appendLine("- Only when the topic does NOT specify a fixed number may you decide the item count. In that case, use target_item_count (~${durationPolicy.targetItemCount}) only as a loose pacing hint, not as a hard rule.")
                 appendLine("- Do not return only intro.")
+                appendLine("- The intro should work as both a hook and a short introduction: create curiosity, promise value, and lead naturally into the first main item without revealing everything too early.")
                 appendLine("- Each item must contain index, title, voiceText, onScreenText, visualQuery, durationMs.")
-                appendLine("- For topics like \"10 cau noi\", each item should include one main sentence and one short explanation.")
+                appendLine("- Each item should focus on one main idea only, avoid list-like repetition, and sound natural when read aloud by TTS.")
+                appendLine("- The narration should flow naturally from one section to the next. When appropriate, end each intro or item with one short lead-in sentence that smoothly prepares the viewer for the next scene instead of cutting abruptly.")
+                appendLine("- Vary the transition style across the video. You may use curiosity, contrast, escalation, a question, cause and effect, time progression, or an unresolved detail, but do not repeat one identical transition pattern over and over.")
+                appendLine("- Do not write technical directing notes, camera instructions, editor notes, or labels like VOICEOVER, NARRATOR, SCENE, or TRANSITION in the output text.")
+                appendLine("- mainSubject defines the recurring primary subject of the whole video only when the entire video follows one same person, character, place, or object across multiple scenes. If the video is a multi-subject list, set mainSubject to an empty string.")
+                appendLine("- visualQuery must be a short and practical image-search phrase that stays close to the overall title, the primary subject of the whole video, and the exact scene context, so it can realistically find a suitable image for both the scene and the main topic. Keep it concise, clear, in the same language as the narration, and avoid making it overly long, decorative, or generic.")
+                appendLine("- For listicle topics like \"10 cau noi\", each item should include one main sentence and one short explanation.")
                 appendLine("- Include a short intro and short outro.")
+                appendLine("- The outro should briefly close the narrative and feel like a natural ending, not a sudden stop.")
                 appendLine("- Total voiceText must last at least ${durationPolicy.targetDurationMs} ms when spoken at a normal speed; longer is acceptable, shorter is not.")
+                appendLine("- durationMs of each item should roughly match how long its own voiceText takes to read aloud at a normal pace (~2.3 words/second) — this keeps narration and visuals in sync per item.")
+                appendLine("- Before finalizing, verify that the JSON structure is complete, the requested item count is respected exactly when the topic states one, every item stays on the same subject requested by the user, the transitions feel natural, and the visualQuery values are short, distinct, and useful for image search.")
             }
             val repairInstruction = request.repairInstruction?.trim().orEmpty()
             if (repairInstruction.isNotEmpty()) {
@@ -155,7 +169,7 @@ class GeminiContentConnector(
         val outputTokens = (request.maximumOutputLength / 2).coerceIn(512, 8_192)
         val escapedPrompt = escapeJson(prompt)
         val escapedSystemInstruction = escapeJson(
-            if (request.durationPolicy?.isListicle == true) {
+            if (request.durationPolicy != null) {
                 "Return only valid JSON that follows the requested schema. No markdown or code fences."
             } else {
                 "Return only the final script text with no markdown, JSON, HTML, or code fences."
@@ -475,19 +489,19 @@ class GeminiContentConnector(
         private const val MAX_RESPONSE_BYTES = 512 * 1024
 
         private const val DEFAULT_SCRIPT_SYSTEM_PROMPT = """
-# Role: Video Script Generator
+# Role: Professional Video Scriptwriter
 
-## Goals:
-Generate a script for a video, depending on the subject of the video.
+## Mission:
+Create a video script that is strong in content, smooth in narrative flow, easy to turn into scenes, and natural for AI voice reading.
 
-## Constrains:
-1. the script is to be returned as a plain string.
-2. do not under any circumstance reference this prompt in your response.
-3. get straight to the point and avoid generic introductions.
-4. do not include markdown, JSON, HTML, or code fences.
-5. only return the raw content of the script.
-6. do not include "voiceover", "narrator", or similar speaker labels.
-7. respond in the same language as the video subject.
+## Core Rules:
+1. Return only the requested final output.
+2. Never reference or explain this prompt.
+3. Get to the point and avoid generic filler openings.
+4. Do not include markdown, HTML, code fences, or extra commentary.
+5. Do not include labels like "voiceover", "narrator", or similar speaker tags inside the spoken text.
+6. Write in the same language as the video subject unless the request clearly asks otherwise.
+7. Prioritize audience retention, coherent progression, and practical scene usability.
         """
 
     }

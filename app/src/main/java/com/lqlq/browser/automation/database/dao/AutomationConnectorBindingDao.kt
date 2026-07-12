@@ -27,4 +27,9 @@ interface AutomationConnectorBindingDao {
             "WHERE projectId = :projectId AND bindingScope = 'PROJECT' ORDER BY createdAtEpochMs ASC"
     )
     fun listByProject(projectId: String): List<AutomationConnectorBindingEntity>
+
+    // Chi xoa binding rieng cua job nay (jobId = :jobId), khong dung theo
+    // projectId nen khong dam vao cac binding dung chung cap project.
+    @Query("DELETE FROM automation_connector_bindings WHERE jobId = :jobId")
+    fun deleteByJob(jobId: String): Int
 }

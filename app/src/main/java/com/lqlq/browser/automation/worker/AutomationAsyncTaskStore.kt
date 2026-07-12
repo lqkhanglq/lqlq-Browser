@@ -54,6 +54,7 @@ object AutomationAsyncTaskStore {
     }
 
     fun markDone(context: Context, clientRequestId: String, jobId: String?, message: String?) {
+        if (isCancelled(context, clientRequestId)) return
         write(
             context,
             clientRequestId,
@@ -61,6 +62,18 @@ object AutomationAsyncTaskStore {
                 .put("state", STATE_DONE)
                 .put("jobId", jobId)
                 .put("message", message)
+        )
+    }
+
+    /** Dung cho tac vu "lay noi dung tu Gemini web" — ket qua la van ban, chua co jobId. */
+    fun markDoneWithRawText(context: Context, clientRequestId: String, rawText: String) {
+        if (isCancelled(context, clientRequestId)) return
+        write(
+            context,
+            clientRequestId,
+            JSONObject()
+                .put("state", STATE_DONE)
+                .put("rawText", rawText)
         )
     }
 
@@ -75,6 +88,7 @@ object AutomationAsyncTaskStore {
     }
 
     fun markError(context: Context, clientRequestId: String, message: String?) {
+        if (isCancelled(context, clientRequestId)) return
         write(
             context,
             clientRequestId,
@@ -93,8 +107,32 @@ object AutomationAsyncTaskStore {
         }
     }
 
+    fun findActiveTaskIdByJobId(context: Context, jobId: String): String? {
+        val normalizedJobId = jobId.trim()
+        if (normalizedJobId.isEmpty()) return null
+        val all = prefs(context).all
+        val matches = mutableListOf<Pair<String, JSONObject>>()
+        all.forEach { (taskId, rawValue) ->
+            val raw = rawValue as? String ?: return@forEach
+            val json = runCatching { JSONObject(raw) }.getOrNull() ?: return@forEach
+            val state = json.optString("state").trim().uppercase()
+            val taskJobId = json.optString("jobId").trim()
+            if (taskJobId != normalizedJobId) return@forEach
+            if (state == STATE_QUEUED || state == STATE_RUNNING) {
+                matches += taskId to json
+            }
+        }
+        return matches
+            .maxByOrNull { (_, json) -> json.optInt("progressPercent", 0) }
+            ?.first
+    }
+
     private fun write(context: Context, clientRequestId: String, payload: JSONObject) {
         prefs(context).edit().putString(clientRequestId, payload.toString()).apply()
+    }
+
+    private fun isCancelled(context: Context, clientRequestId: String): Boolean {
+        return get(context, clientRequestId)?.optString("state") == STATE_CANCELLED
     }
 
     private fun prefs(context: Context) =

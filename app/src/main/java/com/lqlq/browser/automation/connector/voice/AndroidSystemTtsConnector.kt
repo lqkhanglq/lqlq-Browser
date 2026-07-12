@@ -34,6 +34,19 @@ class AndroidSystemTtsConnector(
                     .thenBy { it.networkRequired }
                     .thenBy { it.displayName }
             )
+            // Google TTS tra ve TEN giong gan giong het nhau ("Tieng Viet (Viet
+            // Nam)...") rat kho phan biet -> danh SO thu tu + ma giong + gioi tinh
+            // cho de chon.
+            .mapIndexed { index, voice ->
+                val code = voice.voiceId.substringAfter("x-", "").substringBefore("-local")
+                    .ifBlank { voice.voiceId.takeLast(10) }
+                val genderLabel = when (voice.genderHint) {
+                    "female" -> " (nữ)"
+                    "male" -> " (nam)"
+                    else -> ""
+                }
+                voice.copy(displayName = "Giọng ${index + 1} · $code$genderLabel")
+            }
     }
 
     override suspend fun testConnection(config: VoiceProviderConfig): VoiceProviderConnectionResult {

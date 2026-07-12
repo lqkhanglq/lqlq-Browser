@@ -35,4 +35,7 @@ interface AutomationOutboxDao {
         aggregateType: String,
         aggregateId: String
     ): List<AutomationOutboxEventEntity>
+
+    @Query("DELETE FROM automation_outbox_events WHERE aggregateType = :aggregateType AND aggregateId = :aggregateId")
+    fun deleteByAggregate(aggregateType: String, aggregateId: String): Int
 }

@@ -19,7 +19,7 @@ class ImageProviderRegistryTest {
         val definitions = registry.allDefinitions()
         val ids = definitions.map { it.providerId }.toSet()
 
-        assertEquals(11, definitions.size)
+        assertEquals(14, definitions.size)
         assertTrue(ids.contains(AutomationImageProviders.OPENAI_IMAGES))
         assertTrue(ids.contains(AutomationImageProviders.CLOUDFLARE_WORKERS_AI))
         assertTrue(ids.contains(AutomationImageProviders.HUGGINGFACE_INFERENCE))
