@@ -99,13 +99,12 @@ class GeminiContentConnector(
             appendLine("- maximum_output_length: ${request.maximumOutputLength} characters")
             durationPolicy?.let { policy ->
                 val targetSeconds = (policy.targetDurationMs / 1000L).coerceAtLeast(1L)
-                val minimumSpokenWords = ((targetSeconds * 23L) + 9L) / 10L
-                appendLine("- target_duration_ms: ${policy.targetDurationMs}")
-                appendLine("- target_scene_count: ${policy.targetSceneCount}")
-                appendLine("- target_item_count: ${policy.targetItemCount ?: 0}")
-                appendLine("- minimum_spoken_word_count: $minimumSpokenWords")
-                appendLine("- The complete spoken narration must last AT LEAST $targetSeconds seconds at a normal reading speed; it may be longer, but must never be shorter.")
-                appendLine("- Expand explanations, transitions, examples and scene narration naturally until the minimum duration and word count are satisfied.")
+                // KHONG con ep so tu toi thieu / "must last X seconds" theo thoi luong
+                // (do la thu khien response 120s+ dai hon 60s -> stream lau -> treo).
+                // Chi dua thoi luong nhu 1 GOI Y MEM; Gemini tu viet do dai tu nhien
+                // cho chu de. Nho vay 60s va 300s xu ly nhu nhau.
+                appendLine("- target_duration_ms: ${policy.targetDurationMs} (${targetSeconds}s) — a soft guideline only.")
+                appendLine("- Write natural, complete content appropriate for the topic. Do NOT pad with filler to hit an exact length, and do NOT artificially shorten either.")
             }
             if (durationPolicy != null) {
                 appendLine()
