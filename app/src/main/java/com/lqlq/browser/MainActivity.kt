@@ -1902,7 +1902,7 @@ class MainActivity : AppCompatActivity() {
                     // dai hon 90s mac dinh vi luon yeu cau JSON co cau truc (nhieu
                     // muc) gio day, Gemini can nhieu thoi gian stream hon van ban
                     // thuong truoc day.
-                    geminiWebPocController.run(prompt, requestId = clientRequestId, visible = false, timeoutMs = 180_000L) { result ->
+                    geminiWebPocController.run(prompt, requestId = clientRequestId, visible = false, timeoutMs = 90_000L) { result ->
                         if (result.ok && result.rawText != null) {
                             com.lqlq.browser.automation.worker.AutomationAsyncTaskStore
                                 .markDoneWithRawText(applicationContext, clientRequestId, result.rawText)
