@@ -3516,6 +3516,10 @@
         session.pendingTaskId = "";
         session.pendingLabel = "";
         session.pendingState = "";
+        // Fetch xong -> nhay THANG len 36% (khong ve 0, khong ket o 34). Pipeline se
+        // di tiep tu day; buoc dau pipeline < 36 se bi max() giu o 36 cho toi khi
+        // vuot qua -> thanh % luon tien, khong lui, khong ket.
+        session.progressPercent = 36;
         persistSessions();
         const dispatch = parseResponse(
           bridge.runAutomationContentAsync(JSON.stringify({
@@ -4049,6 +4053,10 @@
         session.pendingTaskId = "";
         session.pendingLabel = "";
         session.pendingState = "";
+        // Fetch xong -> nhay THANG len 36% (khong ve 0, khong ket o 34). Pipeline se
+        // di tiep tu day; buoc dau pipeline < 36 se bi max() giu o 36 cho toi khi
+        // vuot qua -> thanh % luon tien, khong lui, khong ket.
+        session.progressPercent = 36;
         persistSessions();
         const dispatch = parseResponse(
           bridge.runAutomationContentAsync(JSON.stringify({
