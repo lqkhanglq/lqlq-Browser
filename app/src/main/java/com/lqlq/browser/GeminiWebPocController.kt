@@ -32,6 +32,7 @@ class GeminiWebPocController(private val activity: MainActivity) {
     private var pendingPrompt: String = ""
     private var pendingTimeoutMs: Long = 90_000L
     private var activeRequestId: String = ""
+    private var initialClipboardText: String = ""
     private var onResult: ((GeminiWebResult) -> Unit)? = null
     private var finished = false
 
@@ -60,6 +61,7 @@ class GeminiWebPocController(private val activity: MainActivity) {
         activeRequestId = requestId.trim()
         pendingPrompt = prompt
         pendingTimeoutMs = timeoutMs
+        initialClipboardText = readClipboardText().trim()
         this.onResult = onResult
         // Giu man hinh sang trong luc chay - WebView bat buoc app dang mo moi chay
         // duoc, neu man hinh tu khoa giua chung (vd cho nhieu anh, mat vai phut)
@@ -201,9 +203,11 @@ class GeminiWebPocController(private val activity: MainActivity) {
             "DONE" -> {
                 val codeBlock = obj.optString("codeBlock").trim()
                 val responseText = obj.optString("responseText").trim()
-                // Uu tien code block (JSON) cua cau tra loi; fallback ve text.
-                val rawText = codeBlock.ifBlank { responseText }
-                dismiss(GeminiWebResult(ok = true, rawText = rawText))
+                val domText = codeBlock.ifBlank { responseText }
+                // NGUON CHINH: nut Copy cua cau tra loi. Doc clipboard co retry + 2 khoa
+                // an toan (khac clipboard ban dau, KHAC prompt da gui). Khong dat -> DOM.
+                val copied = if (obj.optBoolean("copyAttempted", false)) waitForValidCopiedText() else null
+                dismiss(GeminiWebResult(ok = true, rawText = copied ?: domText))
             }
             "ERROR" -> {
                 dismiss(GeminiWebResult(ok = false, errorMessage = obj.optString("error").ifBlank { "Gemini web bao loi khong ro." }))
@@ -214,6 +218,28 @@ class GeminiWebPocController(private val activity: MainActivity) {
             // Các step trung gian (INPUT_FOUND/TEXT_SET/SEND_CLICKED) chỉ để chẩn
             // đoán lúc POC — không cần hiển thị nữa vì đã bỏ bảng log.
         }
+    }
+
+    private fun readClipboardText(): String {
+        return runCatching {
+            val cm = activity.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                as android.content.ClipboardManager
+            cm.primaryClip?.getItemAt(0)?.coerceToText(activity)?.toString()?.trim().orEmpty()
+        }.getOrDefault("")
+    }
+
+    private fun waitForValidCopiedText(): String? {
+        val prompt = pendingPrompt.trim()
+        val deadline = android.os.SystemClock.elapsedRealtime() + 2_500L
+        while (android.os.SystemClock.elapsedRealtime() < deadline) {
+            val c = readClipboardText().trim()
+            val looksLikePrompt = c == prompt || (prompt.length > 40 && c.startsWith(prompt.take(60)))
+            if (c.isNotBlank() && c != initialClipboardText && !looksLikePrompt) {
+                return c
+            }
+            android.os.SystemClock.sleep(150L)
+        }
+        return null
     }
 
     private fun dismiss(result: GeminiWebResult) {
@@ -315,69 +341,70 @@ class GeminiWebPocController(private val activity: MainActivity) {
     }
   }
 
-  // Chi lay node CAU TRA LOI co noi dung LA JSON (bat dau '{'). KHONG bao gio lay
-  // bong bong PROMPT cua nguoi dung (bat dau bang chu) - day la bug lam noi dung
-  // tra ve chinh la prompt da gui (ra 1 canh).
+  // Quet ngoac CO NHAN BIET CHUOI: lay doi tuong JSON DAU TIEN hoan chinh trong text
+  // (bo qua '{' '}' nam trong "..."). Chiu duoc text dan truoc/sau JSON, ngoac trong
+  // chuoi, va JSON RAT DAI (300s). Tra ve chuoi JSON hoac null neu chua dong du.
+  function extractBalancedJson(text){
+    if (!text) return null;
+    var start = text.indexOf('{');
+    if (start < 0) return null;
+    var depth = 0, inStr = false, esc = false;
+    for (var i = start; i < text.length; i++){
+      var ch = text.charAt(i);
+      if (inStr){
+        if (esc) { esc = false; }
+        else if (ch === '\\') { esc = true; }
+        else if (ch === '"') { inStr = false; }
+      } else {
+        if (ch === '"') { inStr = true; }
+        else if (ch === '{') { depth++; }
+        else if (ch === '}') { depth--; if (depth === 0) return text.substring(start, i + 1); }
+      }
+    }
+    return null; // chua dong du ngoac -> con dang stream
+  }
+
+  // Chi quet cac node CAU TRA LOI cua model (KHONG lay bong bong prompt cua nguoi
+  // dung - prompt co san JSON schema mau lam sai noi dung). Tra ve JSON hoan chinh
+  // dau tien tim thay o node moi nhat.
   function extractResponses(){
-    var sels = ['message-content', '.model-response-text', 'model-response', '.markdown'];
+    var sels = ['message-content', '.model-response-text', 'model-response'];
     var nodes = [];
     for (var i=0;i<sels.length;i++){
       var found = document.querySelectorAll(sels[i]);
       for (var j=0;j<found.length;j++) nodes.push(found[j]);
     }
-    // Duyet tu CUOI len, chon node dau tien co text/code block la JSON.
     for (var k=nodes.length-1;k>=0;k--){
       var n = nodes[k];
       var code = n.querySelector('code, pre');
       var codeTxt = code ? (code.innerText || '') : '';
-      var txt = n.innerText || '';
-      var probe = (codeTxt || txt).trim();
-      if (probe.charAt(0) === '{'){
-        return { node: n, txt: txt, codeTxt: codeTxt };
-      }
+      var full = codeTxt || (n.innerText || '');
+      var json = extractBalancedJson(full);
+      if (json){ return { node: n, json: json }; }
     }
     return null;
   }
 
-  // JSON da dong du hay chua. Luong noi dung LUON yeu cau JSON -> text khong bat
-  // dau bang '{' KHONG duoc coi la "xong" (tranh tuong nham prompt/thinking la xong).
-  function looksLikeCompleteJson(text){
-    var trimmed = text.trim();
-    if (trimmed.charAt(0) !== '{') return false;
-    var opens = (trimmed.match(/\{/g) || []).length;
-    var closes = (trimmed.match(/\}/g) || []).length;
-    return opens > 0 && opens === closes && trimmed.charAt(trimmed.length - 1) === '}';
-  }
-
   function waitForResponse(){
-    var lastText = '';
+    var lastJson = '';
     var stable = 0;
     var waited = 0;
-    var requiredStableTicks = 5;
-    function finish(txt, codeTxt){
-      clearInterval(poll);
-      // Tran lon de video dai (JSON dai) khong bi app tu cat cut -> thieu canh.
-      report({ step: 'DONE', responseText: (txt||'').slice(0, 400000), codeBlock: (codeTxt||'').slice(0, 400000) });
-    }
     var poll = setInterval(function(){
       waited += 800;
       var r = extractResponses();
-      if (r){
-        var txt = r.txt || '';
-        var codeTxt = r.codeTxt || '';
-        var candidate = codeTxt || txt;
-        if (candidate === lastText && candidate.length > 0){ stable++; }
-        else { stable = 0; lastText = candidate; }
-        // CHI chot khi JSON da DONG DU - giong het cho moi thoi luong (60s hay 300s).
-        // Khong con "cat ngang khi khung lau" (thu gay thieu JSON o video dai) -
-        // JSON dai stream lau, khung vai giay la binh thuong, phai cho no dong du.
-        if (stable >= requiredStableTicks && looksLikeCompleteJson(candidate)){
-          finish(txt, codeTxt); return;
+      if (r && r.json){
+        // Da co JSON DONG DU. Doi 1-2 nhip cho chac (phong luc dang stream chunk moi
+        // vua tinh co dong ngoac giua chung) roi chot.
+        if (r.json === lastJson){ stable++; } else { stable = 0; lastJson = r.json; }
+        if (stable >= 2){
+          clearInterval(poll);
+          report({ step: 'DONE', responseText: r.json.slice(0, 400000), codeBlock: r.json.slice(0, 400000) });
+          return;
         }
       }
       if (waited > __TIMEOUT_MS__){
         clearInterval(poll);
-        report({ step: 'TIMEOUT', lastText: lastText.slice(0, 2000) });
+        report({ step: 'TIMEOUT', lastText: lastJson.slice(0, 2000) });
       }
     }, 800);
   }

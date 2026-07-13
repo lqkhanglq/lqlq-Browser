@@ -37,6 +37,7 @@ class ChatGptWebPocController(private val activity: MainActivity) {
     private var pendingPrompt: String = ""
     private var pendingTimeoutMs: Long = 180_000L
     private var activeRequestId: String = ""
+    private var initialClipboardText: String = ""
     private var onResult: ((ChatGptWebResult) -> Unit)? = null
 
     fun run(prompt: String, requestId: String = "", timeoutMs: Long = 180_000L, onResult: (ChatGptWebResult) -> Unit) {
@@ -49,6 +50,8 @@ class ChatGptWebPocController(private val activity: MainActivity) {
         activeRequestId = requestId.trim()
         pendingPrompt = prompt
         pendingTimeoutMs = timeoutMs
+        // Nho clipboard TRUOC khi chay de biet nut "Sao chep" co that su cap nhat khong.
+        initialClipboardText = readClipboardText().trim()
         this.onResult = onResult
         // Giu man hinh sang - WebView bat buoc app dang mo moi chay duoc, so anh
         // cang nhieu (vd 50 anh) cang mat thoi gian, neu man hinh tu khoa giua
@@ -114,7 +117,12 @@ class ChatGptWebPocController(private val activity: MainActivity) {
                         if (u.isNotBlank()) urls.add(u)
                     }
                 }
-                dismiss(ChatGptWebResult(ok = true, imageUrls = urls, responseText = obj.optString("responseText")))
+                val domText = obj.optString("responseText")
+                // NGUON CHINH: nut "Sao chep phan hoi". Doc clipboard co retry + 2 khoa
+                // an toan (khac clipboard ban dau, KHAC prompt da gui). Neu khong dat
+                // -> fallback ve DOM text.
+                val copied = if (obj.optBoolean("copyAttempted", false)) waitForValidCopiedText() else null
+                dismiss(ChatGptWebResult(ok = true, imageUrls = urls, responseText = copied ?: domText))
             }
             "ERROR" -> {
                 dismiss(ChatGptWebResult(ok = false, errorMessage = obj.optString("error").ifBlank { "ChatGPT web báo lỗi không rõ." }))
@@ -123,6 +131,31 @@ class ChatGptWebPocController(private val activity: MainActivity) {
                 dismiss(ChatGptWebResult(ok = false, errorMessage = "ChatGPT web quá thời gian chờ phản hồi (${pendingTimeoutMs / 1000}s)."))
             }
         }
+    }
+
+    private fun readClipboardText(): String {
+        return runCatching {
+            val cm = activity.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                as android.content.ClipboardManager
+            cm.primaryClip?.getItemAt(0)?.coerceToText(activity)?.toString()?.trim().orEmpty()
+        }.getOrDefault("")
+    }
+
+    // Doi clipboard duoc cap nhat sau khi bam "Sao chep phan hoi" (toi ~2.5s), voi 2
+    // khoa an toan: (1) khac clipboard truoc khi chay, (2) KHAC prompt da gui. Tra ve
+    // null neu khong lay duoc noi dung hop le -> caller dung DOM text lam fallback.
+    private fun waitForValidCopiedText(): String? {
+        val prompt = pendingPrompt.trim()
+        val deadline = android.os.SystemClock.elapsedRealtime() + 2_500L
+        while (android.os.SystemClock.elapsedRealtime() < deadline) {
+            val c = readClipboardText().trim()
+            val looksLikePrompt = c == prompt || (prompt.length > 40 && c.startsWith(prompt.take(60)))
+            if (c.isNotBlank() && c != initialClipboardText && !looksLikePrompt) {
+                return c
+            }
+            android.os.SystemClock.sleep(150L)
+        }
+        return null
     }
 
     private fun dismiss(result: ChatGptWebResult) {
@@ -264,12 +297,29 @@ class ChatGptWebPocController(private val activity: MainActivity) {
     var lastText = '';
     var stable = 0;
     var waited = 0;
+    // Bam nut "Sao chep phan hoi" NGAY TRONG khoi cau tra loi moi nhat (KHONG tim
+    // toan trang de tranh bam nham nut cua prompt/code block). Node la tin nhan
+    // assistant; thanh cong cu Copy thuong nam trong turn wrapper (article) chua no.
+    function clickCopyForResponse(node){
+      var scope = (node.closest && (node.closest('article') || node.closest('[data-testid^="conversation-turn"]'))) || node.parentElement || node;
+      var btns = scope ? Array.prototype.slice.call(scope.querySelectorAll('button')) : [];
+      var btn = null;
+      for (var i=0;i<btns.length;i++){
+        var b = btns[i];
+        var label = ((b.getAttribute('data-testid')||'') + ' ' + (b.getAttribute('aria-label')||'') + ' ' + (b.getAttribute('title')||'') + ' ' + (b.innerText||'')).toLowerCase();
+        if (label.indexOf('copy') >= 0 || label.indexOf('sao chép') >= 0 || label.indexOf('sao chep') >= 0){ btn = b; break; }
+      }
+      if (btn){ try { btn.click(); return true; } catch(e){} }
+      return false;
+    }
     function finish(node, txt){
       clearInterval(poll);
       var urls = extractImageUrls(node);
-      // Lay THANG text cua CAU TRA LOI (extractResponseText da uu tien code block,
-      // khong lap). Khong dung nut "Sao chep" vi de bam nham bong bong prompt.
-      report({ step: 'DONE', imageUrls: urls, responseText: (txt||'').slice(0, 50000) });
+      // Nguon CHINH: nut "Sao chep phan hoi" (native doc clipboard). DOM text la fallback.
+      var copyAttempted = clickCopyForResponse(node);
+      setTimeout(function(){
+        report({ step: 'DONE', copyAttempted: copyAttempted, imageUrls: urls, responseText: (txt||'').slice(0, 50000) });
+      }, copyAttempted ? 450 : 0);
     }
     var poll = setInterval(function(){
       waited += 800;
