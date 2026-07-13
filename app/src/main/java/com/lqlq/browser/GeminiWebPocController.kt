@@ -474,6 +474,9 @@ class GeminiWebPocController(private val activity: MainActivity) {
       lastDiag = 'lockedLen=' + longest.length + ' streaming=' + streaming +
                  ' jsonLen=' + (r.json ? r.json.length : 0) + ' outro=' + r.hasOutro +
                  ' seenOutro=' + seenOutro + ' seenJson=' + seenJson;
+      // Nhip tim chan doan: ~moi 4.8s day trang thai HIEN TAI len nhan de doc truc
+      // tiep luc dang ket (khong phai cho timeout 15 phut). Percent giu nguyen.
+      if (hard % 4800 < 800){ report({ step: 'PROGRESS', percent: (__pct || 34), note: 'CD ' + lastDiag }); }
       // CHOT chinh: JSON da co ca "items" va "outro" (Gemini viet outro CUOI CUNG ->
       // co outro = da xong) va giu qua ~2.4s. Dem tich luy nen DOM nhap nhay khong can.
       if (seenOutro >= 3){
