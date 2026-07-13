@@ -3516,6 +3516,9 @@
         session.pendingTaskId = "";
         session.pendingLabel = "";
         session.pendingState = "";
+        // Bo mat na 34% cua khau fetch -> de % cua PIPELINE (chia canh/anh/giong/
+        // video) hien thi that, khong bi max() giu o 34.
+        session.progressPercent = 0;
         persistSessions();
         const dispatch = parseResponse(
           bridge.runAutomationContentAsync(JSON.stringify({
@@ -4049,6 +4052,9 @@
         session.pendingTaskId = "";
         session.pendingLabel = "";
         session.pendingState = "";
+        // Bo mat na 34% cua khau fetch -> de % cua PIPELINE (chia canh/anh/giong/
+        // video) hien thi that, khong bi max() giu o 34.
+        session.progressPercent = 0;
         persistSessions();
         const dispatch = parseResponse(
           bridge.runAutomationContentAsync(JSON.stringify({
