@@ -2386,15 +2386,8 @@ class AutomationFacade private constructor(
     }
 
     private fun recommendedRepairOutputLength(durationPolicy: ContentDurationPolicy?): Int {
-        val seconds = (durationPolicy?.targetDurationMs ?: 0L) / 1000L
-        return when {
-            seconds >= 1_200L -> 45_000
-            seconds >= 600L -> 30_000
-            seconds >= 300L -> 22_000
-            seconds >= 120L -> 16_000
-            (durationPolicy?.targetItemCount ?: 0) >= 10 -> 12_000
-            else -> 10_000
-        }
+        // MOT gia tri co dinh - khong con moc theo thoi luong.
+        return 12_000
     }
 
     private fun minimumNarrationWordCount(targetDurationMs: Long): Int {
@@ -3559,21 +3552,10 @@ class AutomationFacade private constructor(
         require(requestedSceneCount == null || requestedSceneCount in 1..24) {
             "Requested scene count is outside the safe range."
         }
-        val durationBasedMinimum = when {
-            desiredDurationSeconds == null -> maximumOutputLength
-            desiredDurationSeconds >= 1_200 -> 45_000
-            desiredDurationSeconds >= 600 -> 30_000
-            desiredDurationSeconds >= 300 -> 22_000
-            desiredDurationSeconds >= 120 -> 16_000
-            desiredDurationSeconds >= 60 -> 12_000
-            else -> maximumOutputLength
-        }
-        val adjustedMaximumOutputLength = when {
-            durationBasedMinimum > maximumOutputLength -> durationBasedMinimum
-            durationPolicy.targetItemCount != null && durationPolicy.targetItemCount >= 10 -> maxOf(maximumOutputLength, 12_000)
-            durationPolicy.targetItemCount != null && durationPolicy.targetItemCount >= 5 -> maxOf(maximumOutputLength, 10_000)
-            else -> maximumOutputLength
-        }
+        // MOT logic duy nhat cho MOI thoi luong: KHONG con bom maximumOutputLength theo
+        // moc thoi luong (truoc day >=120 -> 16000 chinh la "case an" khien >=120s hong).
+        // Thoi luong chi la con so target_duration_ms; giu nguyen maximumOutputLength.
+        val adjustedMaximumOutputLength = maximumOutputLength
         return copy(
             topic = normalizedTopic,
             language = normalizedLanguage,
