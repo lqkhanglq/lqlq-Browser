@@ -236,12 +236,15 @@ class ChatGptWebPocController(private val activity: MainActivity) {
 
   function extractResponseText(node){
     if (!node) return '';
-    var rich = Array.from(node.querySelectorAll('[data-message-content] *, .markdown *, .prose *'))
-      .map(function(el){ return (el.innerText || '').trim(); })
-      .filter(Boolean)
-      .join('\n')
-      .trim();
-    return (rich || node.innerText || '').trim();
+    // Uu tien code block (noi ChatGPT dat JSON) - lay innerText MOT LAN.
+    // KHONG duyet '*' roi join innerText tung phan tu con -> se NHAN BAN text
+    // (cha chua text con, con lai lay lai) lam JSON roi loan, parse hong.
+    var code = node.querySelector('pre code, code, pre');
+    if (code) {
+      var ct = (code.innerText || '').trim();
+      if (ct) return ct;
+    }
+    return (node.innerText || '').trim();
   }
 
   function isStillStreaming(){
@@ -261,6 +264,13 @@ class ChatGptWebPocController(private val activity: MainActivity) {
     var lastText = '';
     var stable = 0;
     var waited = 0;
+    function finish(node, txt){
+      clearInterval(poll);
+      var urls = extractImageUrls(node);
+      // Lay THANG text cua CAU TRA LOI (extractResponseText da uu tien code block,
+      // khong lap). Khong dung nut "Sao chep" vi de bam nham bong bong prompt.
+      report({ step: 'DONE', imageUrls: urls, responseText: (txt||'').slice(0, 50000) });
+    }
     var poll = setInterval(function(){
       waited += 800;
       var node = lastAssistantMessage();
@@ -268,11 +278,7 @@ class ChatGptWebPocController(private val activity: MainActivity) {
         var txt = extractResponseText(node);
         if (txt === lastText && txt.length > 0){ stable++; }
         else { stable = 0; lastText = txt; }
-        if (stable >= 5 && !isStillStreaming()){
-          clearInterval(poll);
-          var urls = extractImageUrls(node);
-          report({ step: 'DONE', imageUrls: urls, responseText: txt.slice(0, 50000) });
-        }
+        if (stable >= 5 && !isStillStreaming()){ finish(node, txt); return; }
       }
       if (waited > __TIMEOUT_MS__){
         clearInterval(poll);

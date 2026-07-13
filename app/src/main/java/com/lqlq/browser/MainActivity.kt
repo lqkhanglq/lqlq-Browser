@@ -2198,8 +2198,11 @@ class MainActivity : AppCompatActivity() {
             settings.userAgentString = settings.userAgentString?.replace("; wv)", ")")
         }
 
+        var oauthHandled = false
         fun handleRedirect(url: String): Boolean {
             if (!url.startsWith(redirectPrefix)) return false
+            if (oauthHandled) return true
+            oauthHandled = true
             val uri = Uri.parse(url)
             val code = uri.getQueryParameter("code")
             val error = uri.getQueryParameter("error")
@@ -2220,6 +2223,31 @@ class MainActivity : AppCompatActivity() {
             @Deprecated("Deprecated in Java")
             override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
                 return handleRedirect(url.orEmpty())
+            }
+
+            // WebView Android nhieu khi KHONG goi shouldOverrideUrlLoading cho redirect
+            // 302 tren main-frame -> tu tai thang http://localhost/... (khong co server
+            // -> trang loi/404). Bat them o day de lay ?code= NGAY khi bat dau tai
+            // redirect, truoc khi hien trang loi.
+            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                if (!url.isNullOrBlank() && url.startsWith(redirectPrefix)) {
+                    runCatching { view?.stopLoading() }
+                    handleRedirect(url)
+                    return
+                }
+                super.onPageStarted(view, url, favicon)
+            }
+
+            // Phong khi localhost da bat dau tai va bao loi (khong co server) - URL loi
+            // van chua ?code=, van lay duoc.
+            override fun onReceivedError(
+                view: WebView?,
+                request: WebResourceRequest?,
+                error: android.webkit.WebResourceError?
+            ) {
+                val u = request?.url?.toString().orEmpty()
+                if (u.startsWith(redirectPrefix)) { handleRedirect(u); return }
+                super.onReceivedError(view, request, error)
             }
         }
 

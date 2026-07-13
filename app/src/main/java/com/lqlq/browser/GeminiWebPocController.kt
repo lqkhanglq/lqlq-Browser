@@ -201,6 +201,7 @@ class GeminiWebPocController(private val activity: MainActivity) {
             "DONE" -> {
                 val codeBlock = obj.optString("codeBlock").trim()
                 val responseText = obj.optString("responseText").trim()
+                // Uu tien code block (JSON) cua cau tra loi; fallback ve text.
                 val rawText = codeBlock.ifBlank { responseText }
                 dismiss(GeminiWebResult(ok = true, rawText = rawText))
             }
@@ -314,24 +315,35 @@ class GeminiWebPocController(private val activity: MainActivity) {
     }
   }
 
+  // Chi lay node CAU TRA LOI co noi dung LA JSON (bat dau '{'). KHONG bao gio lay
+  // bong bong PROMPT cua nguoi dung (bat dau bang chu) - day la bug lam noi dung
+  // tra ve chinh la prompt da gui (ra 1 canh).
   function extractResponses(){
-    var sels = ['message-content', '.model-response-text', '.markdown', 'model-response'];
+    var sels = ['message-content', '.model-response-text', 'model-response', '.markdown'];
+    var nodes = [];
     for (var i=0;i<sels.length;i++){
-      var nodes = document.querySelectorAll(sels[i]);
-      if (nodes.length) return { sel: sels[i], nodes: nodes };
+      var found = document.querySelectorAll(sels[i]);
+      for (var j=0;j<found.length;j++) nodes.push(found[j]);
+    }
+    // Duyet tu CUOI len, chon node dau tien co text/code block la JSON.
+    for (var k=nodes.length-1;k>=0;k--){
+      var n = nodes[k];
+      var code = n.querySelector('code, pre');
+      var codeTxt = code ? (code.innerText || '') : '';
+      var txt = n.innerText || '';
+      var probe = (codeTxt || txt).trim();
+      if (probe.charAt(0) === '{'){
+        return { node: n, txt: txt, codeTxt: codeTxt };
+      }
     }
     return null;
   }
 
-  // Kiem tra JSON co ve DA DONG DU hay chua (dem so '{' va '}' can bang, va ky tu
-  // khong-trang cuoi cung la '}') - Gemini stream tung chu 1, JSON dai (nhieu muc)
-  // de bi khoang lang tam thoi (2+ giay) giua cac chunk lam text "dung im" gia,
-  // khien buoc cu (chi doi text ngung doi 2.4s) tuong nham la xong roi cat cut
-  // giua chung. Chi can text CO VE la JSON (bat dau bang '{') moi ap dung kiem
-  // tra nay - van ban thuong (khong yeu cau JSON) khong bi anh huong.
+  // JSON da dong du hay chua. Luong noi dung LUON yeu cau JSON -> text khong bat
+  // dau bang '{' KHONG duoc coi la "xong" (tranh tuong nham prompt/thinking la xong).
   function looksLikeCompleteJson(text){
     var trimmed = text.trim();
-    if (trimmed.charAt(0) !== '{') return true;
+    if (trimmed.charAt(0) !== '{') return false;
     var opens = (trimmed.match(/\{/g) || []).length;
     var closes = (trimmed.match(/\}/g) || []).length;
     return opens > 0 && opens === closes && trimmed.charAt(trimmed.length - 1) === '}';
@@ -341,23 +353,26 @@ class GeminiWebPocController(private val activity: MainActivity) {
     var lastText = '';
     var stable = 0;
     var waited = 0;
-    // Can nhieu lan doi ON DINH hon (~4s thay vi 2.4s) vi JSON nhieu muc mat
-    // nhieu thoi gian stream hon van ban thuong, de bi khoang lang gia.
     var requiredStableTicks = 5;
+    function finish(txt, codeTxt){
+      clearInterval(poll);
+      // Tran lon de video dai (JSON dai) khong bi app tu cat cut -> thieu canh.
+      report({ step: 'DONE', responseText: (txt||'').slice(0, 400000), codeBlock: (codeTxt||'').slice(0, 400000) });
+    }
     var poll = setInterval(function(){
       waited += 800;
       var r = extractResponses();
       if (r){
-        var last = r.nodes[r.nodes.length - 1];
-        var txt = (last.innerText || '');
-        var code = last.querySelector('code, pre');
-        var codeTxt = code ? (code.innerText || '') : '';
-        if (txt === lastText && txt.length > 0){ stable++; }
-        else { stable = 0; lastText = txt; }
-        var candidateForJsonCheck = codeTxt || txt;
-        if (stable >= requiredStableTicks && looksLikeCompleteJson(candidateForJsonCheck)){
-          clearInterval(poll);
-          report({ step: 'DONE', containerSel: r.sel, responseText: txt.slice(0, 20000), codeBlock: codeTxt.slice(0, 20000) });
+        var txt = r.txt || '';
+        var codeTxt = r.codeTxt || '';
+        var candidate = codeTxt || txt;
+        if (candidate === lastText && candidate.length > 0){ stable++; }
+        else { stable = 0; lastText = candidate; }
+        // CHI chot khi JSON da DONG DU - giong het cho moi thoi luong (60s hay 300s).
+        // Khong con "cat ngang khi khung lau" (thu gay thieu JSON o video dai) -
+        // JSON dai stream lau, khung vai giay la binh thuong, phai cho no dong du.
+        if (stable >= requiredStableTicks && looksLikeCompleteJson(candidate)){
+          finish(txt, codeTxt); return;
         }
       }
       if (waited > __TIMEOUT_MS__){
