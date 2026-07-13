@@ -368,7 +368,10 @@ class GeminiWebPocController(private val activity: MainActivity) {
   // dung - prompt co san JSON schema mau lam sai noi dung). Tra ve JSON hoan chinh
   // dau tien tim thay o node moi nhat.
   function extractResponses(){
-    var sels = ['message-content', '.model-response-text', 'model-response'];
+    // .markdown la noi Gemini render CAU TRA LOI -> phai co. Bong bong prompt cua
+    // nguoi dung co san JSON schema mau (chua "...") -> loai bang cach bo qua JSON
+    // nao con placeholder "...".
+    var sels = ['message-content', '.model-response-text', 'model-response', '.markdown'];
     var nodes = [];
     for (var i=0;i<sels.length;i++){
       var found = document.querySelectorAll(sels[i]);
@@ -380,7 +383,7 @@ class GeminiWebPocController(private val activity: MainActivity) {
       var codeTxt = code ? (code.innerText || '') : '';
       var full = codeTxt || (n.innerText || '');
       var json = extractBalancedJson(full);
-      if (json){ return { node: n, json: json }; }
+      if (json && json.indexOf('"..."') < 0){ return { node: n, json: json }; }
     }
     return null;
   }
