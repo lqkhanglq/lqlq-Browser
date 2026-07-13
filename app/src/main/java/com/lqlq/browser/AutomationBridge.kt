@@ -292,7 +292,10 @@ $basePrompt
                 .put("totalSteps", task.optInt("totalSteps", 0))
                 .put("progressPercent", task.optInt("progressPercent", 0))
                 .put("topic", if (task.has("topic")) task.optString("topic") else null)
-                .put("rawText", if (task.has("rawText")) task.optString("rawText") else null)
+                // KHONG tra ve cuc rawText dai qua day (bi cat cut o cau noi voi noi
+                // dung 300s -> JSON hong). Chi bao CO nội dung; pipeline doc thang tu
+                // store bang chinh clientRequestId nay (xem preFetchedRawTaskId).
+                .put("hasRawText", task.has("rawText"))
         }
     }
 

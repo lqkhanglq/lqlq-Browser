@@ -3512,7 +3512,7 @@
       const response = parseResponse(bridge.getAsyncTaskStatus(clientRequestId));
       const taskState = response.ok ? String(response.state || "UNKNOWN") : "UNKNOWN";
 
-      if (taskState === "DONE" && response.rawText) {
+      if (taskState === "DONE" && (response.hasRawText || response.rawText)) {
         session.pendingTaskId = "";
         session.pendingLabel = "";
         session.pendingState = "";
@@ -3533,7 +3533,9 @@
             videoBackgroundMode: params.videoBackgroundMode,
             videoMotionMode: params.videoMotionMode,
             videoSubtitleColor: params.videoSubtitleColor,
-            preFetchedRawText: response.rawText
+            // KHONG day cuc noi dung dai qua day (de bi cat cut). Chi gui MA TAC VU
+            // fetch; worker doc thang rawText da luu trong store bang ma nay.
+            preFetchedRawTaskId: clientRequestId
           }))
         );
         if (!dispatch.ok) {
@@ -3542,7 +3544,7 @@
           return;
         }
         startPendingTask(session, dispatch.clientRequestId, {
-          label: `[raw=${(response.rawText || "").length}] Đang tạo nội dung mục tiêu ${params.desiredDurationSeconds} giây...`,
+          label: `Đang tạo nội dung mục tiêu ${params.desiredDurationSeconds} giây...`,
           doneMessage: "Đã hoàn tất pipeline tạo nội dung cho phiên (nguồn: Gemini web)."
         });
         if (state.activeSessionId === sessionId) render();
@@ -4049,7 +4051,7 @@
       const response = parseResponse(bridge.getAsyncTaskStatus(clientRequestId));
       const taskState = response.ok ? String(response.state || "UNKNOWN") : "UNKNOWN";
 
-      if (taskState === "DONE" && response.rawText) {
+      if (taskState === "DONE" && (response.hasRawText || response.rawText)) {
         session.pendingTaskId = "";
         session.pendingLabel = "";
         session.pendingState = "";
@@ -4070,7 +4072,9 @@
             videoBackgroundMode: params.videoBackgroundMode,
             videoMotionMode: params.videoMotionMode,
             videoSubtitleColor: params.videoSubtitleColor,
-            preFetchedRawText: response.rawText
+            // KHONG day cuc noi dung dai qua day; chi gui MA TAC VU fetch, worker doc
+            // thang rawText tu store.
+            preFetchedRawTaskId: clientRequestId
           }))
         );
         if (!dispatch.ok) {

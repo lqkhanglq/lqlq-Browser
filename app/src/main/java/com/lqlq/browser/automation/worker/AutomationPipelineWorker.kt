@@ -174,7 +174,15 @@ class AutomationPipelineWorker(
             desiredDurationSeconds = payload.optInt("desiredDurationSeconds", 0).takeIf { it > 0 },
             requestedSceneCount = payload.optInt("requestedSceneCount", 0).takeIf { it > 0 },
             aspectRatio = payload.optString("aspectRatio").trim().ifBlank { "9:16" },
-            preFetchedRawText = payload.optString("preFetchedRawText").trim().ifBlank { null },
+            // Noi dung dai KHONG truyen qua JS nua (getAsyncTaskStatus tra ve cuc chu
+            // dai bi cat -> JSON hong -> pipeline rong). JS chi gui MA TAC VU fetch;
+            // doc thang rawText da luu san trong store (cung tien trinh).
+            preFetchedRawText = payload.optString("preFetchedRawText").trim().ifBlank {
+                payload.optString("preFetchedRawTaskId").trim().takeIf { it.isNotEmpty() }?.let { fetchId ->
+                    AutomationAsyncTaskStore.get(applicationContext, fetchId)
+                        ?.optString("rawText")?.trim()?.takeIf { it.isNotEmpty() }
+                }
+            },
             clientRequestId = clientRequestId,
             videoRendererMode = normalizeVideoRendererMode(payload.optString("videoRendererMode")),
             videoWorkerUrl = normalizeVideoWorkerUrl(payload.optString("videoWorkerUrl").ifBlank { null }),
