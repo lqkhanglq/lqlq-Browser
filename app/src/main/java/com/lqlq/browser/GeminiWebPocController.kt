@@ -448,6 +448,7 @@ class GeminiWebPocController(private val activity: MainActivity) {
     var seenJson = 0, bestJson = '';
     var lastDiag = 'init';
     var poll = setInterval(function(){
+     try {
       hard += 800;
       // (1) Chua khoa: cho LUOT model-response moi (nhieu hon baseline) roi khoa.
       if (!LOCKED){
@@ -496,6 +497,10 @@ class GeminiWebPocController(private val activity: MainActivity) {
         clearInterval(poll);
         report({ step: 'TIMEOUT', lastText: '[chan doan] ' + lastDiag });
       }
+     } catch(e){
+       // Loi trong vong poll (truoc day bi nuot am tham -> ket 34%). Hien ngay.
+       report({ step: 'PROGRESS', percent: (__pct || 34), note: 'CD-ERR ' + (e && e.message ? e.message : ('' + e)) + ' | ' + lastDiag });
+     }
     }, 800);
   }
 
