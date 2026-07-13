@@ -3541,12 +3541,15 @@
           label: `Đang tạo nội dung mục tiêu ${params.desiredDurationSeconds} giây...`,
           doneMessage: "Đã hoàn tất pipeline tạo nội dung cho phiên (nguồn: Gemini web)."
         });
+        if (state.activeSessionId === sessionId) render();
+        return;
+      }
       if (taskState === "ERROR") {
         session.pendingTaskId = "";
         session.pendingLabel = "";
         session.pendingState = "";
         session.status = "FAILED";
-        session.activeStep = "L?i";
+        session.activeStep = "Lỗi";
         session.updatedAt = Date.now();
         persistSessions();
         setError(response.message || "Không lấy được nội dung từ Gemini web.");
@@ -3567,8 +3570,15 @@
         tryStartNextQueuedSession();
         return;
       }
+      // Con RUNNING: cap nhat % + nhan tung buoc (2% mo web ... 36% xong raw text).
+      const fetchPct = Number(response.progressPercent);
+      if (Number.isFinite(fetchPct) && fetchPct > 0) {
+        session.progressPercent = fetchPct;
+        const note = String(response.message || "").trim();
+        if (note) { session.pendingLabel = note; session.activeStep = note; }
+        session.updatedAt = Date.now();
+        persistSessions();
         if (state.activeSessionId === sessionId) render();
-        return;
       }
       if (attempt >= maxAttempts) {
         session.pendingTaskId = "";

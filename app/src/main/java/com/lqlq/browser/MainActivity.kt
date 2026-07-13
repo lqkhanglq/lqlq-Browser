@@ -1902,8 +1902,21 @@ class MainActivity : AppCompatActivity() {
                     // dai hon 90s mac dinh vi luon yeu cau JSON co cau truc (nhieu
                     // muc) gio day, Gemini can nhieu thoi gian stream hon van ban
                     // thuong truoc day.
-                    geminiWebPocController.run(prompt, requestId = clientRequestId, visible = false, timeoutMs = 90_000L) { result ->
+                    com.lqlq.browser.automation.worker.AutomationAsyncTaskStore
+                        .markFetchProgress(applicationContext, clientRequestId, 2, "Đang mở Gemini web...")
+                    geminiWebPocController.run(
+                        prompt,
+                        requestId = clientRequestId,
+                        visible = false,
+                        timeoutMs = 90_000L,
+                        onProgress = { pct, note ->
+                            com.lqlq.browser.automation.worker.AutomationAsyncTaskStore
+                                .markFetchProgress(applicationContext, clientRequestId, pct, note)
+                        }
+                    ) { result ->
                         if (result.ok && result.rawText != null) {
+                            com.lqlq.browser.automation.worker.AutomationAsyncTaskStore
+                                .markFetchProgress(applicationContext, clientRequestId, 36, "Đã lấy xong nội dung, sang bước tiếp theo")
                             com.lqlq.browser.automation.worker.AutomationAsyncTaskStore
                                 .markDoneWithRawText(applicationContext, clientRequestId, result.rawText)
                         } else {

@@ -53,6 +53,24 @@ object AutomationAsyncTaskStore {
         )
     }
 
+    /**
+     * Progress cho khau "lay noi dung tu Gemini/ChatGPT web" (truoc pipeline).
+     * Chi ghi khi tac vu con RUNNING/QUEUED — khong duoc de progress den muon ghi
+     * de len DONE/ERROR/CANCELLED (se khien JS poll lai vo han).
+     */
+    fun markFetchProgress(context: Context, clientRequestId: String, percent: Int, message: String) {
+        val current = get(context, clientRequestId)?.optString("state")
+        if (current == STATE_DONE || current == STATE_ERROR || current == STATE_CANCELLED) return
+        write(
+            context,
+            clientRequestId,
+            JSONObject()
+                .put("state", STATE_RUNNING)
+                .put("progressPercent", percent.coerceIn(0, 100))
+                .put("message", message)
+        )
+    }
+
     fun markDone(context: Context, clientRequestId: String, jobId: String?, message: String?) {
         if (isCancelled(context, clientRequestId)) return
         write(

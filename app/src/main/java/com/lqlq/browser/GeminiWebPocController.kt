@@ -34,6 +34,7 @@ class GeminiWebPocController(private val activity: MainActivity) {
     private var activeRequestId: String = ""
     private var initialClipboardText: String = ""
     private var onResult: ((GeminiWebResult) -> Unit)? = null
+    private var onProgress: ((Int, String) -> Unit)? = null
     private var finished = false
 
     data class GeminiWebResult(
@@ -51,7 +52,7 @@ class GeminiWebPocController(private val activity: MainActivity) {
      * tìm kiếm web/grounding) thường chậm hơn nhiều — luồng cào ảnh web dùng
      * timeout dài hơn qua tham số này thay vì đổi hằng số dùng chung.
      */
-    fun run(prompt: String, requestId: String = "", visible: Boolean = true, timeoutMs: Long = 90_000L, onResult: (GeminiWebResult) -> Unit) {
+    fun run(prompt: String, requestId: String = "", visible: Boolean = true, timeoutMs: Long = 90_000L, onProgress: ((Int, String) -> Unit)? = null, onResult: (GeminiWebResult) -> Unit) {
         if (overlay != null) {
             onResult(GeminiWebResult(ok = false, errorMessage = "Đang có phiên Gemini web khác chạy, đợi xong đã."))
             return
@@ -63,6 +64,7 @@ class GeminiWebPocController(private val activity: MainActivity) {
         pendingTimeoutMs = timeoutMs
         initialClipboardText = readClipboardText().trim()
         this.onResult = onResult
+        this.onProgress = onProgress
         // Giu man hinh sang trong luc chay - WebView bat buoc app dang mo moi chay
         // duoc, neu man hinh tu khoa giua chung (vd cho nhieu anh, mat vai phut)
         // WebView bi Android tam dung va dung im, khong bao gio tu tiep tuc.
@@ -204,6 +206,11 @@ class GeminiWebPocController(private val activity: MainActivity) {
         if (finished) return
         val obj = runCatching { JSONObject(json) }.getOrNull() ?: return
         when (obj.optString("step")) {
+            "PROGRESS" -> {
+                val pct = obj.optInt("percent", 0)
+                val note = obj.optString("note").ifBlank { "Đang lấy nội dung từ Gemini web..." }
+                if (pct > 0) onProgress?.invoke(pct, note)
+            }
             "DONE" -> {
                 val codeBlock = obj.optString("codeBlock").trim()
                 val responseText = obj.optString("responseText").trim()
@@ -251,6 +258,7 @@ class GeminiWebPocController(private val activity: MainActivity) {
         if (finished) return
         finished = true
         activeRequestId = ""
+        onProgress = null
         activity.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         webView?.let {
             runCatching { it.loadUrl("about:blank") }
@@ -292,6 +300,10 @@ class GeminiWebPocController(private val activity: MainActivity) {
 (function(){
   var PROMPT = __PROMPT_JSON__;
   function report(o){ try { LqlqPoc.report(JSON.stringify(o)); } catch(e){} }
+  // Bao % tung buoc len UI (chi bao khi % tang de tranh spam).
+  var __pct = 0;
+  function prog(p, note){ if (p > __pct){ __pct = p; report({ step: 'PROGRESS', percent: p, note: note }); } }
+  prog(5, 'Trang Gemini đã sẵn sàng');
 
   function findInput(){
     var sels = [
@@ -429,8 +441,8 @@ class GeminiWebPocController(private val activity: MainActivity) {
       if (!LOCKED){
         var list = document.querySelectorAll('model-response');
         var count = list ? list.length : 0;
-        if (count > baseline){ LOCKED = list[count - 1]; }
-        else if (count > 0 && baseline === 0){ LOCKED = list[count - 1]; }
+        if (count > baseline){ LOCKED = list[count - 1]; prog(25, 'Model bắt đầu trả lời'); }
+        else if (count > 0 && baseline === 0){ LOCKED = list[count - 1]; prog(25, 'Model bắt đầu trả lời'); }
         if (!LOCKED){
           lastDiag = 'waitNewTurn base=' + baseline + ' now=' + count;
           if (hard > __TIMEOUT_MS__){ clearInterval(poll); report({ step:'TIMEOUT', lastText:'[chan doan] ' + lastDiag }); }
@@ -439,13 +451,14 @@ class GeminiWebPocController(private val activity: MainActivity) {
       }
       // (2) Da khoa: CHI doc trong node do.
       var full = extractLocked(LOCKED);
-      if (full.length > longest.length){ longest = full; idle = 0; } else { idle += 800; }
+      if (full.length > longest.length){ longest = full; idle = 0; if (longest.length > 0) prog(30, 'Nội dung đang tăng'); } else { idle += 800; }
       var streaming = isGeminiStreaming();
       var r = lastBalancedJson(longest);
       lastDiag = 'lockedLen=' + longest.length + ' streaming=' + streaming +
                  ' jsonLen=' + (r.json ? r.json.length : 0) + ' incompleteJson=' + r.incomplete;
       // Hoan tat: co JSON can ngoac VA Gemini da ngung stream VA on dinh ~2.4s.
       if (r.json && !streaming){
+        prog(34, 'Nội dung đã ổn định, sắp chốt');
         if (r.json === lastJson){ stable++; } else { stable = 0; lastJson = r.json; }
         if (stable >= 3){
           clearInterval(poll);
@@ -469,9 +482,11 @@ class GeminiWebPocController(private val activity: MainActivity) {
     var input = findInput();
     if (input){
       clearInterval(readyTimer);
+      prog(10, 'Đã tìm thấy ô nhập');
       // Dem so LUOT tra loi TRUOC khi gui -> chi chap nhan luot moi xuat hien sau.
       var baseline = document.querySelectorAll('model-response').length;
       var mode = setText(input.el, PROMPT);
+      prog(15, 'Đã đổ prompt');
       setTimeout(function(){
         var send = findSend();
         if (send){
@@ -479,6 +494,7 @@ class GeminiWebPocController(private val activity: MainActivity) {
         } else {
           input.el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
         }
+        prog(20, 'Đã bấm gửi');
         waitForResponse(baseline);
       }, 700);
     } else if (tries > 40){
