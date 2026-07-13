@@ -446,6 +446,7 @@ class GeminiWebPocController(private val activity: MainActivity) {
     // doi tung nhip. Chi can thay JSON du du lieu on dinh vai nhip la chot.
     var seenOutro = 0, bestOutro = '';
     var seenJson = 0, bestJson = '';
+    var outroReadyAt = -1;   // moc 'hard' luc bat duoc JSON hoan chinh (co outro) dau tien
     var lastDiag = 'init';
     var poll = setInterval(function(){
      try {
@@ -470,7 +471,7 @@ class GeminiWebPocController(private val activity: MainActivity) {
       if (r.json){
         seenJson++;
         if (r.json.length > bestJson.length) bestJson = r.json;
-        if (r.hasOutro){ seenOutro++; if (r.json.length > bestOutro.length) bestOutro = r.json; prog(34, 'Nội dung đã ổn định, sắp chốt'); }
+        if (r.hasOutro){ seenOutro++; if (r.json.length > bestOutro.length) bestOutro = r.json; if (outroReadyAt < 0) outroReadyAt = hard; prog(34, 'Nội dung đã ổn định, sắp chốt'); }
       }
       lastDiag = 'lockedLen=' + longest.length + ' streaming=' + streaming +
                  ' jsonLen=' + (r.json ? r.json.length : 0) + ' outro=' + r.hasOutro +
@@ -482,7 +483,9 @@ class GeminiWebPocController(private val activity: MainActivity) {
       // da viet xong) thi chi can xac nhan them 1 nhip HOAC noi dung ngung dai them
       // ~2.4s la chot ngay. Truoc day doi >=3 nhip lien tiep -> khi DOM nhap nhay,
       // co outro luc co luc khong nen dem khong leo toi 3 -> ket mai o 34%.
-      if (bestOutro.length > 0 && (seenOutro >= 2 || idle >= 2400)){
+      // Da bat duoc JSON hoan chinh (co outro) -> 1.6s sau chot LUON, theo THOI GIAN
+      // (khong phu thuoc dem nhip hay noi dung con lan tan) -> chac chan qua 36%.
+      if (outroReadyAt >= 0 && bestOutro.length > 0 && (hard - outroReadyAt) >= 1600){
         clearInterval(poll);
         report({ step: 'DONE', responseText: bestOutro.slice(0, 400000), codeBlock: bestOutro.slice(0, 400000) });
         return;
