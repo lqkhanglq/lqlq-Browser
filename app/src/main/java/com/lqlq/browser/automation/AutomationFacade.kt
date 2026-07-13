@@ -935,6 +935,7 @@ class AutomationFacade private constructor(
         val imageOutcome = executeImageStage(
             jobId = jobId,
             stepId = requireStepId(steps, "IMAGES_VISUALS"),
+            topic = normalizedRequest.topic,
             scenePrompts = scenePrompts,
             assetPlans = assetPlans,
             providerId = selectedImageProviderId
@@ -1172,6 +1173,7 @@ class AutomationFacade private constructor(
         val imageOutcome = executeImageStage(
             jobId = jobId,
             stepId = imageStepId,
+            topic = "",
             // Chi truyen canh con thieu -> provider API chi fetch nhung canh do; web-scrape
             // van tra WAITING de JS cao tiep cac canh con thieu.
             scenePrompts = missingScenes.ifEmpty { runtimeJob.scenePrompts },
@@ -2432,6 +2434,7 @@ class AutomationFacade private constructor(
     private suspend fun executeImageStage(
         jobId: String,
         stepId: String,
+        topic: String,
         scenePrompts: List<ScenePrompt>,
         assetPlans: List<VisualAssetPlan>,
         providerId: String?
@@ -2510,9 +2513,22 @@ class AutomationFacade private constructor(
             effectiveConfig: ImageProviderCredentialConfiguration,
             effectiveConnector: ImageGenerationConnector
         ): List<AutomationSavedArtifact> {
+            val totalScenes = scenePrompts.size
             return scenePrompts
                 .sortedBy { it.ordinal }
-                .mapNotNull { scene ->
+                .withIndex()
+                .mapNotNull { (sceneIndex, scene) ->
+                    // Bao tien do TUNG anh: buoc anh chay tuan tu nhieu canh (noi dung
+                    // dai -> nhieu canh) va truoc day KHONG bao gi giua buoc -> thanh %
+                    // dung im hang phut, nhin nhu "dut/treo". Nay hien "Dang lay anh
+                    // N/tong" de thay dang chay va biet ket o anh nao neu co.
+                    reportProgress(
+                        jobId,
+                        topic,
+                        4,
+                        AutomationJobStatus.RUNNING.name,
+                        "Đang lấy ảnh ${sceneIndex + 1}/$totalScenes cho các cảnh..."
+                    )
                     val assetPlan = assetPlanBySceneId[scene.sceneId]
                     val requestPrompt = resolveImagePrompt(scene, assetPlan)
                     val imageRequest = ImageGenerationRequest(
