@@ -225,7 +225,7 @@ class GeminiWebPocController(private val activity: MainActivity) {
             }
             "TIMEOUT" -> {
                 val diag = obj.optString("lastText").trim()
-                dismiss(GeminiWebResult(ok = false, errorMessage = "Gemini web quá giờ (${pendingTimeoutMs / 1000}s). ${diag}"))
+                dismiss(GeminiWebResult(ok = false, errorMessage = "Gemini web ngừng phản hồi (im lặng >${pendingTimeoutMs / 1000}s hoặc quá trần 15 phút). ${diag}"))
             }
             // Các step trung gian (INPUT_FOUND/TEXT_SET/SEND_CLICKED) chỉ để chẩn
             // đoán lúc POC — không cần hiển thị nữa vì đã bỏ bảng log.
