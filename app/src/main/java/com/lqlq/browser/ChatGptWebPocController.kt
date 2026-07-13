@@ -374,8 +374,8 @@ class ChatGptWebPocController(private val activity: MainActivity) {
       try {
         LqlqChatGpt.report(JSON.stringify({ step: 'DONE', codeBlock: payload }));
       } catch(e){
+        // Loi gui DONE -> cho vong sau thu lai (khong hien log).
         finalized = false;
-        try { LqlqChatGpt.report(JSON.stringify({ step: 'PROGRESS', percent: 35, note: 'DONE-ERR ' + (e && e.message ? e.message : ('' + e)) + ' len=' + payload.length })); } catch(_){}
       }
     }
     var poll = setInterval(function(){
@@ -402,7 +402,6 @@ class ChatGptWebPocController(private val activity: MainActivity) {
         if (r.hasOutro){ seenOutro++; if (r.json.length > bestOutro.length) bestOutro = r.json; if (outroReadyAt < 0){ outroReadyAt = hard; setTimeout(finalizeNow, 1600); } prog(34, 'Nội dung đã ổn định, sắp chốt'); }
       }
       lastDiag = 'lockedLen=' + longest.length + ' streaming=' + streaming + ' jsonLen=' + (r.json ? r.json.length : 0) + ' outro=' + r.hasOutro + ' seenOutro=' + seenOutro + ' seenJson=' + seenJson;
-      if (hard % 4800 < 800){ report({ step: 'PROGRESS', percent: (__pct || 34), note: 'CD ' + lastDiag }); }
       // Chot: JSON hoan chinh (co outro) -> 1.6s sau chot theo thoi gian.
       if (outroReadyAt >= 0 && bestOutro.length > 0 && (hard - outroReadyAt) >= 1600){ finalizeNow(); return; }
       // Phong ho: JSON can ngoac khong co outro giu lau + het stream -> nha longest.
@@ -415,9 +414,7 @@ class ChatGptWebPocController(private val activity: MainActivity) {
         clearInterval(poll);
         report({ step: 'TIMEOUT', lastText: '[chan doan] ' + lastDiag });
       }
-     } catch(e){
-       report({ step: 'PROGRESS', percent: (__pct || 34), note: 'CD-ERR ' + (e && e.message ? e.message : ('' + e)) + ' | ' + lastDiag });
-     }
+     } catch(e){ /* nuot loi 1 nhip, vong sau chay tiep */ }
     }, 800);
   }
 

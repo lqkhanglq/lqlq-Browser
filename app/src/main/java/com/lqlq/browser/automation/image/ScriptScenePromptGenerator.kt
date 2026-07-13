@@ -315,7 +315,7 @@ class ScriptScenePromptGenerator : ScenePromptGenerator {
             append("Search keywords: ")
             append(keywords.ifBlank { summary })
             append(". ")
-            append("Keep the search keywords short, clear, and close to both the video topic and this exact scene so the model can find a suitable image naturally. ")
+            append("Keep the search keywords short, clear, in English, and close to both the video topic and this exact scene so the model can find a suitable image naturally. ")
             append("Visual direction: ")
             append(visual.ifBlank { summary })
             append(". ")

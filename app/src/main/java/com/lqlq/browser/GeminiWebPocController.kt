@@ -462,10 +462,8 @@ class GeminiWebPocController(private val activity: MainActivity) {
         // payload phan nua, tranh gioi han cau noi voi noi dung dai (300s).
         LqlqPoc.report(JSON.stringify({ step: 'DONE', codeBlock: payload }));
       } catch(e){
-        // Truoc day loi nay bi nuot -> DONE khong toi Kotlin -> ket 34%. Hien ra +
-        // thu lai voi payload nho hon de it nhat khong ket.
+        // Loi gui DONE -> cho vong sau thu lai (khong hien log).
         finalized = false;
-        try { LqlqPoc.report(JSON.stringify({ step: 'PROGRESS', percent: 35, note: 'DONE-ERR ' + (e && e.message ? e.message : ('' + e)) + ' len=' + payload.length })); } catch(_){}
       }
     }
     var poll = setInterval(function(){
@@ -496,9 +494,6 @@ class GeminiWebPocController(private val activity: MainActivity) {
       lastDiag = 'lockedLen=' + longest.length + ' streaming=' + streaming +
                  ' jsonLen=' + (r.json ? r.json.length : 0) + ' outro=' + r.hasOutro +
                  ' seenOutro=' + seenOutro + ' seenJson=' + seenJson;
-      // Nhip tim chan doan: ~moi 4.8s day trang thai HIEN TAI len nhan de doc truc
-      // tiep luc dang ket (khong phai cho timeout 15 phut). Percent giu nguyen.
-      if (hard % 4800 < 800){ report({ step: 'PROGRESS', percent: (__pct || 34), note: 'CD ' + lastDiag }); }
       // CHOT chinh: da bat duoc 1 JSON HOAN CHINH (co ca "items" va "outro" = Gemini
       // da viet xong) thi chi can xac nhan them 1 nhip HOAC noi dung ngung dai them
       // ~2.4s la chot ngay. Truoc day doi >=3 nhip lien tiep -> khi DOM nhap nhay,
@@ -521,10 +516,7 @@ class GeminiWebPocController(private val activity: MainActivity) {
         clearInterval(poll);
         report({ step: 'TIMEOUT', lastText: '[chan doan] ' + lastDiag });
       }
-     } catch(e){
-       // Loi trong vong poll (truoc day bi nuot am tham -> ket 34%). Hien ngay.
-       report({ step: 'PROGRESS', percent: (__pct || 34), note: 'CD-ERR ' + (e && e.message ? e.message : ('' + e)) + ' | ' + lastDiag });
-     }
+     } catch(e){ /* nuot loi 1 nhip, vong sau chay tiep */ }
     }, 800);
   }
 
