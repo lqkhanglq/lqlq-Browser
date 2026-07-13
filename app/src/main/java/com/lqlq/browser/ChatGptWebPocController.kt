@@ -296,7 +296,8 @@ class ChatGptWebPocController(private val activity: MainActivity) {
   function waitForResponse(){
     var lastText = '';
     var stable = 0;
-    var waited = 0;
+    var idle = 0;      // thoi gian ChatGPT KHONG hoat dong (khong stream, khong dai them)
+    var lastLen = 0;
     // Bam nut "Sao chep phan hoi" NGAY TRONG khoi cau tra loi moi nhat (KHONG tim
     // toan trang de tranh bam nham nut cua prompt/code block). Node la tin nhan
     // assistant; thanh cong cu Copy thuong nam trong turn wrapper (article) chua no.
@@ -322,15 +323,22 @@ class ChatGptWebPocController(private val activity: MainActivity) {
       }, copyAttempted ? 450 : 0);
     }
     var poll = setInterval(function(){
-      waited += 800;
       var node = lastAssistantMessage();
+      var streaming = isStillStreaming();
       if (node){
         var txt = extractResponseText(node);
+        // Con stream hoac con dai them -> dang hoat dong -> reset dong ho cho.
+        // 60s va 300s deu cho theo HOAT DONG, khong theo tong thoi gian.
+        if (streaming || txt.length > lastLen){ idle = 0; lastLen = Math.max(lastLen, txt.length); }
+        else { idle += 800; }
         if (txt === lastText && txt.length > 0){ stable++; }
         else { stable = 0; lastText = txt; }
-        if (stable >= 5 && !isStillStreaming()){ finish(node, txt); return; }
+        if (stable >= 5 && !streaming){ finish(node, txt); return; }
+      } else {
+        idle += 800;
       }
-      if (waited > __TIMEOUT_MS__){
+      // Chi bo cuoc khi ChatGPT thuc su dung viet (idle qua lau), khong phai vi dai.
+      if (idle > __TIMEOUT_MS__){
         clearInterval(poll);
         report({ step: 'TIMEOUT' });
       }

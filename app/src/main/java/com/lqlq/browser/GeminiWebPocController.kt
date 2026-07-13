@@ -394,10 +394,11 @@ class GeminiWebPocController(private val activity: MainActivity) {
         pos = j.end;
         if (pos >= full.length) break;
       }
-      if (best){ return { json: best, diag: 'ok jsonLen=' + best.length }; }
+      if (best){ return { json: best, maxLen: maxLen, diag: 'ok jsonLen=' + best.length }; }
     }
     return {
       json: null,
+      maxLen: maxLen,
       diag: 'nodes=' + nodes.length + ' maxLen=' + maxLen + ' sawBrace=' + sawBrace +
             ' incompleteJson=' + incomplete + ' schemaRejected=' + schemaRejected
     };
@@ -406,12 +407,17 @@ class GeminiWebPocController(private val activity: MainActivity) {
   function waitForResponse(){
     var lastJson = '';
     var stable = 0;
-    var waited = 0;
+    var idle = 0;        // thoi gian Gemini KHONG con san sinh them chu (khong hoat dong)
+    var lastMax = 0;     // do dai noi dung lon nhat da thay -> tin hieu "con dang stream"
     var lastDiag = 'init';
     var poll = setInterval(function(){
-      waited += 800;
       var s = scanResponses();
       lastDiag = s.diag;
+      // Neu Gemini VAN dang viet them (noi dung dai ra) thi reset dong ho cho.
+      // Nho vay 300s (JSON dai) va 60s (JSON ngan) deu cho theo HOAT DONG, khong
+      // theo tong thoi gian -> khong con "cang dai cang de timeout".
+      var m = s.maxLen || 0;
+      if (m > lastMax){ lastMax = m; idle = 0; } else { idle += 800; }
       if (s.json){
         if (s.json === lastJson){ stable++; } else { stable = 0; lastJson = s.json; }
         if (stable >= 2){
@@ -420,7 +426,9 @@ class GeminiWebPocController(private val activity: MainActivity) {
           return;
         }
       }
-      if (waited > __TIMEOUT_MS__){
+      // Chi bo cuoc khi Gemini THUC SU dung viet (idle qua lau), khong phai vi
+      // noi dung dai. __TIMEOUT_MS__ luc nay la nguong "khong hoat dong".
+      if (idle > __TIMEOUT_MS__){
         clearInterval(poll);
         report({ step: 'TIMEOUT', lastText: '[chan doan] ' + lastDiag });
       }
