@@ -478,9 +478,11 @@ class GeminiWebPocController(private val activity: MainActivity) {
       // Nhip tim chan doan: ~moi 4.8s day trang thai HIEN TAI len nhan de doc truc
       // tiep luc dang ket (khong phai cho timeout 15 phut). Percent giu nguyen.
       if (hard % 4800 < 800){ report({ step: 'PROGRESS', percent: (__pct || 34), note: 'CD ' + lastDiag }); }
-      // CHOT chinh: JSON da co ca "items" va "outro" (Gemini viet outro CUOI CUNG ->
-      // co outro = da xong) va giu qua ~2.4s. Dem tich luy nen DOM nhap nhay khong can.
-      if (seenOutro >= 3){
+      // CHOT chinh: da bat duoc 1 JSON HOAN CHINH (co ca "items" va "outro" = Gemini
+      // da viet xong) thi chi can xac nhan them 1 nhip HOAC noi dung ngung dai them
+      // ~2.4s la chot ngay. Truoc day doi >=3 nhip lien tiep -> khi DOM nhap nhay,
+      // co outro luc co luc khong nen dem khong leo toi 3 -> ket mai o 34%.
+      if (bestOutro.length > 0 && (seenOutro >= 2 || idle >= 2400)){
         clearInterval(poll);
         report({ step: 'DONE', responseText: bestOutro.slice(0, 400000), codeBlock: bestOutro.slice(0, 400000) });
         return;
