@@ -3542,7 +3542,7 @@
           return;
         }
         startPendingTask(session, dispatch.clientRequestId, {
-          label: `Đang tạo nội dung mục tiêu ${params.desiredDurationSeconds} giây...`,
+          label: `[raw=${(response.rawText || "").length}] Đang tạo nội dung mục tiêu ${params.desiredDurationSeconds} giây...`,
           doneMessage: "Đã hoàn tất pipeline tạo nội dung cho phiên (nguồn: Gemini web)."
         });
         if (state.activeSessionId === sessionId) render();
