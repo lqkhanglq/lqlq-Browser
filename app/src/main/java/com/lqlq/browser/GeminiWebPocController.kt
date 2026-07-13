@@ -371,71 +371,92 @@ class GeminiWebPocController(private val activity: MainActivity) {
 
   function countDots(s){ var m = s.match(/"\.\.\."/g); return m ? m.length : 0; }
 
-  // Quet cac node cau tra loi cua model + TRA VE CHAN DOAN de biet tai sao khong chot.
-  function scanResponses(){
-    var sels = ['message-content', '.model-response-text', 'model-response', '.markdown'];
-    var nodes = [];
-    for (var i=0;i<sels.length;i++){
-      var found = document.querySelectorAll(sels[i]);
-      for (var j=0;j<found.length;j++) nodes.push(found[j]);
-    }
-    var maxLen = 0, sawBrace = false, incomplete = false, schemaRejected = 0;
-    for (var k=nodes.length-1;k>=0;k--){
-      var n = nodes[k];
-      var code = n.querySelector('code, pre');
-      // textContent (KHONG phai innerText): lay TOAN BO text trong DOM khong phu
-      // thuoc layout/viewport. innerText cat theo phan duoc render -> voi cau tra
-      // loi dai bi thieu ngoac dong -> treo. textContent luon day du.
-      var codeTxt = code ? (code.textContent || '') : '';
-      var full = codeTxt || (n.textContent || '');
-      if (full.length > maxLen) maxLen = full.length;
-      if (full.indexOf('{') >= 0) sawBrace = true;
-      // MOT QUY TAC DUY NHAT: lay JSON hoan chinh CUOI CUNG trong node. Cau tra loi
-      // that luon nam SAU phan echo schema (neu co) -> cai cuoi = cau tra loi that.
-      // Khong chia truong hop, khong doan schema.
-      var best = null, pos = 0, guard = 0;
-      while (guard++ < 60){
-        var j = extractBalancedJsonFrom(full, pos);
-        if (!j){ if (full.indexOf('{', pos) >= 0) incomplete = true; break; }
-        best = j.json;
-        pos = j.end;
-        if (pos >= full.length) break;
-      }
-      if (best){ return { json: best, maxLen: maxLen, diag: 'ok jsonLen=' + best.length }; }
-    }
-    return {
-      json: null,
-      maxLen: maxLen,
-      diag: 'nodes=' + nodes.length + ' maxLen=' + maxLen + ' sawBrace=' + sawBrace +
-            ' incompleteJson=' + incomplete + ' schemaRejected=' + schemaRejected
-    };
+  // ==== CAPTURE DUNG LUOT TRA LOI (khong quet toan trang) ====
+  // Truoc day quet ca '.markdown' toan trang -> gom ca response cu + node khong lien
+  // quan; maxLen bi nhieu nen 300s (Gemini render lai/chia khoi nhieu lan) de sai.
+  // Nay KHOA dung LUOT model-response moi cua prompt vua gui, chi doc trong no.
+  var LOCKED = null;
+
+  function newestResponseNode(){
+    var list = document.querySelectorAll('model-response');
+    if (list && list.length) return list[list.length - 1];
+    var alt = document.querySelectorAll('.model-response-text, message-content');
+    return (alt && alt.length) ? alt[alt.length - 1] : null;
   }
 
-  function waitForResponse(){
+  function isGeminiStreaming(){
+    // Con dang sinh -> co nut "Dung tao".
+    var sels = ['button[aria-label*="Stop" i]','button[aria-label*="Dừng" i]','button[aria-label*="Ngừng" i]','.stop-icon'];
+    for (var i=0;i<sels.length;i++){
+      var el = document.querySelector(sels[i]);
+      if (el && el.offsetParent !== null) return true;
+    }
+    return false;
+  }
+
+  // Gom TAT CA code block trong node da khoa (khong chi cai dau) + textContent.
+  function extractLocked(node){
+    if (!node) return '';
+    var blocks = node.querySelectorAll('pre code, pre, code');
+    var parts = [];
+    for (var i=0;i<blocks.length;i++){ parts.push(blocks[i].textContent || ''); }
+    var codeTxt = parts.join('\n').trim();
+    return codeTxt || (node.textContent || '');
+  }
+
+  // Lay JSON can ngoac CUOI CUNG (cau tra loi that nam sau echo schema neu co).
+  function lastBalancedJson(full){
+    var best = null, pos = 0, guard = 0, incomplete = false;
+    while (guard++ < 200){
+      var j = extractBalancedJsonFrom(full, pos);
+      if (!j){ if (full.indexOf('{', pos) >= 0) incomplete = true; break; }
+      best = j.json; pos = j.end;
+      if (pos >= full.length) break;
+    }
+    return { json: best, incomplete: incomplete };
+  }
+
+  function waitForResponse(baseline){
+    var longest = '';   // snapshot dai nhat cua RIENG node da khoa
     var lastJson = '';
     var stable = 0;
-    var idle = 0;        // thoi gian Gemini KHONG con san sinh them chu (khong hoat dong)
-    var lastMax = 0;     // do dai noi dung lon nhat da thay -> tin hieu "con dang stream"
+    var idle = 0;       // node da khoa khong dai them + khong stream
+    var hard = 0;       // tong thoi gian (chan tuyet doi)
     var lastDiag = 'init';
     var poll = setInterval(function(){
-      var s = scanResponses();
-      lastDiag = s.diag;
-      // Neu Gemini VAN dang viet them (noi dung dai ra) thi reset dong ho cho.
-      // Nho vay 300s (JSON dai) va 60s (JSON ngan) deu cho theo HOAT DONG, khong
-      // theo tong thoi gian -> khong con "cang dai cang de timeout".
-      var m = s.maxLen || 0;
-      if (m > lastMax){ lastMax = m; idle = 0; } else { idle += 800; }
-      if (s.json){
-        if (s.json === lastJson){ stable++; } else { stable = 0; lastJson = s.json; }
-        if (stable >= 2){
-          clearInterval(poll);
-          report({ step: 'DONE', responseText: s.json.slice(0, 400000), codeBlock: s.json.slice(0, 400000) });
+      hard += 800;
+      // (1) Chua khoa: cho LUOT model-response moi (nhieu hon baseline) roi khoa.
+      if (!LOCKED){
+        var list = document.querySelectorAll('model-response');
+        var count = list ? list.length : 0;
+        if (count > baseline){ LOCKED = list[count - 1]; }
+        else if (count > 0 && baseline === 0){ LOCKED = list[count - 1]; }
+        if (!LOCKED){
+          lastDiag = 'waitNewTurn base=' + baseline + ' now=' + count;
+          if (hard > __TIMEOUT_MS__){ clearInterval(poll); report({ step:'TIMEOUT', lastText:'[chan doan] ' + lastDiag }); }
           return;
         }
       }
-      // Chi bo cuoc khi Gemini THUC SU dung viet (idle qua lau), khong phai vi
-      // noi dung dai. __TIMEOUT_MS__ luc nay la nguong "khong hoat dong".
-      if (idle > __TIMEOUT_MS__){
+      // (2) Da khoa: CHI doc trong node do.
+      var full = extractLocked(LOCKED);
+      if (full.length > longest.length){ longest = full; idle = 0; } else { idle += 800; }
+      var streaming = isGeminiStreaming();
+      var r = lastBalancedJson(longest);
+      lastDiag = 'lockedLen=' + longest.length + ' streaming=' + streaming +
+                 ' jsonLen=' + (r.json ? r.json.length : 0) + ' incompleteJson=' + r.incomplete;
+      // Hoan tat: co JSON can ngoac VA Gemini da ngung stream VA on dinh ~2.4s.
+      if (r.json && !streaming){
+        if (r.json === lastJson){ stable++; } else { stable = 0; lastJson = r.json; }
+        if (stable >= 3){
+          clearInterval(poll);
+          report({ step: 'DONE', responseText: r.json.slice(0, 400000), codeBlock: r.json.slice(0, 400000) });
+          return;
+        }
+      } else {
+        stable = 0;
+      }
+      // Bo cuoc khi node da khoa dung hoat dong lau (idle) HOAC vuot tran cung.
+      if ((idle > __TIMEOUT_MS__ && !streaming) || hard > 900000){
         clearInterval(poll);
         report({ step: 'TIMEOUT', lastText: '[chan doan] ' + lastDiag });
       }
@@ -448,6 +469,8 @@ class GeminiWebPocController(private val activity: MainActivity) {
     var input = findInput();
     if (input){
       clearInterval(readyTimer);
+      // Dem so LUOT tra loi TRUOC khi gui -> chi chap nhan luot moi xuat hien sau.
+      var baseline = document.querySelectorAll('model-response').length;
       var mode = setText(input.el, PROMPT);
       setTimeout(function(){
         var send = findSend();
@@ -456,7 +479,7 @@ class GeminiWebPocController(private val activity: MainActivity) {
         } else {
           input.el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
         }
-        waitForResponse();
+        waitForResponse(baseline);
       }, 700);
     } else if (tries > 40){
       clearInterval(readyTimer);
