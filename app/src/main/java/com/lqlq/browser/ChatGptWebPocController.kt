@@ -39,8 +39,9 @@ class ChatGptWebPocController(private val activity: MainActivity) {
     private var activeRequestId: String = ""
     private var initialClipboardText: String = ""
     private var onResult: ((ChatGptWebResult) -> Unit)? = null
+    private var onProgress: ((Int, String) -> Unit)? = null
 
-    fun run(prompt: String, requestId: String = "", timeoutMs: Long = 180_000L, onResult: (ChatGptWebResult) -> Unit) {
+    fun run(prompt: String, requestId: String = "", timeoutMs: Long = 180_000L, onProgress: ((Int, String) -> Unit)? = null, onResult: (ChatGptWebResult) -> Unit) {
         if (webView != null) {
             onResult(ChatGptWebResult(ok = false, errorMessage = "Đang có phiên ChatGPT web khác chạy, đợi xong đã."))
             return
@@ -53,6 +54,7 @@ class ChatGptWebPocController(private val activity: MainActivity) {
         // Nho clipboard TRUOC khi chay de biet nut "Sao chep" co that su cap nhat khong.
         initialClipboardText = readClipboardText().trim()
         this.onResult = onResult
+        this.onProgress = onProgress
         // Giu man hinh sang - WebView bat buoc app dang mo moi chay duoc, so anh
         // cang nhieu (vd 50 anh) cang mat thoi gian, neu man hinh tu khoa giua
         // chung se lam WebView bi Android tam dung va dung im mai khong tiep tuc.
@@ -112,6 +114,11 @@ class ChatGptWebPocController(private val activity: MainActivity) {
         if (finished) return
         val obj = runCatching { JSONObject(json) }.getOrNull() ?: return
         when (obj.optString("step")) {
+            "PROGRESS" -> {
+                val pct = obj.optInt("percent", 0)
+                val note = obj.optString("note").ifBlank { "Đang lấy nội dung từ ChatGPT web..." }
+                if (pct > 0) onProgress?.invoke(pct, note)
+            }
             "DONE" -> {
                 val urlsArray = obj.optJSONArray("imageUrls")
                 val urls = mutableListOf<String>()
@@ -121,7 +128,8 @@ class ChatGptWebPocController(private val activity: MainActivity) {
                         if (u.isNotBlank()) urls.add(u)
                     }
                 }
-                val domText = obj.optString("responseText")
+                // codeBlock la nguon chinh (giong Gemini); responseText la fallback cu.
+                val domText = obj.optString("codeBlock").trim().ifBlank { obj.optString("responseText") }
                 // NGUON CHINH: nut "Sao chep phan hoi". Doc clipboard co retry + 2 khoa
                 // an toan (khac clipboard ban dau, KHAC prompt da gui). Neu khong dat
                 // -> fallback ve DOM text.
@@ -166,6 +174,7 @@ class ChatGptWebPocController(private val activity: MainActivity) {
         if (finished) return
         finished = true
         activeRequestId = ""
+        onProgress = null
         activity.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         webView?.let {
             runCatching { it.loadUrl("about:blank") }
@@ -204,6 +213,54 @@ class ChatGptWebPocController(private val activity: MainActivity) {
 (function(){
   var PROMPT = __PROMPT_JSON__;
   function report(o){ try { LqlqChatGpt.report(JSON.stringify(o)); } catch(e){} }
+  var __pct = 0;
+  function prog(p, note){ if (p > __pct){ __pct = p; report({ step: 'PROGRESS', percent: p, note: note }); } }
+  prog(5, 'Trang ChatGPT đã sẵn sàng');
+
+  // Quet ngoac CO NHAN BIET CHUOI -> lay JSON hoan chinh (giong Gemini).
+  function extractBalancedJsonFrom(text, from){
+    if (!text) return null;
+    var start = text.indexOf('{', from || 0);
+    if (start < 0) return null;
+    var depth = 0, inStr = false, esc = false;
+    for (var i = start; i < text.length; i++){
+      var ch = text.charAt(i);
+      if (inStr){
+        if (esc) { esc = false; }
+        else if (ch === '\\') { esc = true; }
+        else if (ch === '"') { inStr = false; }
+      } else {
+        if (ch === '"') { inStr = true; }
+        else if (ch === '{') { depth++; }
+        else if (ch === '}') { depth--; if (depth === 0) return { json: text.substring(start, i + 1), end: i + 1 }; }
+      }
+    }
+    return null;
+  }
+  function lastBalancedJson(full){
+    var best = null, bestSchema = null, pos = 0, guard = 0, incomplete = false;
+    while (guard++ < 200){
+      var j = extractBalancedJsonFrom(full, pos);
+      if (!j){ if (full.indexOf('{', pos) >= 0) incomplete = true; break; }
+      best = j.json;
+      if (j.json.indexOf('"items"') >= 0 || j.json.indexOf('"intro"') >= 0) bestSchema = j.json;
+      pos = j.end;
+      if (pos >= full.length) break;
+    }
+    var chosen = bestSchema || best;
+    var hasOutro = !!(chosen && chosen.indexOf('"outro"') >= 0 && chosen.indexOf('"items"') >= 0);
+    return { json: chosen, incomplete: incomplete, hasOutro: hasOutro };
+  }
+  // Gom TAT CA code block trong node da khoa + textContent (khong phu thuoc layout).
+  function extractLocked(node){
+    if (!node) return '';
+    var parts = [];
+    var pres = node.querySelectorAll('pre');
+    if (pres.length){ for (var i=0;i<pres.length;i++) parts.push(pres[i].textContent || ''); }
+    else { var codes = node.querySelectorAll('code'); for (var j=0;j<codes.length;j++) parts.push(codes[j].textContent || ''); }
+    var codeTxt = parts.join('\n').trim();
+    return codeTxt || (node.textContent || '');
+  }
 
   function findInput(){
     var sels = [
@@ -297,55 +354,70 @@ class ChatGptWebPocController(private val activity: MainActivity) {
     return false;
   }
 
-  function waitForResponse(){
-    var lastText = '';
-    var stable = 0;
-    var idle = 0;      // thoi gian ChatGPT KHONG hoat dong (khong stream, khong dai them)
-    var lastLen = 0;
-    // Bam nut "Sao chep phan hoi" NGAY TRONG khoi cau tra loi moi nhat (KHONG tim
-    // toan trang de tranh bam nham nut cua prompt/code block). Node la tin nhan
-    // assistant; thanh cong cu Copy thuong nam trong turn wrapper (article) chua no.
-    function clickCopyForResponse(node){
-      var scope = (node.closest && (node.closest('article') || node.closest('[data-testid^="conversation-turn"]'))) || node.parentElement || node;
-      var btns = scope ? Array.prototype.slice.call(scope.querySelectorAll('button')) : [];
-      var btn = null;
-      for (var i=0;i<btns.length;i++){
-        var b = btns[i];
-        var label = ((b.getAttribute('data-testid')||'') + ' ' + (b.getAttribute('aria-label')||'') + ' ' + (b.getAttribute('title')||'') + ' ' + (b.innerText||'')).toLowerCase();
-        if (label.indexOf('copy') >= 0 || label.indexOf('sao chép') >= 0 || label.indexOf('sao chep') >= 0){ btn = b; break; }
-      }
-      if (btn){ try { btn.click(); return true; } catch(e){} }
-      return false;
-    }
-    function finish(node, txt){
+  // Khoa dung LUOT tra loi moi cua prompt vua gui (khong lay node cuoi trang tuy tien).
+  var LOCKED = null;
+  function waitForResponse(baseline){
+    var longest = '';
+    var idle = 0;
+    var hard = 0;
+    var seenOutro = 0, bestOutro = '';
+    var seenJson = 0, bestJson = '';
+    var outroReadyAt = -1;
+    var finalized = false;
+    var lastDiag = 'init';
+    function finalizeNow(){
+      if (finalized) return;
+      if (!bestOutro || bestOutro.length === 0) return;
+      finalized = true;
       clearInterval(poll);
-      var urls = extractImageUrls(node);
-      // Nguon CHINH: nut "Sao chep phan hoi" (native doc clipboard). DOM text la fallback.
-      var copyAttempted = clickCopyForResponse(node);
-      setTimeout(function(){
-        report({ step: 'DONE', copyAttempted: copyAttempted, imageUrls: urls, responseText: (txt||'').slice(0, 50000) });
-      }, copyAttempted ? 450 : 0);
+      var payload = bestOutro.slice(0, 400000);
+      try {
+        LqlqChatGpt.report(JSON.stringify({ step: 'DONE', codeBlock: payload }));
+      } catch(e){
+        finalized = false;
+        try { LqlqChatGpt.report(JSON.stringify({ step: 'PROGRESS', percent: 35, note: 'DONE-ERR ' + (e && e.message ? e.message : ('' + e)) + ' len=' + payload.length })); } catch(_){}
+      }
     }
     var poll = setInterval(function(){
-      var node = lastAssistantMessage();
+     try {
+      hard += 800;
+      if (!LOCKED){
+        var list = document.querySelectorAll('div[data-message-author-role="assistant"]');
+        var count = list ? list.length : 0;
+        if (count > baseline){ LOCKED = list[count - 1]; prog(25, 'Model bắt đầu trả lời'); }
+        else if (count > 0 && baseline === 0){ LOCKED = list[count - 1]; prog(25, 'Model bắt đầu trả lời'); }
+        if (!LOCKED){
+          lastDiag = 'waitNewTurn base=' + baseline + ' now=' + count;
+          if (hard > __TIMEOUT_MS__){ clearInterval(poll); report({ step:'TIMEOUT', lastText:'[chan doan] ' + lastDiag }); }
+          return;
+        }
+      }
+      var full = extractLocked(LOCKED);
+      if (full.length > longest.length){ longest = full; idle = 0; if (longest.length > 0) prog(30, 'Nội dung đang tăng'); } else { idle += 800; }
       var streaming = isStillStreaming();
-      if (node){
-        var txt = extractResponseText(node);
-        // Con stream hoac con dai them -> dang hoat dong -> reset dong ho cho.
-        // 60s va 300s deu cho theo HOAT DONG, khong theo tong thoi gian.
-        if (streaming || txt.length > lastLen){ idle = 0; lastLen = Math.max(lastLen, txt.length); }
-        else { idle += 800; }
-        if (txt === lastText && txt.length > 0){ stable++; }
-        else { stable = 0; lastText = txt; }
-        if (stable >= 5 && !streaming){ finish(node, txt); return; }
-      } else {
-        idle += 800;
+      var r = lastBalancedJson(longest);
+      if (r.json){
+        seenJson++;
+        if (r.json.length > bestJson.length) bestJson = r.json;
+        if (r.hasOutro){ seenOutro++; if (r.json.length > bestOutro.length) bestOutro = r.json; if (outroReadyAt < 0){ outroReadyAt = hard; setTimeout(finalizeNow, 1600); } prog(34, 'Nội dung đã ổn định, sắp chốt'); }
       }
-      // Chi bo cuoc khi ChatGPT thuc su dung viet (idle qua lau), khong phai vi dai.
-      if (idle > __TIMEOUT_MS__){
+      lastDiag = 'lockedLen=' + longest.length + ' streaming=' + streaming + ' jsonLen=' + (r.json ? r.json.length : 0) + ' outro=' + r.hasOutro + ' seenOutro=' + seenOutro + ' seenJson=' + seenJson;
+      if (hard % 4800 < 800){ report({ step: 'PROGRESS', percent: (__pct || 34), note: 'CD ' + lastDiag }); }
+      // Chot: JSON hoan chinh (co outro) -> 1.6s sau chot theo thoi gian.
+      if (outroReadyAt >= 0 && bestOutro.length > 0 && (hard - outroReadyAt) >= 1600){ finalizeNow(); return; }
+      // Phong ho: JSON can ngoac khong co outro giu lau + het stream -> nha longest.
+      if (seenJson >= 20 && !streaming){
         clearInterval(poll);
-        report({ step: 'TIMEOUT' });
+        report({ step: 'DONE', codeBlock: bestJson.slice(0, 400000) });
+        return;
       }
+      if ((idle > __TIMEOUT_MS__ && !streaming) || hard > 900000){
+        clearInterval(poll);
+        report({ step: 'TIMEOUT', lastText: '[chan doan] ' + lastDiag });
+      }
+     } catch(e){
+       report({ step: 'PROGRESS', percent: (__pct || 34), note: 'CD-ERR ' + (e && e.message ? e.message : ('' + e)) + ' | ' + lastDiag });
+     }
     }, 800);
   }
 
@@ -355,7 +427,10 @@ class ChatGptWebPocController(private val activity: MainActivity) {
     var input = findInput();
     if (input){
       clearInterval(readyTimer);
+      prog(10, 'Đã tìm thấy ô nhập');
+      var baseline = document.querySelectorAll('div[data-message-author-role="assistant"]').length;
       setText(input.el, PROMPT);
+      prog(15, 'Đã đổ prompt');
       setTimeout(function(){
         var send = findSend();
         if (send){
@@ -363,7 +438,8 @@ class ChatGptWebPocController(private val activity: MainActivity) {
         } else {
           input.el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
         }
-        waitForResponse();
+        prog(20, 'Đã bấm gửi');
+        waitForResponse(baseline);
       }, 700);
     } else if (tries > 40){
       clearInterval(readyTimer);

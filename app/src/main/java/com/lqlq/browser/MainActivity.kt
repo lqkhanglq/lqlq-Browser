@@ -1928,8 +1928,20 @@ class MainActivity : AppCompatActivity() {
             },
             onFetchChatGptWebContent = { prompt, clientRequestId ->
                 runOnUiThread {
-                    chatGptWebPocController.run(prompt, requestId = clientRequestId, timeoutMs = 900_000L) { result ->
+                    com.lqlq.browser.automation.worker.AutomationAsyncTaskStore
+                        .markFetchProgress(applicationContext, clientRequestId, 2, "Đang mở ChatGPT web...")
+                    chatGptWebPocController.run(
+                        prompt,
+                        requestId = clientRequestId,
+                        timeoutMs = 900_000L,
+                        onProgress = { pct, note ->
+                            com.lqlq.browser.automation.worker.AutomationAsyncTaskStore
+                                .markFetchProgress(applicationContext, clientRequestId, pct, note)
+                        }
+                    ) { result ->
                         if (result.ok && !result.responseText.isNullOrBlank()) {
+                            com.lqlq.browser.automation.worker.AutomationAsyncTaskStore
+                                .markFetchProgress(applicationContext, clientRequestId, 36, "Đã lấy xong nội dung, sang bước tiếp theo")
                             com.lqlq.browser.automation.worker.AutomationAsyncTaskStore
                                 .markDoneWithRawText(applicationContext, clientRequestId, result.responseText)
                         } else {
