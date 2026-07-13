@@ -383,14 +383,14 @@ class GeminiWebPocController(private val activity: MainActivity) {
       var full = codeTxt || (n.innerText || '');
       if (full.length > maxLen) maxLen = full.length;
       if (full.indexOf('{') >= 0) sawBrace = true;
-      // Quet MOI JSON trong node (khong chi cai dau tien) - Gemini co the ECHO SCHEMA
-      // MAU truoc JSON that. Bo schema (>=3 "..."), lay JSON that DAI NHAT.
+      // MOT QUY TAC DUY NHAT: lay JSON hoan chinh CUOI CUNG trong node. Cau tra loi
+      // that luon nam SAU phan echo schema (neu co) -> cai cuoi = cau tra loi that.
+      // Khong chia truong hop, khong doan schema.
       var best = null, pos = 0, guard = 0;
       while (guard++ < 60){
         var j = extractBalancedJsonFrom(full, pos);
         if (!j){ if (full.indexOf('{', pos) >= 0) incomplete = true; break; }
-        if (countDots(j.json) >= 3){ schemaRejected++; }
-        else if (!best || j.json.length > best.length){ best = j.json; }
+        best = j.json;
         pos = j.end;
         if (pos >= full.length) break;
       }
