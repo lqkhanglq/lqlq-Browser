@@ -5430,15 +5430,10 @@
   }
 
   function inferOutputLength(topic, desiredDurationSeconds) {
-    const normalized = String(topic || "");
-    const duration = Number(desiredDurationSeconds || 0);
-    if (duration >= 1200) return 45000;
-    if (duration >= 600) return 30000;
-    if (duration >= 300) return 22000;
-    if (duration >= 120) return 16000;
-    if (duration >= 60) return 12000;
-    if (/\b10\b|\b12\b|10 câu|12 scene|12 cảnh/i.test(normalized)) return 12000;
-    return 6000;
+    // MỘT logic duy nhất cho MỌI thời lượng (60s hay 30000s như nhau) - không chia
+    // mốc. Thời lượng chỉ là con số trong prompt để Gemini tự quyết viết dài bao
+    // nhiêu; app KHÔNG ép độ dài đầu ra khác nhau theo thời lượng nữa.
+    return 12000;
   }
 
   function getSessionDurationSeconds(session) {

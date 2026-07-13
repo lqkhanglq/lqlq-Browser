@@ -33,13 +33,13 @@ data class ContentDurationPolicy(
                 ?.let { it * 1000L }
                 ?: parseExplicitDurationMs(normalized)
             val targetDurationMs = explicitDurationMs ?: 35_000L
-            // Goi y so muc uoc luong ~1 muc/7 giay noi dung - CHI la diem khoi dau
-            // cho prompt, Gemini duoc yeu cau tu dieu chinh len/xuong theo chu de
-            // (xem "Rules" trong buildPrompt).
-            val estimatedItemCount = (targetDurationMs / 7_000L).toInt().coerceIn(3, 20)
+            // MOT logic duy nhat cho MOI thoi luong: KHONG con tinh so muc/so canh
+            // theo thoi luong (truoc day dur/7000 -> muc nay chinh la "case an" khien
+            // 300s bi ep viet dai/nhieu muc hon 60s). Thoi luong CHI la con so
+            // target_duration_ms gui cho Gemini; Gemini tu quyet so muc.
             return ContentDurationPolicy(
-                targetItemCount = estimatedItemCount,
-                targetSceneCount = estimatedItemCount + 2,
+                targetItemCount = null,
+                targetSceneCount = 10,
                 targetDurationMs = targetDurationMs,
                 includeIntro = true,
                 includeOutro = true,
