@@ -38,7 +38,7 @@ data class ContentDurationPolicy(
             // 300s bi ep viet dai/nhieu muc hon 60s). Thoi luong CHI la con so
             // target_duration_ms gui cho Gemini; Gemini tu quyet so muc.
             return ContentDurationPolicy(
-                targetItemCount = null,
+                targetItemCount = 10,
                 targetSceneCount = 10,
                 targetDurationMs = targetDurationMs,
                 includeIntro = true,
