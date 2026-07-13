@@ -158,10 +158,14 @@ class GeminiWebPocController(private val activity: MainActivity) {
             )
             overlay = column
         } else {
-            // Chạy ẩn: WebView 1x1px, không chắn thao tác người dùng trên phần còn
-            // lại của app. Vẫn phải gắn vào cây view thật thì WebView mới chắc chắn
-            // render/chạy JS đầy đủ (không dùng View.GONE).
-            content.addView(wv, FrameLayout.LayoutParams(1, 1))
+            // Chạy ẩn nhưng PHẢI có kích thước THẬT. Trước đây 1x1px khiến câu trả
+            // lời DÀI (thời lượng >=120s) không được layout hết -> innerText bị cắt
+            // -> JSON không đủ ngoặc đóng -> treo. Nay để full màn hình rồi ĐẨY RA
+            // NGOÀI (translationX) nên vô hình + không chắn thao tác, mà DOM vẫn
+            // layout đầy đủ toàn bộ nội dung.
+            val dm = activity.resources.displayMetrics
+            content.addView(wv, FrameLayout.LayoutParams(dm.widthPixels, dm.heightPixels))
+            wv.translationX = dm.widthPixels.toFloat() * 2f
             overlay = wv
         }
 
@@ -379,8 +383,11 @@ class GeminiWebPocController(private val activity: MainActivity) {
     for (var k=nodes.length-1;k>=0;k--){
       var n = nodes[k];
       var code = n.querySelector('code, pre');
-      var codeTxt = code ? (code.innerText || '') : '';
-      var full = codeTxt || (n.innerText || '');
+      // textContent (KHONG phai innerText): lay TOAN BO text trong DOM khong phu
+      // thuoc layout/viewport. innerText cat theo phan duoc render -> voi cau tra
+      // loi dai bi thieu ngoac dong -> treo. textContent luon day du.
+      var codeTxt = code ? (code.textContent || '') : '';
+      var full = codeTxt || (n.textContent || '');
       if (full.length > maxLen) maxLen = full.length;
       if (full.indexOf('{') >= 0) sawBrace = true;
       // MOT QUY TAC DUY NHAT: lay JSON hoan chinh CUOI CUNG trong node. Cau tra loi

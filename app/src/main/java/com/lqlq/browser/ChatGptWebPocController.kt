@@ -62,9 +62,13 @@ class ChatGptWebPocController(private val activity: MainActivity) {
         val wv = WebView(activity)
         webView = wv
         configure(wv)
-        // Chay AN: WebView 1x1px, van gan vao cay view that de chac chan render/chay
-        // JS day du (giong Gemini web an).
-        content.addView(wv, FrameLayout.LayoutParams(1, 1))
+        // Chay AN nhung PHAI co kich thuoc THAT roi day ra ngoai man hinh: 1x1px
+        // khien cau tra loi DAI khong layout het -> innerText/textContent thieu ->
+        // JSON thieu ngoac -> treo. Full size + translationX = vo hinh, khong chan
+        // thao tac, DOM van layout day du.
+        val dm = activity.resources.displayMetrics
+        content.addView(wv, FrameLayout.LayoutParams(dm.widthPixels, dm.heightPixels))
+        wv.translationX = dm.widthPixels.toFloat() * 2f
         wv.loadUrl(CHATGPT_URL)
     }
 
@@ -274,10 +278,10 @@ class ChatGptWebPocController(private val activity: MainActivity) {
     // (cha chua text con, con lai lay lai) lam JSON roi loan, parse hong.
     var code = node.querySelector('pre code, code, pre');
     if (code) {
-      var ct = (code.innerText || '').trim();
+      var ct = (code.textContent || '').trim();
       if (ct) return ct;
     }
-    return (node.innerText || '').trim();
+    return (node.textContent || '').trim();
   }
 
   function isStillStreaming(){
