@@ -456,7 +456,17 @@ class GeminiWebPocController(private val activity: MainActivity) {
       if (!bestOutro || bestOutro.length === 0) return;
       finalized = true;
       clearInterval(poll);
-      report({ step: 'DONE', responseText: bestOutro.slice(0, 400000), codeBlock: bestOutro.slice(0, 400000) });
+      var payload = bestOutro.slice(0, 400000);
+      try {
+        // Chi gui MOT ban qua codeBlock (handleReport dung codeBlock.ifBlank) -> nho
+        // payload phan nua, tranh gioi han cau noi voi noi dung dai (300s).
+        LqlqPoc.report(JSON.stringify({ step: 'DONE', codeBlock: payload }));
+      } catch(e){
+        // Truoc day loi nay bi nuot -> DONE khong toi Kotlin -> ket 34%. Hien ra +
+        // thu lai voi payload nho hon de it nhat khong ket.
+        finalized = false;
+        try { LqlqPoc.report(JSON.stringify({ step: 'PROGRESS', percent: 35, note: 'DONE-ERR ' + (e && e.message ? e.message : ('' + e)) + ' len=' + payload.length })); } catch(_){}
+      }
     }
     var poll = setInterval(function(){
      try {
