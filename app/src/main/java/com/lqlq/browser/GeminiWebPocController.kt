@@ -409,9 +409,12 @@ class GeminiWebPocController(private val activity: MainActivity) {
   // Gom TAT CA code block trong node da khoa (khong chi cai dau) + textContent.
   function extractLocked(node){
     if (!node) return '';
-    var blocks = node.querySelectorAll('pre code, pre, code');
+    // Uu tien <pre> (da bao gom text cua <code> ben trong) -> tranh nhan doi khi
+    // vua match 'pre' vua match 'pre code'. Khong co <pre> moi dung <code>.
     var parts = [];
-    for (var i=0;i<blocks.length;i++){ parts.push(blocks[i].textContent || ''); }
+    var pres = node.querySelectorAll('pre');
+    if (pres.length){ for (var i=0;i<pres.length;i++) parts.push(pres[i].textContent || ''); }
+    else { var codes = node.querySelectorAll('code'); for (var j=0;j<codes.length;j++) parts.push(codes[j].textContent || ''); }
     var codeTxt = parts.join('\n').trim();
     return codeTxt || (node.textContent || '');
   }
@@ -430,15 +433,19 @@ class GeminiWebPocController(private val activity: MainActivity) {
       pos = j.end;
       if (pos >= full.length) break;
     }
-    return { json: bestSchema || best, incomplete: incomplete };
+    var chosen = bestSchema || best;
+    var hasOutro = !!(chosen && chosen.indexOf('"outro"') >= 0 && chosen.indexOf('"items"') >= 0);
+    return { json: chosen, incomplete: incomplete, hasOutro: hasOutro };
   }
 
   function waitForResponse(baseline){
-    var longest = '';   // snapshot dai nhat cua RIENG node da khoa
-    var lastJson = '';
-    var stable = 0;
-    var idle = 0;       // node da khoa khong dai them + khong stream
-    var hard = 0;       // tong thoi gian (chan tuyet doi)
+    var longest = '';    // snapshot dai nhat cua RIENG node da khoa
+    var idle = 0;        // node da khoa khong dai them
+    var hard = 0;        // tong thoi gian (chan tuyet doi)
+    // Dem TICH LUY (khong reset khi DOM nhap nhay) -> tranh ket 34% khi chuoi JSON
+    // doi tung nhip. Chi can thay JSON du du lieu on dinh vai nhip la chot.
+    var seenOutro = 0, bestOutro = '';
+    var seenJson = 0, bestJson = '';
     var lastDiag = 'init';
     var poll = setInterval(function(){
       hard += 800;
@@ -459,24 +466,29 @@ class GeminiWebPocController(private val activity: MainActivity) {
       if (full.length > longest.length){ longest = full; idle = 0; if (longest.length > 0) prog(30, 'Nội dung đang tăng'); } else { idle += 800; }
       var streaming = isGeminiStreaming();
       var r = lastBalancedJson(longest);
-      lastDiag = 'lockedLen=' + longest.length + ' streaming=' + streaming +
-                 ' jsonLen=' + (r.json ? r.json.length : 0) + ' incompleteJson=' + r.incomplete;
-      // Hoan tat: co JSON schema dung yen du lau. KHONG phu thuoc tuyet doi vao co
-      // stream (nut "Dung" cua Gemini hay nhap nhay -> truoc day ket 34%). Con bao
-      // stream thi cho lau hon (~4.8s), da het stream thi chot nhanh (~2.4s).
       if (r.json){
-        prog(34, 'Nội dung đã ổn định, sắp chốt');
-        if (r.json === lastJson){ stable++; } else { stable = 0; lastJson = r.json; }
-        var needed = streaming ? 6 : 3;
-        if (stable >= needed){
-          clearInterval(poll);
-          report({ step: 'DONE', responseText: r.json.slice(0, 400000), codeBlock: r.json.slice(0, 400000) });
-          return;
-        }
-      } else {
-        stable = 0;
+        seenJson++;
+        if (r.json.length > bestJson.length) bestJson = r.json;
+        if (r.hasOutro){ seenOutro++; if (r.json.length > bestOutro.length) bestOutro = r.json; prog(34, 'Nội dung đã ổn định, sắp chốt'); }
       }
-      // Bo cuoc khi node da khoa dung hoat dong lau (idle) HOAC vuot tran cung.
+      lastDiag = 'lockedLen=' + longest.length + ' streaming=' + streaming +
+                 ' jsonLen=' + (r.json ? r.json.length : 0) + ' outro=' + r.hasOutro +
+                 ' seenOutro=' + seenOutro + ' seenJson=' + seenJson;
+      // CHOT chinh: JSON da co ca "items" va "outro" (Gemini viet outro CUOI CUNG ->
+      // co outro = da xong) va giu qua ~2.4s. Dem tich luy nen DOM nhap nhay khong can.
+      if (seenOutro >= 3){
+        clearInterval(poll);
+        report({ step: 'DONE', responseText: bestOutro.slice(0, 400000), codeBlock: bestOutro.slice(0, 400000) });
+        return;
+      }
+      // CHOT phong ho: co JSON can ngoac (khong thay "outro" - vd prompt khac schema)
+      // giu rat lau + het stream -> nha longest de khong treo.
+      if (seenJson >= 20 && !streaming){
+        clearInterval(poll);
+        report({ step: 'DONE', responseText: bestJson.slice(0, 400000), codeBlock: bestJson.slice(0, 400000) });
+        return;
+      }
+      // Bo cuoc khi node dung hoat dong that lau (idle) HOAC vuot tran cung 15 phut.
       if ((idle > __TIMEOUT_MS__ && !streaming) || hard > 900000){
         clearInterval(poll);
         report({ step: 'TIMEOUT', lastText: '[chan doan] ' + lastDiag });
