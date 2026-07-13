@@ -418,14 +418,19 @@ class GeminiWebPocController(private val activity: MainActivity) {
 
   // Lay JSON can ngoac CUOI CUNG (cau tra loi that nam sau echo schema neu co).
   function lastBalancedJson(full){
-    var best = null, pos = 0, guard = 0, incomplete = false;
+    var best = null, bestSchema = null, pos = 0, guard = 0, incomplete = false;
     while (guard++ < 200){
       var j = extractBalancedJsonFrom(full, pos);
       if (!j){ if (full.indexOf('{', pos) >= 0) incomplete = true; break; }
-      best = j.json; pos = j.end;
+      best = j.json;
+      // Uu tien JSON DUNG SCHEMA noi dung (co "items" hoac "intro") -> khoa dung
+      // cau tra loi that, bo qua echo schema / khoi JSON phu / goi y phia sau lam
+      // chuoi "cuoi cung" doi lien tuc khien khong bao gio chot.
+      if (j.json.indexOf('"items"') >= 0 || j.json.indexOf('"intro"') >= 0) bestSchema = j.json;
+      pos = j.end;
       if (pos >= full.length) break;
     }
-    return { json: best, incomplete: incomplete };
+    return { json: bestSchema || best, incomplete: incomplete };
   }
 
   function waitForResponse(baseline){
@@ -456,11 +461,14 @@ class GeminiWebPocController(private val activity: MainActivity) {
       var r = lastBalancedJson(longest);
       lastDiag = 'lockedLen=' + longest.length + ' streaming=' + streaming +
                  ' jsonLen=' + (r.json ? r.json.length : 0) + ' incompleteJson=' + r.incomplete;
-      // Hoan tat: co JSON can ngoac VA Gemini da ngung stream VA on dinh ~2.4s.
-      if (r.json && !streaming){
+      // Hoan tat: co JSON schema dung yen du lau. KHONG phu thuoc tuyet doi vao co
+      // stream (nut "Dung" cua Gemini hay nhap nhay -> truoc day ket 34%). Con bao
+      // stream thi cho lau hon (~4.8s), da het stream thi chot nhanh (~2.4s).
+      if (r.json){
         prog(34, 'Nội dung đã ổn định, sắp chốt');
         if (r.json === lastJson){ stable++; } else { stable = 0; lastJson = r.json; }
-        if (stable >= 3){
+        var needed = streaming ? 6 : 3;
+        if (stable >= needed){
           clearInterval(poll);
           report({ step: 'DONE', responseText: r.json.slice(0, 400000), codeBlock: r.json.slice(0, 400000) });
           return;
