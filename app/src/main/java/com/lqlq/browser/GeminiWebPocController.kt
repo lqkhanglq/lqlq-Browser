@@ -213,7 +213,8 @@ class GeminiWebPocController(private val activity: MainActivity) {
                 dismiss(GeminiWebResult(ok = false, errorMessage = obj.optString("error").ifBlank { "Gemini web bao loi khong ro." }))
             }
             "TIMEOUT" -> {
-                dismiss(GeminiWebResult(ok = false, errorMessage = "Gemini web qua thoi gian cho phan hoi (${pendingTimeoutMs / 1000}s)."))
+                val diag = obj.optString("lastText").trim()
+                dismiss(GeminiWebResult(ok = false, errorMessage = "Gemini web quá giờ (${pendingTimeoutMs / 1000}s). ${diag}"))
             }
             // Các step trung gian (INPUT_FOUND/TEXT_SET/SEND_CLICKED) chỉ để chẩn
             // đoán lúc POC — không cần hiển thị nữa vì đã bỏ bảng log.
@@ -341,12 +342,12 @@ class GeminiWebPocController(private val activity: MainActivity) {
     }
   }
 
-  // Quet ngoac CO NHAN BIET CHUOI: lay doi tuong JSON DAU TIEN hoan chinh trong text
-  // (bo qua '{' '}' nam trong "..."). Chiu duoc text dan truoc/sau JSON, ngoac trong
-  // chuoi, va JSON RAT DAI (300s). Tra ve chuoi JSON hoac null neu chua dong du.
-  function extractBalancedJson(text){
+  // Quet ngoac CO NHAN BIET CHUOI, bat dau tu vi tri 'from'. Tra ve {json, end}
+  // (end = vi tri sau '}' dong) de con quet TIEP cac JSON khac trong cung text -
+  // vi Gemini response dai hay ECHO LAI SCHEMA MAU truoc JSON that.
+  function extractBalancedJsonFrom(text, from){
     if (!text) return null;
-    var start = text.indexOf('{');
+    var start = text.indexOf('{', from || 0);
     if (start < 0) return null;
     var depth = 0, inStr = false, esc = false;
     for (var i = start; i < text.length; i++){
@@ -358,56 +359,70 @@ class GeminiWebPocController(private val activity: MainActivity) {
       } else {
         if (ch === '"') { inStr = true; }
         else if (ch === '{') { depth++; }
-        else if (ch === '}') { depth--; if (depth === 0) return text.substring(start, i + 1); }
+        else if (ch === '}') { depth--; if (depth === 0) return { json: text.substring(start, i + 1), end: i + 1 }; }
       }
     }
     return null; // chua dong du ngoac -> con dang stream
   }
 
-  // Chi quet cac node CAU TRA LOI cua model (KHONG lay bong bong prompt cua nguoi
-  // dung - prompt co san JSON schema mau lam sai noi dung). Tra ve JSON hoan chinh
-  // dau tien tim thay o node moi nhat.
-  function extractResponses(){
-    // .markdown la noi Gemini render CAU TRA LOI -> phai co. Bong bong prompt cua
-    // nguoi dung co san JSON schema mau (chua "...") -> loai bang cach bo qua JSON
-    // nao con placeholder "...".
+  function countDots(s){ var m = s.match(/"\.\.\."/g); return m ? m.length : 0; }
+
+  // Quet cac node cau tra loi cua model + TRA VE CHAN DOAN de biet tai sao khong chot.
+  function scanResponses(){
     var sels = ['message-content', '.model-response-text', 'model-response', '.markdown'];
     var nodes = [];
     for (var i=0;i<sels.length;i++){
       var found = document.querySelectorAll(sels[i]);
       for (var j=0;j<found.length;j++) nodes.push(found[j]);
     }
+    var maxLen = 0, sawBrace = false, incomplete = false, schemaRejected = 0;
     for (var k=nodes.length-1;k>=0;k--){
       var n = nodes[k];
       var code = n.querySelector('code, pre');
       var codeTxt = code ? (code.innerText || '') : '';
       var full = codeTxt || (n.innerText || '');
-      var json = extractBalancedJson(full);
-      if (json && json.indexOf('"..."') < 0){ return { node: n, json: json }; }
+      if (full.length > maxLen) maxLen = full.length;
+      if (full.indexOf('{') >= 0) sawBrace = true;
+      // Quet MOI JSON trong node (khong chi cai dau tien) - Gemini co the ECHO SCHEMA
+      // MAU truoc JSON that. Bo schema (>=3 "..."), lay JSON that DAI NHAT.
+      var best = null, pos = 0, guard = 0;
+      while (guard++ < 60){
+        var j = extractBalancedJsonFrom(full, pos);
+        if (!j){ if (full.indexOf('{', pos) >= 0) incomplete = true; break; }
+        if (countDots(j.json) >= 3){ schemaRejected++; }
+        else if (!best || j.json.length > best.length){ best = j.json; }
+        pos = j.end;
+        if (pos >= full.length) break;
+      }
+      if (best){ return { json: best, diag: 'ok jsonLen=' + best.length }; }
     }
-    return null;
+    return {
+      json: null,
+      diag: 'nodes=' + nodes.length + ' maxLen=' + maxLen + ' sawBrace=' + sawBrace +
+            ' incompleteJson=' + incomplete + ' schemaRejected=' + schemaRejected
+    };
   }
 
   function waitForResponse(){
     var lastJson = '';
     var stable = 0;
     var waited = 0;
+    var lastDiag = 'init';
     var poll = setInterval(function(){
       waited += 800;
-      var r = extractResponses();
-      if (r && r.json){
-        // Da co JSON DONG DU. Doi 1-2 nhip cho chac (phong luc dang stream chunk moi
-        // vua tinh co dong ngoac giua chung) roi chot.
-        if (r.json === lastJson){ stable++; } else { stable = 0; lastJson = r.json; }
+      var s = scanResponses();
+      lastDiag = s.diag;
+      if (s.json){
+        if (s.json === lastJson){ stable++; } else { stable = 0; lastJson = s.json; }
         if (stable >= 2){
           clearInterval(poll);
-          report({ step: 'DONE', responseText: r.json.slice(0, 400000), codeBlock: r.json.slice(0, 400000) });
+          report({ step: 'DONE', responseText: s.json.slice(0, 400000), codeBlock: s.json.slice(0, 400000) });
           return;
         }
       }
       if (waited > __TIMEOUT_MS__){
         clearInterval(poll);
-        report({ step: 'TIMEOUT', lastText: lastJson.slice(0, 2000) });
+        report({ step: 'TIMEOUT', lastText: '[chan doan] ' + lastDiag });
       }
     }, 800);
   }
