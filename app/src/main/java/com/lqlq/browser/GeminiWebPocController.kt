@@ -447,7 +447,17 @@ class GeminiWebPocController(private val activity: MainActivity) {
     var seenOutro = 0, bestOutro = '';
     var seenJson = 0, bestJson = '';
     var outroReadyAt = -1;   // moc 'hard' luc bat duoc JSON hoan chinh (co outro) dau tien
+    var finalized = false;
     var lastDiag = 'init';
+    // Chot 1 lan duy nhat. Dung ca tu vong poll LAN tu hen gio doc lap -> neu vong
+    // poll bi nem loi giua chung (truoc day ket 34%), hen gio van chot duoc.
+    function finalizeNow(){
+      if (finalized) return;
+      if (!bestOutro || bestOutro.length === 0) return;
+      finalized = true;
+      clearInterval(poll);
+      report({ step: 'DONE', responseText: bestOutro.slice(0, 400000), codeBlock: bestOutro.slice(0, 400000) });
+    }
     var poll = setInterval(function(){
      try {
       hard += 800;
@@ -471,7 +481,7 @@ class GeminiWebPocController(private val activity: MainActivity) {
       if (r.json){
         seenJson++;
         if (r.json.length > bestJson.length) bestJson = r.json;
-        if (r.hasOutro){ seenOutro++; if (r.json.length > bestOutro.length) bestOutro = r.json; if (outroReadyAt < 0) outroReadyAt = hard; prog(34, 'Nội dung đã ổn định, sắp chốt'); }
+        if (r.hasOutro){ seenOutro++; if (r.json.length > bestOutro.length) bestOutro = r.json; if (outroReadyAt < 0){ outroReadyAt = hard; setTimeout(finalizeNow, 1600); } prog(34, 'Nội dung đã ổn định, sắp chốt'); }
       }
       lastDiag = 'lockedLen=' + longest.length + ' streaming=' + streaming +
                  ' jsonLen=' + (r.json ? r.json.length : 0) + ' outro=' + r.hasOutro +
@@ -486,8 +496,7 @@ class GeminiWebPocController(private val activity: MainActivity) {
       // Da bat duoc JSON hoan chinh (co outro) -> 1.6s sau chot LUON, theo THOI GIAN
       // (khong phu thuoc dem nhip hay noi dung con lan tan) -> chac chan qua 36%.
       if (outroReadyAt >= 0 && bestOutro.length > 0 && (hard - outroReadyAt) >= 1600){
-        clearInterval(poll);
-        report({ step: 'DONE', responseText: bestOutro.slice(0, 400000), codeBlock: bestOutro.slice(0, 400000) });
+        finalizeNow();
         return;
       }
       // CHOT phong ho: co JSON can ngoac (khong thay "outro" - vd prompt khac schema)
